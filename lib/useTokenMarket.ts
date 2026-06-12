@@ -24,17 +24,58 @@ const LOG_POOL = [
   "deposited to treasury ✓",
 ];
 
+// Deterministic seeds for the FIRST render so server SSR and client hydration
+// match (no Math.random). After mount we swap in the randomized series.
+function seedCandles(price: number): Candle[] {
+  const out: Candle[] = [];
+  let prev = price * 0.86;
+  for (let i = 0; i < 48; i++) {
+    const c = price * (0.86 + (0.14 * i) / 47);
+    const o = prev;
+    out.push({ o, h: Math.max(o, c) * 1.008, l: Math.min(o, c) * 0.992, c });
+    prev = c;
+  }
+  return out;
+}
+
+function seedTrades(price: number): Trade[] {
+  const rows: [string, "BUY" | "SELL", number, number][] = [
+    ["7xKq…g4fR", "BUY", 1.2, 6],
+    ["3mQz…r8Lk", "SELL", 0.45, 24],
+    ["Hv9c…2dWp", "BUY", 2.1, 51],
+    ["Bn4t…9xQa", "BUY", 0.32, 78],
+    ["Kp2w…5mRv", "SELL", 1.05, 120],
+    ["Qd8a…7nLf", "BUY", 0.74, 168],
+    ["Zr3x…1cVe", "BUY", 0.9, 210],
+  ];
+  return rows.map(([addr, side, s, age]) => ({
+    addr,
+    side,
+    sol: s.toFixed(2),
+    tokens: Math.round((s * 164) / price).toLocaleString("en-US"),
+    ageSeconds: age,
+  }));
+}
+
 export function useTokenMarket(project: Project) {
   const [tf, setTf] = useState<Timeframe>("1D");
   const [mode, setMode] = useState<ChartMode>("candles");
+  // Deterministic on first paint (matches SSR); randomized after mount.
   const [candles, setCandles] = useState<Candle[]>(() =>
-    genCandles("1D", project.price)
+    seedCandles(project.price)
   );
   const [trades, setTrades] = useState<Trade[]>(() =>
-    genTrades(project.price, 7)
+    seedTrades(project.price)
   );
   const [agentLog, setAgentLog] = useState<AgentLogLine[]>(TOKEN_LOG);
   const logTick = useRef(0);
+
+  // Swap in the lively randomized series once we're on the client.
+  useEffect(() => {
+    setCandles(genCandles("1D", project.price));
+    setTrades(genTrades(project.price, 7));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-seed candles when the timeframe changes.
   const changeTf = (next: Timeframe) => {

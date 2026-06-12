@@ -6,6 +6,7 @@ import { LoopMark } from "../LoopMark";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
+import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, SOL_USD } from "@/lib/format";
 
@@ -183,6 +184,7 @@ export function TokenPage({ project: p }: { project: Project }) {
           <BondingCurve curve={p.curve} />
           <TreasuryStats project={p} />
           <TopHolders />
+
         </div>
       </section>
 
@@ -417,8 +419,18 @@ function BondingCurve({ curve }: { curve: number }) {
 }
 
 function TreasuryStats({ project: p }: { project: Project }) {
-  const rows: [string, string, boolean?][] = [
-    ["Balance", `${p.treasurySol.toFixed(2)} SOL`],
+  // Poll the live on-chain balance (real when the project has a treasury_wallet).
+  const { balance, live } = useLiveTreasury(p.key, p.treasurySol);
+  const rows: [string, React.ReactNode, boolean?][] = [
+    [
+      "Balance",
+      <span key="bal" className="inline-flex items-center gap-[6px]">
+        {live && (
+          <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+        )}
+        {balance.toFixed(2)} SOL
+      </span>,
+    ],
     ["Total earned", `${p.earnedSol.toFixed(2)} SOL`],
     ["Burn rate", p.burnPerDay],
     ["Runway", p.runway, true],
@@ -430,7 +442,7 @@ function TreasuryStats({ project: p }: { project: Project }) {
       </div>
       <div className="flex flex-col gap-[10px] text-[13px]">
         {rows.map(([label, value, pos]) => (
-          <div key={label} className="flex justify-between">
+          <div key={String(label)} className="flex justify-between">
             <span className="text-muted">{label}</span>
             <span className={`font-mono ${pos ? "text-pos" : ""}`}>{value}</span>
           </div>
