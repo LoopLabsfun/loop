@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand palette — preserved in oklch from the Loop v2 design */
+  --accent: oklch(0.47 0.21 285);
+  --accent-d: oklch(0.4 0.21 285);
+  --accent-text: oklch(0.45 0.2 285);
+  --accent-tint: oklch(0.965 0.018 285);
+  --accent-tint-border: oklch(0.92 0.04 285);
+  --accent-200: oklch(0.9 0.05 285);
+  --accent-300: oklch(0.84 0.08 285);
+  --accent-400: oklch(0.74 0.13 285);
+
+  --pos: oklch(0.55 0.17 150);
+  --pos-bright: oklch(0.62 0.17 150);
+  --neg: oklch(0.55 0.19 25);
+  --warn: oklch(0.55 0.22 25);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #fcfcfd;
+  color: #16131a;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer components {
+  .loop-input {
+    @apply w-full px-[14px] py-[11px] rounded-[10px] border border-line-3 text-[14px] outline-none bg-canvas text-ink placeholder:text-ghost;
+    font-family: inherit;
+  }
+  .loop-input:focus {
+    border-color: var(--accent);
+  }
+}
+
+/* Thin scrollbar for log/trade panels */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #e3e0e7;
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Marquee needs a wrapper that doesn't wrap */
+.marquee-track {
+  display: flex;
+  flex: none;
+  width: max-content;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
