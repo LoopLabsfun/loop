@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { launchProjectAction } from "@/lib/actions";
+import type { LaunchResult } from "@/lib/api";
 
 type Step = "form" | "stake" | "deploying" | "done";
 
@@ -27,6 +29,7 @@ export function LaunchModal({
   const [repo, setRepo] = useState("");
   const [error, setError] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
+  const [result, setResult] = useState<LaunchResult | null>(null);
 
   // Reset whenever it (re)opens.
   useEffect(() => {
@@ -34,6 +37,7 @@ export function LaunchModal({
       setStep("form");
       setError(false);
       setDeployLog([]);
+      setResult(null);
     }
   }, [open]);
 
@@ -73,7 +77,8 @@ export function LaunchModal({
       setDeployLog((l) => [...l, lines[i]]);
     }
     try {
-      await launchProjectAction({ name, ticker, prompt, repo });
+      const res = await launchProjectAction({ name, ticker, prompt, repo });
+      setResult(res);
     } catch {
       // Non-fatal for the prototype: the success screen still shows.
     }
@@ -236,18 +241,27 @@ export function LaunchModal({
             </div>
             <div className="bg-surface-2 rounded-[12px] p-[14px] flex flex-col gap-2 font-mono text-[12.5px] text-left">
               <Row label="Wallet">
-                <span>3mQz…r8Lk</span>
+                <span>{result?.wallet ?? "3mQz…r8Lk"}</span>
               </Row>
               <Row label="Stake">
-                <span>1,000 LOOP locked</span>
+                <span>{result?.staked ?? "1,000 LOOP"} locked</span>
               </Row>
               <Row label="Agent">
                 <span className="text-pos">● first task queued</span>
               </Row>
             </div>
+            {result?.key && (
+              <Link
+                href={`/token?p=${result.key}`}
+                onClick={onClose}
+                className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] bg-accent text-white hover:bg-accent-d transition-colors"
+              >
+                View project →
+              </Link>
+            )}
             <button
               onClick={onClose}
-              className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] bg-ink text-white hover:bg-ink-2 transition-colors"
+              className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
             >
               Done
             </button>

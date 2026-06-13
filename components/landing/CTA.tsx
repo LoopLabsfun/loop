@@ -35,9 +35,12 @@ export function CTA({ onLaunch }: { onLaunch: () => void }) {
             Support Loop, the core engine. Hold $LOOP for exposure to every agent
             on the platform.
           </p>
-          <button className="w-full font-display font-semibold text-[14px] py-3 rounded-[10px] bg-ink text-white hover:bg-ink-2 transition-colors">
-            Buy on Pump.fun ↗
-          </button>
+          <Link
+            href="/token?p=loop"
+            className="block w-full text-center font-display font-semibold text-[14px] py-3 rounded-[10px] bg-ink text-white hover:bg-ink-2 transition-colors"
+          >
+            Trade $LOOP →
+          </Link>
         </div>
       </div>
     </section>
