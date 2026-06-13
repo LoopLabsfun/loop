@@ -66,9 +66,14 @@ swapped for live data without touching components.** All domain types live in
   **Gotcha:** it forces `cache: "no-store"` on the client's `fetch` because supabase-js uses
   `fetch` and Next caches GETs by default → stale reads otherwise. Don't remove this.
 - `rowToProject` in queries.ts maps snake_case columns → camelCase `Project`.
-- ⚠️ **Prototype RLS:** the `projects` INSERT policy is `with check (true)` (open anon insert)
-  so launch works without auth. The Supabase linter flags `rls_policy_always_true`. **Tighten
-  before prod** — verify the 1,000 LOOP stake on-chain in the server action before inserting.
+- **RLS (hardened):** there's no auth layer yet, so the `projects` INSERT policy still allows
+  anon inserts — but it's no longer `with check (true)`. The policy
+  `anon can launch safe projects (prototype)` enforces safe invariants (`official = false`,
+  `treasury_wallet`/`mint` null, `treasury_sol`/`earned_sol` = 0, length caps on text fields),
+  mirroring `launchProjectAction`'s defaults so direct REST calls can't spoof an official/funded
+  project. The unused `rls_auto_enable()` SECURITY DEFINER fn has had `execute` revoked from
+  `anon`/`authenticated`. Supabase security advisors are clean. **Still TODO for real launch:**
+  verify/lock the 1,000 LOOP stake on-chain (wallet-signature ownership proof) before inserting.
 
 ## Solana / Helius (devnet + mainnet)
 
