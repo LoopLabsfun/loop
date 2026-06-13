@@ -11,7 +11,7 @@ export const PROJECTS: Record<ProjectKey, Project> = {
     description: "The project that builds Loop. The platform funds itself.",
     official: true,
     launchpad: "Pump.fun",
-    repo: "github.com/loop-fun/loop",
+    repo: "github.com/godisrupt/loop-fun",
     cover: "loop",
     price: 0.0421,
     marketCap: "$4.21M",

@@ -28,10 +28,14 @@ const COMMITS = [
 export function TokenPage({
   project: p,
   solUsd,
+  commits,
 }: {
   project: Project;
   solUsd: number;
+  commits: { hash: string; msg: string }[];
 }) {
+  // Live commits from the repo when available; otherwise the static sample.
+  const commitFeed = commits.length > 0 ? commits : COMMITS;
   const wallet = useWallet();
   const { tf, mode, candles, trades, agentLog, changeTf, setMode } =
     useTokenMarket(p);
@@ -163,7 +167,7 @@ export function TokenPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="flex flex-col gap-[7px]">
                 <div className="text-[11px] text-muted mb-[2px]">LATEST COMMITS</div>
-                {COMMITS.map((c) => (
+                {commitFeed.map((c) => (
                   <div key={c.hash} className="text-[12.5px] text-[#B7B2BE]">
                     <span className="text-accent-400">{c.hash}</span> {c.msg}
                   </div>
