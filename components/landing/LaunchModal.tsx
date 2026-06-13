@@ -30,6 +30,7 @@ export function LaunchModal({
   const [error, setError] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [result, setResult] = useState<LaunchResult | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
   // Reset whenever it (re)opens.
   useEffect(() => {
@@ -38,6 +39,7 @@ export function LaunchModal({
       setError(false);
       setDeployLog([]);
       setResult(null);
+      setLaunchError(null);
     }
   }, [open]);
 
@@ -79,8 +81,13 @@ export function LaunchModal({
     try {
       const res = await launchProjectAction({ name, ticker, prompt, repo });
       setResult(res);
-    } catch {
-      // Non-fatal for the prototype: the success screen still shows.
+    } catch (e) {
+      // Surface a validation/server error and return to the stake step.
+      setLaunchError(
+        e instanceof Error ? e.message : "Launch failed. Please try again."
+      );
+      setStep("stake");
+      return;
     }
     await wait(700);
     setStep("done");
@@ -201,6 +208,11 @@ export function LaunchModal({
               >
                 Stake &amp; Launch
               </button>
+            )}
+            {launchError && (
+              <div className="text-[12.5px] text-warn text-center">
+                {launchError}
+              </div>
             )}
             <button
               onClick={() => setStep("form")}
