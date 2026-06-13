@@ -66,7 +66,7 @@ export function LaunchModal({
 
   const startDeploy = async () => {
     setStep("deploying");
-    setDeployLog(["Wallet created · 3mQz…r8Lk"]);
+    setDeployLog([`Launch signed · ${wallet.label}`]);
     const lines = [
       `Token ${summaryTicker.toUpperCase()} deployed on Pump.fun`,
       "1,000 LOOP staked & locked",
@@ -240,8 +240,8 @@ export function LaunchModal({
               </div>
             </div>
             <div className="bg-surface-2 rounded-[12px] p-[14px] flex flex-col gap-2 font-mono text-[12.5px] text-left">
-              <Row label="Wallet">
-                <span>{result?.wallet ?? "3mQz…r8Lk"}</span>
+              <Row label="Launched by">
+                <span>{wallet.label}</span>
               </Row>
               <Row label="Stake">
                 <span>{result?.staked ?? "1,000 LOOP"} locked</span>
