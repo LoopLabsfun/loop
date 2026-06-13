@@ -206,6 +206,50 @@ export function TokenPage({
   );
 }
 
+function ShareButton() {
+  const [copied, setCopied] = useState(false);
+
+  const onShare = async () => {
+    const url = typeof window === "undefined" ? "" : window.location.href;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ url });
+        return;
+      } catch {
+        // user cancelled the share sheet — fall through to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — nothing more we can do
+    }
+  };
+
+  return (
+    <button
+      onClick={onShare}
+      aria-label="Share this project"
+      className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M8.7 13.5l6.6 3.8M15.3 6.7L8.7 10.5M18 7a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM9 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM18 17a3 3 0 1 0-6 0 3 3 0 0 0 6 0z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className={copied ? "text-pos" : undefined}>
+        {copied ? "Copied" : "Share"}
+      </span>
+    </button>
+  );
+}
+
 function TokenNav({
   ticker,
   walletLabel,
@@ -218,25 +262,26 @@ function TokenNav({
   onToggle: () => void;
 }) {
   return (
-    <nav className="sticky top-0 z-50 flex items-center justify-between px-8 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
-      <div className="flex items-center gap-[14px]">
-        <Link href="/" className="flex items-center gap-[10px] text-ink">
+    <nav className="sticky top-0 z-50 flex items-center justify-between gap-2 px-4 sm:px-8 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
+      <div className="flex items-center gap-[10px] sm:gap-[14px] min-w-0">
+        <Link href="/" className="flex items-center gap-[10px] text-ink flex-none">
           <LoopMark width={30} height={18} />
           <span className="font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
         </Link>
         <span className="text-line-hover">/</span>
-        <span className="font-mono text-[13px] text-accent-text">{ticker}</span>
+        <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
       </div>
-      <div className="flex items-center gap-[10px]">
+      <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
+        <ShareButton />
         <Link
           href="/"
-          className="text-[13.5px] text-muted hover:text-ink transition-colors px-[14px] py-[9px]"
+          className="hidden sm:inline-block text-[13.5px] text-muted hover:text-ink transition-colors px-[14px] py-[9px]"
         >
           ← All projects
         </Link>
         <button
           onClick={onToggle}
-          className="flex items-center gap-[7px] font-mono text-[13px] px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+          className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
         >
           {connected && <span className="w-[7px] h-[7px] rounded-full bg-pos-bright inline-block" />}
           {walletLabel}
