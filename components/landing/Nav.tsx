@@ -1,6 +1,16 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
+
+const SECTIONS: { id: string; label: string }[] = [
+  { id: "loop-projects", label: "Projects" },
+  { id: "loop-how", label: "How it Works" },
+  { id: "loop-token", label: "Tokenomics" },
+  { id: "loop-cases", label: "Use Cases" },
+];
 
 export function Nav({
   onLaunch,
@@ -10,6 +20,7 @@ export function Nav({
   onScroll: (id: string) => void;
 }) {
   const wallet = useWallet();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <nav className="sticky top-0 z-50 flex items-center justify-between gap-3 px-4 sm:px-10 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
@@ -24,18 +35,15 @@ export function Nav({
       </button>
 
       <div className="hidden md:flex items-center gap-7 text-[14px] text-body">
-        <button onClick={() => onScroll("loop-projects")} className="hover:text-ink transition-colors">
-          Projects
-        </button>
-        <button onClick={() => onScroll("loop-how")} className="hover:text-ink transition-colors">
-          How it Works
-        </button>
-        <button onClick={() => onScroll("loop-token")} className="hover:text-ink transition-colors">
-          Tokenomics
-        </button>
-        <button onClick={() => onScroll("loop-cases")} className="hover:text-ink transition-colors">
-          Use Cases
-        </button>
+        {SECTIONS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onScroll(s.id)}
+            className="hover:text-ink transition-colors"
+          >
+            {s.label}
+          </button>
+        ))}
         <Link href="/docs" className="hover:text-ink transition-colors">
           Docs
         </Link>
@@ -49,6 +57,30 @@ export function Nav({
 
       <div className="flex items-center gap-[10px] flex-none">
         <button
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}
+          className="md:hidden w-[38px] h-[38px] flex-none flex items-center justify-center rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            {menuOpen ? (
+              <path
+                d="M3 3l10 10M13 3L3 13"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            ) : (
+              <path
+                d="M2 4h12M2 8h12M2 12h12"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            )}
+          </svg>
+        </button>
+        <button
           onClick={onLaunch}
           className="font-display font-semibold text-[14px] px-3 sm:px-[18px] py-[9px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors whitespace-nowrap"
         >
@@ -57,14 +89,52 @@ export function Nav({
         </button>
         <button
           onClick={wallet.toggle}
-          className="flex items-center gap-[7px] font-mono text-[13px] px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+          className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
         >
           {wallet.connected && (
             <span className="inline-block w-[7px] h-[7px] rounded-full bg-pos-bright" />
           )}
-          {wallet.label}
+          {wallet.connected ? (
+            wallet.label
+          ) : (
+            <>
+              <span className="sm:hidden">Connect</span>
+              <span className="hidden sm:inline">Connect Wallet</span>
+            </>
+          )}
         </button>
       </div>
+
+      {menuOpen && (
+        <div className="md:hidden absolute top-full left-0 right-0 bg-canvas border-b border-line shadow-[0_12px_28px_-16px_rgba(22,19,26,0.18)] flex flex-col px-4 py-2 animate-fadeInFast">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setMenuOpen(false);
+                onScroll(s.id);
+              }}
+              className="text-left text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
+            >
+              {s.label}
+            </button>
+          ))}
+          <Link
+            href="/docs"
+            onClick={() => setMenuOpen(false)}
+            className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
+          >
+            Docs
+          </Link>
+          <Link
+            href="/token?p=loop"
+            onClick={() => setMenuOpen(false)}
+            className="font-mono text-[14px] text-accent-text py-[11px] hover:text-accent-d transition-colors"
+          >
+            $LOOP
+          </Link>
+        </div>
+      )}
     </nav>
   );
 }
