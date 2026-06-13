@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TokenPage } from "@/components/token/TokenPage";
 import { getProject } from "@/lib/queries";
+import { getSolUsd } from "@/lib/price";
 
 export const dynamic = "force-dynamic";
 
@@ -38,5 +39,6 @@ export default async function TokenRoute({
   const project =
     (await getProject(searchParams.p ?? "loop")) ?? (await getProject("loop"));
   if (!project) notFound();
-  return <TokenPage project={project} />;
+  const solUsd = await getSolUsd();
+  return <TokenPage project={project} solUsd={solUsd} />;
 }

@@ -14,7 +14,13 @@ import { LaunchModal } from "./LaunchModal";
 import { useLoopEngine } from "@/lib/useLoopEngine";
 import type { Project } from "@/lib/types";
 
-export function Landing({ projects }: { projects: Project[] }) {
+export function Landing({
+  projects,
+  solUsd,
+}: {
+  projects: Project[];
+  solUsd: number;
+}) {
   const loop = projects.find((p) => p.key === "loop");
   const engine = useLoopEngine(loop?.treasurySol);
   const [modalOpen, setModalOpen] = useState(false);
@@ -32,7 +38,12 @@ export function Landing({ projects }: { projects: Project[] }) {
   return (
     <>
       <Nav onLaunch={openModal} onScroll={scrollTo} />
-      <Hero engine={engine} onLaunch={openModal} onScroll={scrollTo} />
+      <Hero
+        engine={engine}
+        solUsd={solUsd}
+        onLaunch={openModal}
+        onScroll={scrollTo}
+      />
       <LiveProjects projects={projects} loopBalance={engine.balance} />
       <HowAndTreasury engine={engine} />
       <LoopMarquee />
