@@ -144,7 +144,6 @@ export interface LaunchInput {
 export interface LaunchResult {
   /** Project key (slug) — used to link to the new project's page. */
   key: string;
-  wallet: string;
   ticker: string;
   staked: string;
 }

@@ -19,11 +19,10 @@ export async function launchProjectAction(
   const ticker =
     "$" +
     (input.ticker.trim() || "OSCUR").toUpperCase().replace(/^\$/, "");
-  const wallet = "3mQz…r8Lk";
   let key = slugify(ticker.slice(1), input.name);
 
   if (!supabase) {
-    return { key, wallet, ticker, staked: "1,000 LOOP" };
+    return { key, ticker, staked: "1,000 LOOP" };
   }
 
   // Avoid colliding with an existing key.
@@ -57,5 +56,5 @@ export async function launchProjectAction(
     runway: "booting",
   });
 
-  return { key, wallet, ticker, staked: "1,000 LOOP" };
+  return { key, ticker, staked: "1,000 LOOP" };
 }
