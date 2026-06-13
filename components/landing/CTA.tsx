@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function CTA({ onLaunch }: { onLaunch: () => void }) {
   return (
     <section className="max-w-[1160px] mx-auto px-10 pt-10 pb-14">
@@ -17,9 +19,12 @@ export function CTA({ onLaunch }: { onLaunch: () => void }) {
             >
               Launch a Project
             </button>
-            <button className="font-display font-semibold text-[15px] px-6 py-[13px] rounded-[12px] border border-accent-300 bg-surface text-ink hover:border-accent transition-colors">
+            <Link
+              href="/docs"
+              className="font-display font-semibold text-[15px] px-6 py-[13px] rounded-[12px] border border-accent-300 bg-surface text-ink hover:border-accent transition-colors"
+            >
               Read the Docs
-            </button>
+            </Link>
           </div>
         </div>
         <div className="bg-surface border border-accent-tint-border rounded-[16px] p-6">

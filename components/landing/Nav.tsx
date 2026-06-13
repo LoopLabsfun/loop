@@ -36,6 +36,9 @@ export function Nav({
         <button onClick={() => onScroll("loop-cases")} className="hover:text-ink transition-colors">
           Use Cases
         </button>
+        <Link href="/docs" className="hover:text-ink transition-colors">
+          Docs
+        </Link>
         <Link
           href="/token?p=loop"
           className="font-mono text-[13px] text-accent-text hover:text-accent-d transition-colors"
