@@ -12,9 +12,14 @@ export function Footer() {
       </div>
       <div className="flex items-center gap-[22px] text-[13px] text-muted">
         <Link href="/docs" className="cursor-pointer hover:text-ink transition-colors">Docs</Link>
-        <a className="cursor-pointer hover:text-ink transition-colors">Twitter</a>
-        <a className="cursor-pointer hover:text-ink transition-colors">Discord</a>
-        <a className="cursor-pointer hover:text-ink transition-colors">GitHub</a>
+        <a
+          href="https://github.com/godisrupt/loop-fun"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="cursor-pointer hover:text-ink transition-colors"
+        >
+          GitHub ↗
+        </a>
         <span className="font-mono text-[12px] text-pos">
           ● All systems operational
         </span>
