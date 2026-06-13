@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 
 export function Footer() {
@@ -10,7 +11,7 @@ export function Footer() {
         </span>
       </div>
       <div className="flex items-center gap-[22px] text-[13px] text-muted">
-        <a className="cursor-pointer hover:text-ink transition-colors">Docs</a>
+        <Link href="/docs" className="cursor-pointer hover:text-ink transition-colors">Docs</Link>
         <a className="cursor-pointer hover:text-ink transition-colors">Twitter</a>
         <a className="cursor-pointer hover:text-ink transition-colors">Discord</a>
         <a className="cursor-pointer hover:text-ink transition-colors">GitHub</a>
