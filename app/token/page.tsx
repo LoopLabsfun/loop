@@ -19,11 +19,14 @@ export async function generateMetadata({
   const description =
     project.description ||
     `${project.name} — an autonomous project funded by its market on Loop.`;
+  // Defining openGraph/twitter here replaces the root file-convention image,
+  // so reference the site OG image explicitly to keep project links rich.
+  const images = ["/opengraph-image"];
   return {
     title,
     description,
-    openGraph: { title, description, type: "website", siteName: "Loop" },
-    twitter: { card: "summary_large_image", title, description },
+    openGraph: { title, description, type: "website", siteName: "Loop", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 
