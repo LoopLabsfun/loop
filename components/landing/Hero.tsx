@@ -104,7 +104,7 @@ function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: num
       </svg>
       <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
         <Stat label="24h Income" value={`+${sol(engine.income)} SOL`} tone="pos" />
-        <Stat label="24h Spend" value={`−0.64 SOL`} />
+        <Stat label="24h Spend" value={`−${sol(engine.spend)} SOL`} />
         <Stat label="Runtime" value="● Active" tone="pos" />
         <Stat label="Next Check" value={countdown(engine.countdown)} />
       </div>

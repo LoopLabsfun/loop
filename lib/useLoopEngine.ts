@@ -13,6 +13,7 @@ import { nowStamp } from "./format";
 export interface LoopEngineState {
   balance: number;
   income: number;
+  spend: number;
   countdown: number;
   agentLog: AgentLogLine[];
   claims: RewardClaim[];
@@ -28,6 +29,7 @@ export function useLoopEngine(seedBalance?: number): LoopEngineState {
   const [state, setState] = useState<LoopEngineState>({
     balance: seedBalance ?? t0.balanceSol,
     income: t0.income24hSol,
+    spend: t0.spend24hSol,
     countdown: t0.nextCheckSeconds,
     agentLog: getInitialAgentLog(),
     claims: getRecentClaims(),
@@ -47,12 +49,20 @@ export function useLoopEngine(seedBalance?: number): LoopEngineState {
           next.income = s.income + bump;
         }
 
+        // The agent burns treasury as it runs — a smaller, steady outflow than
+        // income so the net trend stays positive while the wallet is funded.
+        if (s.countdown % 6 === 0) {
+          const burn = 0.0005 + Math.random() * 0.0015;
+          next.spend = s.spend + burn;
+          next.balance = next.balance - burn;
+        }
+
         if (s.countdown % 3 === 0) {
           const pool = [
             ...AGENT_LOG_POOL,
             "commit " +
               Math.random().toString(16).slice(2, 9) +
-              " pushed → github.com/loop-fun/loop",
+              " pushed → github.com/godisrupt/loop-fun",
             "budget check: " + (next.balance * 0.6).toFixed(2) + " SOL available",
           ];
           const msg = pool[Math.floor(Math.random() * pool.length)];
