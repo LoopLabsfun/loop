@@ -9,3 +9,7 @@ next-env.d.ts
 /loop-handoff
 Loop.fun-handoff*.zip
 .vercel
+
+# Claude Code local/runtime files (launch.json is intentionally tracked)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
