@@ -1,13 +1,15 @@
 import { LoopMarkAnimated } from "../LoopMark";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
-import { countdown, sol, usd, SOL_USD } from "@/lib/format";
+import { countdown, sol, usd } from "@/lib/format";
 
 export function Hero({
   engine,
+  solUsd,
   onLaunch,
   onScroll,
 }: {
   engine: LoopEngineState;
+  solUsd: number;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -63,13 +65,13 @@ export function Hero({
           </div>
         </div>
 
-        <TreasuryCard engine={engine} />
+        <TreasuryCard engine={engine} solUsd={solUsd} />
       </div>
     </section>
   );
 }
 
-function TreasuryCard({ engine }: { engine: LoopEngineState }) {
+function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: number }) {
   return (
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
@@ -84,7 +86,7 @@ function TreasuryCard({ engine }: { engine: LoopEngineState }) {
         <span className="text-[20px] text-faint font-medium">SOL</span>
       </div>
       <div className="font-mono text-[13px] text-faint mt-[6px] mb-4">
-        ≈ {usd(engine.balance * SOL_USD)} USD
+        ≈ {usd(engine.balance * solUsd)} USD
       </div>
       <svg
         width="100%"

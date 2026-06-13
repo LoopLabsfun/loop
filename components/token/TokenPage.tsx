@@ -8,7 +8,7 @@ import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import type { Project } from "@/lib/types";
-import { fmtPrice, shortAge, SOL_USD } from "@/lib/format";
+import { fmtPrice, shortAge } from "@/lib/format";
 
 const TOP_HOLDERS = [
   { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
@@ -25,7 +25,13 @@ const COMMITS = [
   { hash: "e90c512", msg: "chore: optimize agent loop" },
 ];
 
-export function TokenPage({ project: p }: { project: Project }) {
+export function TokenPage({
+  project: p,
+  solUsd,
+}: {
+  project: Project;
+  solUsd: number;
+}) {
   const wallet = useWallet();
   const { tf, mode, candles, trades, agentLog, changeTf, setMode } =
     useTokenMarket(p);
@@ -180,7 +186,7 @@ export function TokenPage({ project: p }: { project: Project }) {
 
         {/* Right column */}
         <div className="flex flex-col gap-4">
-          <SwapCard project={p} lastPrice={last} />
+          <SwapCard project={p} lastPrice={last} solUsd={solUsd} />
           <BondingCurve curve={p.curve} />
           <TreasuryStats project={p} />
           <TopHolders />
@@ -276,7 +282,7 @@ function Segmented<T extends string>({
   );
 }
 
-function SwapCard({ project: p, lastPrice }: { project: Project; lastPrice: number }) {
+function SwapCard({ project: p, lastPrice, solUsd }: { project: Project; lastPrice: number; solUsd: number }) {
   const wallet = useWallet();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amt, setAmt] = useState("1.0");
@@ -289,8 +295,8 @@ function SwapCard({ project: p, lastPrice }: { project: Project; lastPrice: numb
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   const est = buy
-    ? Math.round((amtN * SOL_USD) / lastPrice).toLocaleString("en-US") + " " + sym
-    : ((amtN * lastPrice) / SOL_USD).toFixed(3) + " SOL";
+    ? Math.round((amtN * solUsd) / lastPrice).toLocaleString("en-US") + " " + sym
+    : ((amtN * lastPrice) / solUsd).toFixed(3) + " SOL";
 
   const quicks: [string, string][] = buy
     ? [["0.1", "0.1"], ["0.5", "0.5"], ["1", "1"], ["5", "5"]]

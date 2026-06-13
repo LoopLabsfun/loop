@@ -1,4 +1,7 @@
-export const SOL_USD = 164; // stub price; replace with a live oracle feed.
+// Fallback SOL/USD snapshot. Live spot price comes from getSolUsd() in
+// price.ts (server-only); this value is used when that call fails and inside
+// the simulated trade feed (lib/api.ts), which is not yet wired to live data.
+export const SOL_USD = 164;
 
 export function usd(n: number): string {
   return n.toLocaleString("en-US", {
