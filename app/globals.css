@@ -32,6 +32,14 @@ body {
   box-sizing: border-box;
 }
 
+/* Visible keyboard focus for interactive elements (mouse clicks unaffected).
+   :where() keeps specificity at 0 so component styles win; the outline follows
+   each element's own border-radius. */
+:where(a, button, summary, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @layer components {
   .loop-input {
     @apply w-full px-[14px] py-[11px] rounded-[10px] border border-line-3 text-[14px] outline-none bg-canvas text-ink placeholder:text-ghost;

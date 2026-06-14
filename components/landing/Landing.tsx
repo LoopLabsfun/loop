@@ -38,18 +38,20 @@ export function Landing({
   return (
     <>
       <Nav onLaunch={openModal} onScroll={scrollTo} />
-      <Hero
-        engine={engine}
-        solUsd={solUsd}
-        onLaunch={openModal}
-        onScroll={scrollTo}
-      />
-      <LiveProjects projects={projects} loopBalance={engine.balance} />
-      <HowAndTreasury engine={engine} />
-      <LoopMarquee />
-      <Tokenomics />
-      <UseCases />
-      <CTA onLaunch={openModal} />
+      <main>
+        <Hero
+          engine={engine}
+          solUsd={solUsd}
+          onLaunch={openModal}
+          onScroll={scrollTo}
+        />
+        <LiveProjects projects={projects} loopBalance={engine.balance} />
+        <HowAndTreasury engine={engine} />
+        <LoopMarquee />
+        <Tokenomics />
+        <UseCases />
+        <CTA onLaunch={openModal} />
+      </main>
       <Footer />
       <LaunchModal open={modalOpen} onClose={closeModal} />
     </>
