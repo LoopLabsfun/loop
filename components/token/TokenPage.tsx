@@ -10,6 +10,7 @@ import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { AgentConsole } from "./AgentConsole";
 import { AgentOperator } from "./AgentOperator";
+import type { AgentState } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, shortAddr } from "@/lib/format";
 
@@ -32,10 +33,12 @@ export function TokenPage({
   project: p,
   solUsd,
   commits,
+  agentState,
 }: {
   project: Project;
   solUsd: number;
   commits: { hash: string; msg: string }[];
+  agentState?: AgentState;
 }) {
   // Live commits from the repo when available; otherwise the static sample.
   const commitFeed = commits.length > 0 ? commits : COMMITS;
@@ -107,7 +110,12 @@ export function TokenPage({
           {/* Agent Console — steer the project's AI */}
           <AgentConsole project={p} />
           {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
-          <AgentOperator project={p} />
+          <AgentOperator
+            project={p}
+            tasks={agentState?.tasks}
+            inbox={agentState?.inbox}
+            social={agentState?.social}
+          />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             <div className="flex items-center justify-between mb-[14px]">
