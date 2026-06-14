@@ -212,15 +212,16 @@ export function LaunchModal({
             <div className="border border-accent-tint-border bg-accent-tint rounded-[12px] p-4">
               <div className="flex justify-between items-baseline mb-[6px]">
                 <span className="font-display font-semibold text-[15px]">
-                  Stake to launch
+                  Founder Stake
                 </span>
                 <span className="font-mono text-[16px] text-accent-text">
                   1,000 LOOP
                 </span>
               </div>
               <p className="text-[12.5px] text-muted leading-[1.5] m-0">
-                Locked while the project is active. Refunded if you delete the
-                project. 5% of creator rewards route to the Loop treasury.
+                Permanent — grants steering rights over your agent and sets its
+                compute tier. No delete-and-refund; you exit by transferring it.
+                5% of creator rewards route to the Loop treasury.
               </p>
             </div>
             {!wallet.connected ? (
