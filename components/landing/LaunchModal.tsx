@@ -4,6 +4,7 @@ import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
+import { explorerUrl, shortAddr } from "@/lib/format";
 import type { LaunchResult } from "@/lib/api";
 
 type Step = "form" | "stake" | "deploying" | "done";
@@ -267,6 +268,23 @@ export function LaunchModal({
               <Row label="Stake">
                 <span>{result?.staked ?? "1,000 LOOP"} locked</span>
               </Row>
+              <Row label="Network">
+                <span className={network === "devnet" ? "text-warn" : "text-pos"}>
+                  {result?.network ?? network}
+                </span>
+              </Row>
+              {result?.mint && (
+                <Row label="Mint">
+                  <a
+                    href={explorerUrl(result.mint, result.network ?? network)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent-text hover:text-accent-d transition-colors"
+                  >
+                    {shortAddr(result.mint)} ↗
+                  </a>
+                </Row>
+              )}
               <Row label="Agent">
                 <span className="text-pos">● first task queued</span>
               </Row>

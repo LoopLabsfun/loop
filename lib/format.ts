@@ -29,6 +29,20 @@ export function nowStamp(d = new Date()): string {
   return `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
 }
 
+/** Short base58 address: 4 leading + 4 trailing chars. */
+export function shortAddr(addr: string): string {
+  return addr.length <= 9 ? addr : `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+}
+
+/** Solana Explorer URL for an address, cluster-aware (mainnet omits ?cluster). */
+export function explorerUrl(
+  address: string,
+  network: "mainnet" | "devnet" = "mainnet"
+): string {
+  const base = `https://explorer.solana.com/address/${address}`;
+  return network === "devnet" ? `${base}?cluster=devnet` : base;
+}
+
 export function shortAge(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
