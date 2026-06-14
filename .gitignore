@@ -16,3 +16,6 @@ Loop.fun-handoff*.zip
 # Devnet test keypair (persisted across mint-proof runs; never commit a secret key)
 scripts/.devnet-keypair.json
 .claude/scheduled_tasks.lock
+
+# Pre-ground vanity mint keypairs (secret keys — never commit)
+scripts/.vanity-pool/
