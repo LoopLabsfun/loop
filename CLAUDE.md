@@ -101,7 +101,9 @@ mainnet phases, and the founder-only blockers) is in
 - API key in **`HELIUS_API_KEY`** (no `NEXT_PUBLIC_` prefix, never ships to the browser).
 - Supports both clusters via `Network = "mainnet" | "devnet"`; endpoint is
   `https://{mainnet|devnet}.helius-rpc.com/?api-key=…`. Connections are cached per network.
-- `DEFAULT_NETWORK` comes from `SOLANA_NETWORK` env (`devnet` → devnet, else mainnet).
+- `DEFAULT_NETWORK` comes from `SOLANA_NETWORK` env. **Devnet-first phase:** it
+  defaults to `devnet` unless `SOLANA_NETWORK=mainnet` (mirrored client-side by
+  `NEXT_PUBLIC_SOLANA_NETWORK` in [lib/network.tsx](lib/network.tsx)).
 - `getSolBalance(address, net)` returns SOL (lamports / `LAMPORTS_PER_SOL`) or `null` on
   unconfigured/invalid/failed reads — callers treat `null` as "keep the snapshot".
 - A project row's `network` column ("mainnet"/"devnet") selects the cluster per project, so
@@ -116,7 +118,7 @@ Copy [.env.example](.env.example) → `.env.local` (gitignored). Required:
 | `NEXT_PUBLIC_SUPABASE_URL` | public | safe to expose |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | publishable key; RLS enforces access |
 | `HELIUS_API_KEY` | **server-only** | no `NEXT_PUBLIC_` prefix |
-| `SOLANA_NETWORK` | server | `mainnet` (default) or `devnet` |
+| `SOLANA_NETWORK` | server | `devnet` (default, devnet-first phase) or `mainnet` |
 
 These must also be set in Vercel for deploys to function.
 
