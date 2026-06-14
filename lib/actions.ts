@@ -1,13 +1,22 @@
 "use server";
 
-import { supabase } from "./supabase";
+import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
+import { createToken } from "./launchpad";
 
 /**
- * Persist a newly launched project. Prototype implementation: inserts a row
- * with sensible (non-spoofable) defaults. Production would first verify the
- * 1,000 LOOP stake on-chain, create the mint + treasury wallet, then insert.
+ * Persist a newly launched project.
+ *
+ * In simulated mode (no LAUNCHPAD_PROVIDER configured) `createToken` is a no-op
+ * — no mint/treasury wallet — so the row is inserted with the anon client and
+ * stays within the locked-down `projects` RLS insert policy. With a real
+ * provider configured, the token is minted on-chain and the resulting
+ * mint/treasury_wallet are persisted via the service-role client (which the
+ * anon insert policy forbids).
+ *
+ * Still TODO for real launch: verify/lock the 1,000 LOOP stake on-chain
+ * (wallet-signature ownership proof) before minting.
  */
 export async function launchProjectAction(
   input: LaunchInput
@@ -16,25 +25,50 @@ export async function launchProjectAction(
   const ticker = "$" + clean.ticker;
   let key = slugify(clean.ticker, clean.name);
 
-  if (!supabase) {
-    return { key, ticker, staked: "1,000 LOOP" };
+  // Mint the token (no-op in simulated mode).
+  const token = await createToken({
+    name: clean.name,
+    ticker: clean.ticker,
+    prompt: clean.prompt,
+  });
+
+  const result: LaunchResult = {
+    key,
+    ticker,
+    staked: "1,000 LOOP",
+    launchpad: token.launchpad,
+    mint: token.mint,
+  };
+
+  if (!supabase) return result;
+
+  // A real launch writes a mint/treasury_wallet, which the anon insert policy
+  // rejects — those must go through the service-role client.
+  const db = token.mint ? supabaseAdmin : supabase;
+  if (token.mint && !supabaseAdmin) {
+    throw new Error(
+      "Real launch requires SUPABASE_SERVICE_ROLE_KEY to persist the mint."
+    );
   }
 
   // Avoid colliding with an existing key.
-  const { data: existing } = await supabase
+  const { data: existing } = await db!
     .from("projects")
     .select("key")
     .eq("key", key)
     .maybeSingle();
-  if (existing) key = `${key}-${Date.now().toString(36).slice(-4)}`;
+  if (existing) {
+    key = `${key}-${Date.now().toString(36).slice(-4)}`;
+    result.key = key;
+  }
 
-  await supabase.from("projects").insert({
+  await db!.from("projects").insert({
     key,
     name: clean.name,
     ticker,
     description: clean.prompt.slice(0, DESCRIPTION_MAX),
     official: false,
-    launchpad: "Pump.fun",
+    launchpad: token.launchpad,
     repo: clean.repo,
     cover: "neon",
     prompt: clean.prompt,
@@ -49,7 +83,11 @@ export async function launchProjectAction(
     earned_sol: 0,
     burn_per_day: "0.00 SOL/day",
     runway: "booting",
+    // Real-launch fields; null/default in simulated mode (RLS-safe).
+    mint: token.mint,
+    treasury_wallet: token.treasuryWallet,
+    network: token.cluster,
   });
 
-  return { key, ticker, staked: "1,000 LOOP" };
+  return result;
 }

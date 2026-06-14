@@ -11,6 +11,7 @@ import { PROJECTS } from "./projects";
 import type {
   Candle,
   Commit,
+  Launchpad,
   ProjectKey,
   RewardClaim,
   Trade,
@@ -146,4 +147,8 @@ export interface LaunchResult {
   key: string;
   ticker: string;
   staked: string;
+  /** Launchpad the token was created on. */
+  launchpad?: Launchpad;
+  /** SPL mint address for a real launch; null/undefined in simulated mode. */
+  mint?: string | null;
 }
