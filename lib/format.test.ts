@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { usd, sol, fmtPrice, countdown, shortAge, nowStamp } from "./format";
+import {
+  usd,
+  sol,
+  fmtPrice,
+  countdown,
+  shortAge,
+  nowStamp,
+  explorerTx,
+} from "./format";
 
 describe("usd", () => {
   it("formats with thousands separators and 2 decimals", () => {
@@ -43,5 +51,16 @@ describe("shortAge", () => {
 describe("nowStamp", () => {
   it("zero-pads a [HH:MM:SS] timestamp", () => {
     expect(nowStamp(new Date(2026, 0, 1, 9, 4, 7))).toBe("[09:04:07]");
+  });
+});
+
+describe("explorerTx", () => {
+  it("links to a tx on mainnet without a cluster param", () => {
+    expect(explorerTx("5sig")).toBe("https://explorer.solana.com/tx/5sig");
+  });
+  it("appends ?cluster=devnet on devnet", () => {
+    expect(explorerTx("5sig", "devnet")).toBe(
+      "https://explorer.solana.com/tx/5sig?cluster=devnet"
+    );
   });
 });
