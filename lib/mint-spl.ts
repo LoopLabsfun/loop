@@ -63,14 +63,23 @@ export async function mintSplToken(
   const signer = Keypair.fromSecretKey(parseSecretKey(secret));
   const conn = new Connection(rpcEndpoint(cluster), "confirmed");
 
-  // Optional vanity mint address (e.g. ends in "Loop"), drawn from a pre-ground
-  // pool (VANITY_POOL). Falls back to a random mint keypair when not configured
-  // or the pool is spent.
+  // Vanity mint address (e.g. ends in "Loop"), drawn from a pre-ground pool
+  // (VANITY_POOL). When MINT_VANITY_SUFFIX is set the guarantee is strict:
+  // every minted address ends in the suffix, or the launch FAILS — we never
+  // fall back to a non-matching random address. (Random is used only when no
+  // suffix is configured at all.)
   const suffix = process.env.MINT_VANITY_SUFFIX;
   let mintKeypair: import("@solana/web3.js").Keypair | undefined;
   if (suffix) {
     const { nextVanityKeypair } = await import("./vanity");
-    mintKeypair = (await nextVanityKeypair(suffix, cluster)) ?? undefined;
+    const vanity = await nextVanityKeypair(suffix, cluster);
+    if (!vanity) {
+      throw new Error(
+        `Vanity mint pool for "${suffix}" is empty — refusing to mint a ` +
+          `non-"${suffix}" address. Replenish VANITY_POOL and retry.`
+      );
+    }
+    mintKeypair = vanity;
   }
 
   // createMint funds rent from `signer`; it must already hold SOL on `cluster`.

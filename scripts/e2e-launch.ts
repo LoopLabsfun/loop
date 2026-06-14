@@ -1,7 +1,11 @@
 // End-to-end live devnet launch test. Signs a launch proof with the funded,
 // LOOP-holding devnet keypair, runs the real server action (mint on devnet +
 // persist via service-role), verifies the row, then deletes the test project.
-// Run: set -a; source .env.local; set +a; npx tsx scripts/e2e-launch.ts
+//
+// Run (the react-server condition resolves `server-only` to its no-op module;
+// without it the import throws "cannot be imported from a Client Component"):
+//   set -a; source .env.local; set +a
+//   NODE_OPTIONS="--conditions=react-server" npx tsx scripts/e2e-launch.ts
 import fs from "fs";
 import path from "path";
 import nacl from "tweetnacl";
