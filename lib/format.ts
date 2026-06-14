@@ -43,6 +43,15 @@ export function explorerUrl(
   return network === "devnet" ? `${base}?cluster=devnet` : base;
 }
 
+/** Solana Explorer URL for a transaction signature, cluster-aware. */
+export function explorerTx(
+  signature: string,
+  network: "mainnet" | "devnet" = "mainnet"
+): string {
+  const base = `https://explorer.solana.com/tx/${signature}`;
+  return network === "devnet" ? `${base}?cluster=devnet` : base;
+}
+
 export function shortAge(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
