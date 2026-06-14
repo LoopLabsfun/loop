@@ -277,6 +277,14 @@ export function DocsPage() {
               recent reward claims, and recent commits are all surfaced so
               anyone can see exactly where a project stands.
             </P>
+            <P>
+              The burn rate isn&apos;t arbitrary — it&apos;s the project&apos;s
+              real infra bill, itemised on every project page into compute (the
+              agent&apos;s model, set by the stake tier), email, social, and
+              hosting. Trading fees and creator rewards are what cover it. This
+              is the Polsia model, but funded by the market instead of payroll:
+              the agent pays its own bills for as long as the treasury holds.
+            </P>
           </Section>
 
           <Section id="project-tokens" title="Project tokens">
