@@ -49,6 +49,7 @@ export function TokenPage({
     <>
       <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
 
+      <main>
       {/* Header */}
       <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5 flex items-center justify-between gap-6 flex-wrap">
         <div className="flex items-center gap-4">
@@ -198,6 +199,7 @@ export function TokenPage({
 
         </div>
       </section>
+      </main>
 
       <footer className="border-t border-line py-[22px] px-8 max-w-[1280px] mx-auto flex items-center justify-between">
         <span className="text-[12.5px] text-faint">© 2026 Loop · simulated market data</span>
