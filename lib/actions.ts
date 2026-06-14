@@ -25,11 +25,13 @@ export async function launchProjectAction(
   const ticker = "$" + clean.ticker;
   let key = slugify(clean.ticker, clean.name);
 
-  // Mint the token (no-op in simulated mode).
+  // Mint the token (no-op in simulated mode). The UI network switch selects the
+  // cluster; the server falls back to LAUNCH_CLUSTER when none is passed.
   const token = await createToken({
     name: clean.name,
     ticker: clean.ticker,
     prompt: clean.prompt,
+    cluster: input.network,
   });
 
   const result: LaunchResult = {
@@ -38,6 +40,7 @@ export async function launchProjectAction(
     staked: "1,000 LOOP",
     launchpad: token.launchpad,
     mint: token.mint,
+    network: token.cluster,
   };
 
   if (!supabase) return result;

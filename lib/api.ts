@@ -12,6 +12,7 @@ import type {
   Candle,
   Commit,
   Launchpad,
+  Network,
   ProjectKey,
   RewardClaim,
   Trade,
@@ -140,6 +141,8 @@ export interface LaunchInput {
   ticker: string;
   prompt: string;
   repo?: string;
+  /** Cluster to launch on; defaults to the server's LAUNCH_CLUSTER env. */
+  network?: Network;
 }
 
 export interface LaunchResult {
@@ -151,4 +154,6 @@ export interface LaunchResult {
   launchpad?: Launchpad;
   /** SPL mint address for a real launch; null/undefined in simulated mode. */
   mint?: string | null;
+  /** Cluster the token launched on. */
+  network?: Network;
 }

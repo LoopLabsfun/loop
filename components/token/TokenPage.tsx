@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { LoopMark } from "../LoopMark";
+import { NetworkToggle } from "../NetworkToggle";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
@@ -272,6 +273,7 @@ function TokenNav({
         <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
       </div>
       <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
+        <NetworkToggle className="hidden sm:flex" />
         <ShareButton />
         <Link
           href="/"

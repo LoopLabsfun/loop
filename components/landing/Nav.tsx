@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
+import { NetworkToggle } from "../NetworkToggle";
 import { useWallet } from "@/lib/wallet";
 
 const SECTIONS: { id: string; label: string }[] = [
@@ -56,6 +57,7 @@ export function Nav({
       </div>
 
       <div className="flex items-center gap-[10px] flex-none">
+        <NetworkToggle className="hidden sm:flex" />
         <button
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Toggle navigation menu"
@@ -133,6 +135,10 @@ export function Nav({
           >
             $LOOP
           </Link>
+          <div className="flex items-center justify-between py-[11px]">
+            <span className="text-[15px] text-body">Network</span>
+            <NetworkToggle />
+          </div>
         </div>
       )}
     </nav>
