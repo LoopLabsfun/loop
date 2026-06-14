@@ -20,11 +20,19 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { useNetwork } from "./network";
+import { buildLaunchMessage } from "./launch-message";
+import type { LaunchProof } from "./signature";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 function shorten(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
 // The wallet-adapter providers are typed as React 17-era FCs whose `children`
@@ -78,14 +86,30 @@ export interface WalletState {
   connect: () => void;
   disconnect: () => void;
   toggle: () => void;
+  /** Sign the canonical launch message; null if the wallet can't sign. */
+  signLaunchProof: (ticker: string) => Promise<LaunchProof | null>;
 }
 
 export function useWallet(): WalletState {
-  const { publicKey, connected, disconnect } = useAdapterWallet();
+  const { publicKey, connected, disconnect, signMessage } = useAdapterWallet();
   const { setVisible } = useWalletModal();
 
   const address = publicKey?.toBase58() ?? null;
   const openModal = () => setVisible(true);
+
+  const signLaunchProof = async (
+    ticker: string
+  ): Promise<LaunchProof | null> => {
+    if (!publicKey || !signMessage) return null;
+    const ts = Date.now();
+    const message = buildLaunchMessage(ticker, ts);
+    const signature = await signMessage(new TextEncoder().encode(message));
+    return {
+      pubkey: publicKey.toBase58(),
+      signature: toBase64(signature),
+      message,
+    };
+  };
 
   return {
     connected,
@@ -94,5 +118,6 @@ export function useWallet(): WalletState {
     connect: openModal,
     disconnect: () => void disconnect(),
     toggle: connected ? () => void disconnect() : openModal,
+    signLaunchProof,
   };
 }
