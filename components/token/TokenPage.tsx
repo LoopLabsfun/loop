@@ -9,7 +9,7 @@ import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import type { Project } from "@/lib/types";
-import { fmtPrice, shortAge } from "@/lib/format";
+import { fmtPrice, shortAge, explorerUrl, shortAddr } from "@/lib/format";
 
 const TOP_HOLDERS = [
   { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
@@ -523,6 +523,36 @@ function TreasuryStats({ project: p }: { project: Project }) {
           <span className="text-muted">Rewards → Loop</span>
           <span className="font-mono">5%</span>
         </div>
+        {(p.mint || p.treasuryWallet) && (
+          <div className="flex flex-col gap-[10px] border-t border-line-4 pt-[10px]">
+            {p.mint && (
+              <div className="flex justify-between">
+                <span className="text-muted">Mint</span>
+                <a
+                  href={explorerUrl(p.mint, p.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-accent-text hover:text-accent-d transition-colors"
+                >
+                  {shortAddr(p.mint)} ↗
+                </a>
+              </div>
+            )}
+            {p.treasuryWallet && (
+              <div className="flex justify-between">
+                <span className="text-muted">Treasury</span>
+                <a
+                  href={explorerUrl(p.treasuryWallet, p.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-accent-text hover:text-accent-d transition-colors"
+                >
+                  {shortAddr(p.treasuryWallet)} ↗
+                </a>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
