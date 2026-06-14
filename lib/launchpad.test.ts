@@ -15,6 +15,7 @@ afterEach(() => {
 
 describe("parseProvider", () => {
   it("accepts known providers", () => {
+    expect(parseProvider("spl")).toBe("spl");
     expect(parseProvider("pumpfun")).toBe("pumpfun");
     expect(parseProvider("bags")).toBe("bags");
   });
@@ -38,6 +39,7 @@ describe("providerLaunchpad", () => {
     expect(providerLaunchpad("pumpfun")).toBe("Pump.fun");
     expect(providerLaunchpad("bags")).toBe("Bags.fun");
     expect(providerLaunchpad("simulated")).toBe("Pump.fun");
+    expect(providerLaunchpad("spl")).toBe("Pump.fun");
   });
 });
 
@@ -68,6 +70,27 @@ describe("createToken", () => {
     await expect(
       createToken({ name: "X", ticker: "TST", prompt: "p" })
     ).rejects.toThrow(/PUMPPORTAL_API_KEY/);
+  });
+
+  it("spl provider requires LAUNCH_SIGNER_SECRET", async () => {
+    process.env.LAUNCHPAD_PROVIDER = "spl";
+    delete process.env.LAUNCH_SIGNER_SECRET;
+    expect(launchpadConfigured()).toBe(true);
+    await expect(
+      createToken({ name: "X", ticker: "TST", prompt: "p" })
+    ).rejects.toThrow(/LAUNCH_SIGNER_SECRET/);
+  });
+
+  it("input cluster overrides the env cluster", async () => {
+    process.env.LAUNCHPAD_PROVIDER = "";
+    process.env.LAUNCH_CLUSTER = "mainnet";
+    const r = await createToken({
+      name: "X",
+      ticker: "TST",
+      prompt: "p",
+      cluster: "devnet",
+    });
+    expect(r.cluster).toBe("devnet");
   });
 
   it("respects the configured cluster", async () => {

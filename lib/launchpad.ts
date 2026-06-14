@@ -13,7 +13,7 @@ import type { Launchpad } from "./types";
 // Intended for server-side use only (imported by lib/actions.ts). Secret env
 // vars have no NEXT_PUBLIC_ prefix, so they are never exposed to the browser.
 
-export type LaunchpadProvider = "simulated" | "pumpfun" | "bags";
+export type LaunchpadProvider = "simulated" | "spl" | "pumpfun" | "bags";
 export type LaunchCluster = "mainnet" | "devnet";
 
 export interface CreateTokenInput {
@@ -40,6 +40,7 @@ export interface CreateTokenResult {
 
 const PROVIDER_LAUNCHPAD: Record<LaunchpadProvider, Launchpad> = {
   simulated: "Pump.fun",
+  spl: "Pump.fun",
   pumpfun: "Pump.fun",
   bags: "Bags.fun",
 };
@@ -51,7 +52,9 @@ export function providerLaunchpad(provider: LaunchpadProvider): Launchpad {
 
 /** Parse the LAUNCHPAD_PROVIDER env value, defaulting to "simulated". */
 export function parseProvider(raw: string | undefined): LaunchpadProvider {
-  return raw === "pumpfun" || raw === "bags" ? raw : "simulated";
+  return raw === "spl" || raw === "pumpfun" || raw === "bags"
+    ? raw
+    : "simulated";
 }
 
 /** Parse the launch cluster, defaulting to mainnet. */
@@ -91,8 +94,33 @@ export async function createToken(
   const cluster = input.cluster ?? parseCluster(process.env.LAUNCH_CLUSTER);
 
   if (provider === "simulated") return simulatedResult(provider, cluster);
+  if (provider === "spl") return createOnSpl(provider, cluster);
   if (provider === "pumpfun") return createOnPumpfun(input, cluster);
   return createOnBags(input, cluster);
+}
+
+// Direct SPL mint (no third-party launchpad). The actual minting + the heavy
+// Solana libs live in ./mint-spl, imported dynamically so they stay out of the
+// default server bundle.
+async function createOnSpl(
+  provider: LaunchpadProvider,
+  cluster: LaunchCluster
+): Promise<CreateTokenResult> {
+  // Fail fast (and keep this branch unit-testable) before loading the
+  // server-only mint module + heavy Solana libs.
+  if (!process.env.LAUNCH_SIGNER_SECRET) {
+    throw new Error("SPL launch is selected but LAUNCH_SIGNER_SECRET is not set.");
+  }
+  const { mintSplToken } = await import("./mint-spl");
+  const res = await mintSplToken(cluster);
+  return {
+    launchpad: providerLaunchpad(provider),
+    cluster,
+    mint: res.mint,
+    treasuryWallet: res.treasuryWallet,
+    txSig: res.txSig,
+    simulated: false,
+  };
 }
 
 // --- Real providers -------------------------------------------------------
