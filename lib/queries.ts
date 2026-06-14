@@ -27,6 +27,7 @@ interface ProjectRow {
   treasury_wallet: string | null;
   mint: string | null;
   network: string;
+  creator_wallet: string | null;
 }
 
 function rowToProject(r: ProjectRow): Project {
@@ -53,6 +54,7 @@ function rowToProject(r: ProjectRow): Project {
     treasuryWallet: r.treasury_wallet,
     mint: r.mint,
     network: r.network === "devnet" ? "devnet" : "mainnet",
+    creatorWallet: r.creator_wallet,
     treasuryLive: false,
   };
 }
