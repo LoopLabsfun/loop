@@ -3,8 +3,9 @@
 import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
-import { createToken } from "./launchpad";
+import { createToken, parseCluster } from "./launchpad";
 import { verifyLaunchProof } from "./signature";
+import { hasRequiredStake, stakeEnforced, STAKE_REQUIRED_LOOP } from "./stake";
 
 /**
  * Persist a newly launched project.
@@ -39,13 +40,29 @@ export async function launchProjectAction(
     creatorWallet = input.proof.pubkey;
   }
 
-  // Mint the token (no-op in simulated mode). The UI network switch selects the
-  // cluster; the server falls back to LAUNCH_CLUSTER when none is passed.
+  // The UI network switch selects the cluster; fall back to LAUNCH_CLUSTER.
+  const cluster = input.network ?? parseCluster(process.env.LAUNCH_CLUSTER);
+
+  // On-chain stake gate. When a LOOP mint is configured, the proven creator
+  // wallet must hold the required LOOP before we mint/persist. Open (no-op) in
+  // prototype mode where no LOOP_MINT is set.
+  if (stakeEnforced()) {
+    if (!creatorWallet) {
+      throw new Error("Connect and verify your wallet to stake LOOP.");
+    }
+    if (!(await hasRequiredStake(creatorWallet, cluster))) {
+      throw new Error(
+        `You need at least ${STAKE_REQUIRED_LOOP.toLocaleString()} LOOP to launch a project.`
+      );
+    }
+  }
+
+  // Mint the token (no-op in simulated mode).
   const token = await createToken({
     name: clean.name,
     ticker: clean.ticker,
     prompt: clean.prompt,
-    cluster: input.network,
+    cluster,
   });
 
   const result: LaunchResult = {
