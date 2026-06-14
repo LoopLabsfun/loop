@@ -67,6 +67,11 @@ export function TokenPage({
                   OFFICIAL
                 </span>
               )}
+              {p.network === "devnet" && (
+                <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">
+                  devnet
+                </span>
+              )}
               <span className="font-mono text-[11.5px] text-pos">● agent active</span>
             </div>
             <p className="text-[13.5px] text-muted mt-[5px] mb-0">{p.description}</p>

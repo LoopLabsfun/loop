@@ -59,6 +59,11 @@ function ProjectCard({
           OFFICIAL
         </span>
       )}
+      {p.network === "devnet" && (
+        <span className="absolute top-3 right-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-warn text-warn bg-canvas/80">
+          devnet
+        </span>
+      )}
       <div
         className={`h-[120px] flex items-center justify-center ${COVERS[p.cover]}`}
       >
