@@ -143,6 +143,8 @@ export interface LaunchInput {
   repo?: string;
   /** Cluster to launch on; defaults to the server's LAUNCH_CLUSTER env. */
   network?: Network;
+  /** Wallet ownership proof (signed launch message); verified server-side. */
+  proof?: import("./signature").LaunchProof;
 }
 
 export interface LaunchResult {

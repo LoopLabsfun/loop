@@ -70,8 +70,20 @@ export function LaunchModal({
   };
 
   const startDeploy = async () => {
+    // Ask the wallet to sign an ownership proof first. Rejection cancels the
+    // launch; a wallet that can't signMessage returns null and proceeds.
+    let proof = null;
+    try {
+      proof = await wallet.signLaunchProof(ticker);
+    } catch {
+      setLaunchError("Signature request rejected — launch cancelled.");
+      return;
+    }
+
     setStep("deploying");
-    setDeployLog([`Launch signed · ${wallet.label}`]);
+    setDeployLog([
+      proof ? `Ownership verified · ${wallet.label}` : `Launching · ${wallet.label}`,
+    ]);
     const lines = [
       `Token ${summaryTicker.toUpperCase()} deployed on Pump.fun`,
       "1,000 LOOP staked & locked",
@@ -82,7 +94,14 @@ export function LaunchModal({
       setDeployLog((l) => [...l, lines[i]]);
     }
     try {
-      const res = await launchProjectAction({ name, ticker, prompt, repo, network });
+      const res = await launchProjectAction({
+        name,
+        ticker,
+        prompt,
+        repo,
+        network,
+        proof: proof ?? undefined,
+      });
       setResult(res);
     } catch (e) {
       // Surface a validation/server error and return to the stake step.

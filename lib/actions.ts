@@ -4,6 +4,7 @@ import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { createToken } from "./launchpad";
+import { verifyLaunchProof } from "./signature";
 
 /**
  * Persist a newly launched project.
@@ -24,6 +25,19 @@ export async function launchProjectAction(
   const clean = sanitizeLaunch(input);
   const ticker = "$" + clean.ticker;
   let key = slugify(clean.ticker, clean.name);
+
+  // Wallet ownership proof. If the client supplied a signature it MUST verify
+  // (a forged/replayed one is rejected); the verified pubkey is recorded as the
+  // creator. Absent proof is allowed in prototype mode — wallets that can't
+  // signMessage still launch — and will become required alongside on-chain
+  // stake verification.
+  let creatorWallet: string | null = null;
+  if (input.proof) {
+    if (!verifyLaunchProof(input.proof, clean.ticker)) {
+      throw new Error("Wallet signature could not be verified. Please retry.");
+    }
+    creatorWallet = input.proof.pubkey;
+  }
 
   // Mint the token (no-op in simulated mode). The UI network switch selects the
   // cluster; the server falls back to LAUNCH_CLUSTER when none is passed.
@@ -90,6 +104,7 @@ export async function launchProjectAction(
     mint: token.mint,
     treasury_wallet: token.treasuryWallet,
     network: token.cluster,
+    creator_wallet: creatorWallet,
   });
 
   return result;
