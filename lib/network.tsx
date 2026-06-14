@@ -23,9 +23,13 @@ import type { Network } from "./types";
 const STORAGE_KEY = "loop.network";
 
 function envDefault(): Network {
-  return process.env.NEXT_PUBLIC_SOLANA_NETWORK === "devnet"
-    ? "devnet"
-    : "mainnet";
+  // Devnet-first phase: the platform defaults to devnet so launches/trades/wallet
+  // connections target the test cluster. Set NEXT_PUBLIC_SOLANA_NETWORK=mainnet to
+  // flip the whole site to mainnet for the live phase. Users can still toggle per
+  // session (persisted to localStorage).
+  return process.env.NEXT_PUBLIC_SOLANA_NETWORK === "mainnet"
+    ? "mainnet"
+    : "devnet";
 }
 
 interface NetworkState {
