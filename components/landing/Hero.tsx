@@ -34,14 +34,15 @@ export function Hero({
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_0.92fr] gap-12 items-start mt-7">
         <div>
-          <p className="text-[18px] leading-[1.55] text-muted m-0 mb-3 max-w-[460px] [text-wrap:pretty]">
-            Every project gets a token, an on-chain treasury, and an AI agent.
-            Trading activity fills the treasury. The agent builds while the
-            wallet is funded.
+          <p className="text-[18px] leading-[1.55] text-muted m-0 mb-3 max-w-[470px] [text-wrap:pretty]">
+            Every project gets a token, an on-chain treasury, and an AI agent
+            that runs it — shipping code, running outreach, answering its own
+            inbox. Trading fills the treasury; the agent works while it&apos;s
+            funded.
           </p>
           <p className="font-display font-semibold text-[17px] m-0 mb-8">
             Launch a <span className="text-accent">token</span>. Fund an{" "}
-            <span className="text-accent">AI</span>. Build forever.
+            <span className="text-accent">AI</span>. It runs the rest.
           </p>
           <div className="flex gap-3 mb-9">
             <button
