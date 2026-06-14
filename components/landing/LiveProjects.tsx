@@ -1,7 +1,11 @@
 import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
 import { COVERS } from "@/lib/projects";
-import type { Project } from "@/lib/types";
+import { useNetwork } from "@/lib/network";
+import type { Network, Project } from "@/lib/types";
+
+// Projects with no stored network predate the devnet/mainnet split → mainnet.
+const projectNetwork = (p: Project): Network => p.network ?? "mainnet";
 
 export function LiveProjects({
   projects,
@@ -11,6 +15,12 @@ export function LiveProjects({
   loopBalance: number;
 }) {
   const router = useRouter();
+  const { network } = useNetwork();
+
+  // Show only the projects living on the active cluster. The first client
+  // render uses the same env default the server rendered with, so this stays
+  // hydration-safe; it re-filters once the persisted choice is reconciled.
+  const visible = projects.filter((p) => projectNetwork(p) === network);
 
   return (
     <section id="loop-projects" className="max-w-[1160px] mx-auto px-10 pt-10 pb-7">
@@ -19,19 +29,31 @@ export function LiveProjects({
           Live Projects
         </h2>
         <span className="text-[14px] text-faint">
-          {projects.length} projects · all funded by markets
+          {visible.length} {visible.length === 1 ? "project" : "projects"} on{" "}
+          {network} · funded by markets
         </span>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {projects.map((p) => (
-          <ProjectCard
-            key={p.key}
-            project={p}
-            treasuryOverride={p.key === "loop" ? `${loopBalance.toFixed(2)} SOL` : undefined}
-            onClick={() => router.push(`/token?p=${p.key}`)}
-          />
-        ))}
-      </div>
+      {visible.length === 0 ? (
+        <div className="border border-dashed border-line-3 rounded-[16px] py-12 px-6 text-center">
+          <p className="font-display font-semibold text-[16px] m-0 mb-1">
+            No projects on {network} yet
+          </p>
+          <p className="text-[13.5px] text-muted m-0">
+            Switch the network in the nav to see {network === "devnet" ? "mainnet" : "devnet"} projects, or launch one here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {visible.map((p) => (
+            <ProjectCard
+              key={p.key}
+              project={p}
+              treasuryOverride={p.key === "loop" ? `${loopBalance.toFixed(2)} SOL` : undefined}
+              onClick={() => router.push(`/token?p=${p.key}`)}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
