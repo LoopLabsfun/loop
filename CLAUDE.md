@@ -59,6 +59,24 @@ swapped for live data without touching components.** All domain types live in
    candles, trades, agent log, claims, recent commits — is animated client-side. This is the
    next layer to make real.
 
+### The agent seam (Polsia model)
+
+The product's core is a real autonomous agent per project. The UI is built
+against two pure, testable seam modules so the simulation can be swapped for a
+live runtime without touching components:
+
+- [lib/console.ts](lib/console.ts) → [components/token/AgentConsole.tsx](components/token/AgentConsole.tsx) —
+  **steering**: the founder directs the agent, holders propose/vote, the agent
+  escalates out-of-mandate decisions (the escalation ladder).
+- [lib/agent.ts](lib/agent.ts) → [components/token/AgentOperator.tsx](components/token/AgentOperator.tsx) —
+  **autonomous work**: tasks, the agent's email inbox (`<slug>@agents.loop.fun`),
+  social presence (`@<slug>_agent`), and business stats.
+
+The full build plan for turning this seam into real per-project agents (Claude
+Agent SDK + Trigger.dev + E2B sandbox + email/social providers + custody +
+mainnet phases, and the founder-only blockers) is in
+[docs/agent-runtime.md](docs/agent-runtime.md).
+
 ## Supabase
 
 - Project ref `tbxavergltotxehjabkt` (name "LOOP", eu-north-1). MCP configured in [.mcp.json](.mcp.json).
