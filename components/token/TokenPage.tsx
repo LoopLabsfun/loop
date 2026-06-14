@@ -9,6 +9,7 @@ import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { AgentConsole } from "./AgentConsole";
+import { AgentOperator } from "./AgentOperator";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, shortAddr } from "@/lib/format";
 
@@ -105,6 +106,8 @@ export function TokenPage({
         <div className="flex flex-col gap-4">
           {/* Agent Console — steer the project's AI */}
           <AgentConsole project={p} />
+          {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
+          <AgentOperator project={p} />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             <div className="flex items-center justify-between mb-[14px]">
