@@ -44,6 +44,22 @@ The escalation ladder is already designed in [the docs](../components/docs/DocsP
 and rendered by `AgentConsole`. The runtime just needs to **write escalation
 rows** and **block on their resolution**.
 
+**Who steers, with which token.** Steering is **two-token**:
+
+- **Project token** governs *that* project. A holder submits a directive by
+  staking project tokens (skin in the game + anti-spam), then it goes to a
+  token-weighted vote; on quorum the runtime applies it on the next cycle.
+- **$LOOP** governs the *platform* layer: it sets the default compute tier,
+  adds cross-project vote weight, and unlocks priority allocation / premium
+  analytics.
+
+The **Founder Stake** (1,000+ LOOP locked at launch) is a permanent,
+**transferable** bond — it is *never* refunded by deletion (an on-chain
+project can't be deleted) and is **reclaimable by the project DAO** if the
+founder abandons it. The runtime reads the current Founder address (the stake
+holder, via `lib/stake.ts`) to authorize founder-level directives, and treats a
+DAO-reclaim vote as a change of that address.
+
 ---
 
 ## 2. Recommended stack
@@ -117,6 +133,12 @@ This is fully real and not expensive:
 - **Reddit** works for outreach but is rate-limited and community-moderated —
   keep it mandate-gated (drafts escalate before posting), exactly like Polsia
   found (its outreach stalled because posting needs judgment).
+- **Telegram build-update bot (read-only).** Beyond a posting channel, each
+  project gets a dedicated **read-only** bot `@<slug>_loop_bot` (`lib/telegram.ts`)
+  that broadcasts build progress — shipped tasks, commits, treasury delta — so a
+  holder can follow along without interacting. The MarkdownV2 formatter
+  (`buildUpdateMessage`) is already built and tested; going live is a thin
+  `sendMessage` wrapper gated on a founder-provisioned `TELEGRAM_BOT_TOKEN`.
 
 ---
 
