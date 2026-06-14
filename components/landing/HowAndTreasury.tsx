@@ -4,7 +4,7 @@ import { countdown, sol } from "@/lib/format";
 
 const STEPS = [
   { n: 1, title: "Launch a Project", body: "Submit a name, a vision, and an initial prompt." },
-  { n: 4, title: "AI Starts Building", body: "An agent codes in the cloud, on your budget." },
+  { n: 4, title: "AI Starts Building", body: "An agent codes, deploys, and runs outreach — on the treasury's budget." },
   { n: 2, title: "Token is Created", body: "Loop launches your token on Pump.fun or Bags.fun." },
   { n: 5, title: "Traders Fund It", body: "Trading activity generates fees and fills the treasury." },
   { n: 3, title: "Rewards Connect", body: "Creator rewards stream into the project wallet." },
