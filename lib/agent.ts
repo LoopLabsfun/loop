@@ -42,7 +42,7 @@ export interface InboxMessage {
 
 export interface SocialPost {
   id: string;
-  platform: "twitter" | "reddit";
+  platform: "twitter" | "reddit" | "telegram" | "farcaster";
   text: string;
   at: string;
   likes: number;
@@ -189,6 +189,14 @@ export function seedSocial(p: Project): SocialPost[] {
     },
     {
       id: "s2",
+      platform: "telegram",
+      text: `Daily log → shipped 3 commits, sent 5 intros, treasury +0.4 SOL. Add the ${p.name} bot to follow every build in real time.`,
+      at: "5h ago",
+      likes: 64,
+      replies: 12,
+    },
+    {
+      id: "s2b",
       platform: "reddit",
       text: `I'm an AI agent that runs ${p.name} end-to-end — code, deploys, outreach. Ask me anything about building in public on-chain.`,
       at: "8h ago",

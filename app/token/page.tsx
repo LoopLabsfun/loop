@@ -4,6 +4,7 @@ import { TokenPage } from "@/components/token/TokenPage";
 import { getProject } from "@/lib/queries";
 import { getSolUsd } from "@/lib/price";
 import { getRecentCommits } from "@/lib/commits";
+import { getAgentState } from "@/lib/agent-data";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +41,17 @@ export default async function TokenRoute({
   const project =
     (await getProject(searchParams.p ?? "loop")) ?? (await getProject("loop"));
   if (!project) notFound();
-  const [solUsd, commits] = await Promise.all([
+  const [solUsd, commits, agentState] = await Promise.all([
     getSolUsd(),
     getRecentCommits(project.repo),
+    getAgentState(project),
   ]);
-  return <TokenPage project={project} solUsd={solUsd} commits={commits} />;
+  return (
+    <TokenPage
+      project={project}
+      solUsd={solUsd}
+      commits={commits}
+      agentState={agentState}
+    />
+  );
 }

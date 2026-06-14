@@ -8,6 +8,9 @@ import {
   businessStats,
   CATEGORY_LABEL,
   STATUS_LABEL,
+  type AgentTask,
+  type InboxMessage,
+  type SocialPost,
   type TaskStatus,
 } from "@/lib/agent";
 import type { Project } from "@/lib/types";
@@ -26,12 +29,25 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   blocked: "text-neg bg-surface-2 border-neg",
 };
 
-export function AgentOperator({ project: p }: { project: Project }) {
+export function AgentOperator({
+  project: p,
+  tasks: tasksProp,
+  inbox: inboxProp,
+  social: socialProp,
+}: {
+  project: Project;
+  tasks?: AgentTask[];
+  inbox?: InboxMessage[];
+  social?: SocialPost[];
+}) {
   const [tab, setTab] = useState<Tab>("tasks");
   const stats = businessStats(p);
-  const tasks = seedTasks(p);
-  const inbox = seedInbox(p);
-  const social = seedSocial(p);
+  // Live rows when the runtime has written them; otherwise the simulated seed.
+  const tasks = tasksProp ?? seedTasks(p);
+  const inbox = inboxProp ?? seedInbox(p);
+  const social = socialProp ?? seedSocial(p);
+  const sent = inbox.filter((m) => m.direction === "out").length;
+  const received = inbox.length - sent;
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -60,10 +76,7 @@ export function AgentOperator({ project: p }: { project: Project }) {
             label="Revenue"
             value={stats.revenueUsd ? `$${stats.revenueUsd}` : "$0"}
           />
-          <Stat
-            label="Email"
-            value={`${stats.sentCount} sent · ${stats.receivedCount} in`}
-          />
+          <Stat label="Email" value={`${sent} sent · ${received} in`} />
         </div>
       </div>
 
