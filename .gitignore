@@ -12,4 +12,7 @@ Loop.fun-handoff*.zip
 
 # Claude Code local/runtime files (launch.json is intentionally tracked)
 .claude/settings.local.json
+
+# Devnet test keypair (persisted across mint-proof runs; never commit a secret key)
+scripts/.devnet-keypair.json
 .claude/scheduled_tasks.lock
