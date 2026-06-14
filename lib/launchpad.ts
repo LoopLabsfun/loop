@@ -22,6 +22,8 @@ export interface CreateTokenInput {
   prompt: string;
   /** Base58 pubkey of the launching (creator) wallet. Verified upstream. */
   creator?: string | null;
+  /** Cluster override (from the UI switch); falls back to LAUNCH_CLUSTER env. */
+  cluster?: LaunchCluster;
 }
 
 export interface CreateTokenResult {
@@ -86,7 +88,7 @@ export async function createToken(
   input: CreateTokenInput
 ): Promise<CreateTokenResult> {
   const provider = parseProvider(process.env.LAUNCHPAD_PROVIDER);
-  const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
+  const cluster = input.cluster ?? parseCluster(process.env.LAUNCH_CLUSTER);
 
   if (provider === "simulated") return simulatedResult(provider, cluster);
   if (provider === "pumpfun") return createOnPumpfun(input, cluster);

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
+import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
 import type { LaunchResult } from "@/lib/api";
 
@@ -22,6 +23,7 @@ export function LaunchModal({
   onClose: () => void;
 }) {
   const wallet = useWallet();
+  const { network } = useNetwork();
   const [step, setStep] = useState<Step>("form");
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -79,7 +81,7 @@ export function LaunchModal({
       setDeployLog((l) => [...l, lines[i]]);
     }
     try {
-      const res = await launchProjectAction({ name, ticker, prompt, repo });
+      const res = await launchProjectAction({ name, ticker, prompt, repo, network });
       setResult(res);
     } catch (e) {
       // Surface a validation/server error and return to the stake step.
@@ -178,6 +180,13 @@ export function LaunchModal({
               </Row>
               <Row label="Launchpad">
                 <span className="font-mono">Pump.fun</span>
+              </Row>
+              <Row label="Network">
+                <span
+                  className={`font-mono ${network === "devnet" ? "text-warn" : "text-pos"}`}
+                >
+                  {network}
+                </span>
               </Row>
             </div>
             <div className="border border-accent-tint-border bg-accent-tint rounded-[12px] p-4">

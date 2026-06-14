@@ -19,6 +19,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
+import { useNetwork } from "./network";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -39,20 +40,30 @@ const WMP = WalletModalProvider as unknown as React.FC<
 >;
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // Client-side RPC for wallet connection. The secret Helius key is never used
-  // here (it stays server-side); override with NEXT_PUBLIC_SOLANA_RPC if you
-  // have a browser-safe endpoint. Connect-only needs no privileged access.
-  const endpoint = useMemo(
-    () => process.env.NEXT_PUBLIC_SOLANA_RPC || clusterApiUrl("mainnet-beta"),
-    []
-  );
+  const { network } = useNetwork();
+
+  // Client-side RPC for wallet connection, per cluster. The secret Helius key is
+  // never used here (it stays server-side); override with NEXT_PUBLIC_SOLANA_RPC
+  // (mainnet) / NEXT_PUBLIC_SOLANA_RPC_DEVNET if you have a browser-safe
+  // endpoint. Connect-only needs no privileged access.
+  const endpoint = useMemo(() => {
+    const override =
+      network === "devnet"
+        ? process.env.NEXT_PUBLIC_SOLANA_RPC_DEVNET
+        : process.env.NEXT_PUBLIC_SOLANA_RPC;
+    return (
+      override ||
+      clusterApiUrl(network === "devnet" ? "devnet" : "mainnet-beta")
+    );
+  }, [network]);
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
     []
   );
 
+  // Key on the cluster so switching networks cleanly re-mounts the connection.
   return (
-    <CP endpoint={endpoint}>
+    <CP key={network} endpoint={endpoint}>
       <WP wallets={wallets} autoConnect>
         <WMP>{children}</WMP>
       </WP>

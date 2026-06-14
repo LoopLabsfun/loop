@@ -5,6 +5,9 @@
 
 export type Launchpad = "Pump.fun" | "Bags.fun";
 
+/** Solana cluster a project / the session targets. */
+export type Network = "mainnet" | "devnet";
+
 export type ProjectKey = "loop" | "gtavi" | "owrpg" | "aivid";
 
 /** Static + slow-moving metadata for a project. */
@@ -36,7 +39,7 @@ export interface Project {
   // is replaced with the live balance read from Helius.
   treasuryWallet?: string | null;
   mint?: string | null;
-  network?: "mainnet" | "devnet";
+  network?: Network;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
 }
