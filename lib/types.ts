@@ -40,6 +40,8 @@ export interface Project {
   treasuryWallet?: string | null;
   mint?: string | null;
   network?: Network;
+  /** Verified launcher pubkey (Founder); enables founder-mode in the console. */
+  creatorWallet?: string | null;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
 }

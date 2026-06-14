@@ -8,6 +8,7 @@ import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
+import { AgentConsole } from "./AgentConsole";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, shortAddr } from "@/lib/format";
 
@@ -102,6 +103,8 @@ export function TokenPage({
       <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-4 items-start">
         {/* Left column */}
         <div className="flex flex-col gap-4">
+          {/* Agent Console — steer the project's AI */}
+          <AgentConsole project={p} />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             <div className="flex items-center justify-between mb-[14px]">
