@@ -40,7 +40,8 @@ function rpcEndpoint(cluster: LaunchCluster): string {
 /**
  * Pick an unused pool keypair ending in `suffix` for `cluster`, or null when
  * vanity isn't configured / the pool is empty / all matching keys are spent.
- * Callers fall back to a random mint keypair on null.
+ * When a suffix is configured the caller treats null as a hard failure (it will
+ * not mint a non-matching address), so the suffix guarantee always holds.
  */
 export async function nextVanityKeypair(
   suffix: string,
