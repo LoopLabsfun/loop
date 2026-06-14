@@ -13,6 +13,7 @@ import { AgentOperator } from "./AgentOperator";
 import type { AgentState } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, shortAddr } from "@/lib/format";
+import { infraBreakdown, type CostKey } from "@/lib/economics";
 
 const TOP_HOLDERS = [
   { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
@@ -213,7 +214,7 @@ export function TokenPage({
         <div className="flex flex-col gap-4">
           <SwapCard project={p} lastPrice={last} solUsd={solUsd} />
           <BondingCurve curve={p.curve} />
-          <TreasuryStats project={p} />
+          <TreasuryStats project={p} solUsd={solUsd} />
           <TopHolders />
 
         </div>
@@ -496,7 +497,7 @@ function BondingCurve({ curve }: { curve: number }) {
   );
 }
 
-function TreasuryStats({ project: p }: { project: Project }) {
+function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: number }) {
   // Poll the live on-chain balance (real when the project has a treasury_wallet).
   const { balance, live } = useLiveTreasury(p.key, p.treasurySol);
   const rows: [string, React.ReactNode, boolean?][] = [
@@ -525,6 +526,7 @@ function TreasuryStats({ project: p }: { project: Project }) {
             <span className={`font-mono ${pos ? "text-pos" : ""}`}>{value}</span>
           </div>
         ))}
+        <InfraCosts project={p} solUsd={solUsd} />
         <div className="flex justify-between border-t border-line-4 pt-[10px]">
           <span className="text-muted">Supply</span>
           <span className="font-mono">{p.supply}</span>
@@ -567,6 +569,63 @@ function TreasuryStats({ project: p }: { project: Project }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Violet ramp (lightest = cheapest slice) so the allocation bar stays on-brand.
+const INFRA_COLOR: Record<CostKey, string> = {
+  compute: "oklch(0.47 0.21 285)",
+  email: "oklch(0.58 0.18 285)",
+  social: "oklch(0.68 0.13 285)",
+  hosting: "oklch(0.78 0.08 285)",
+};
+
+// What the agent's daily burn actually pays for, itemised and tied to fees.
+function InfraCosts({ project: p, solUsd }: { project: Project; solUsd: number }) {
+  const infra = infraBreakdown(p, solUsd);
+  const usdMo = (n: number) => "$" + Math.round(n).toLocaleString("en-US") + "/mo";
+  return (
+    <div className="border-t border-line-4 pt-[12px]">
+      <div className="flex items-center justify-between mb-[9px]">
+        <span className="text-muted text-[13px]">Infra costs · funded by fees</span>
+        <span className="font-mono text-[10.5px] text-accent-text bg-accent-tint px-[7px] py-[2px] rounded-[5px]">
+          {infra.tier}
+        </span>
+      </div>
+      <div className="flex h-[7px] rounded-full overflow-hidden mb-[10px]">
+        {infra.items.map((i) => (
+          <div
+            key={i.key}
+            style={{ width: `${i.share * 100}%`, background: INFRA_COLOR[i.key] }}
+            title={`${i.label} · ${Math.round(i.share * 100)}% · ${usdMo(i.usdPerMonth)}`}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
+        {infra.items.map((i) => (
+          <div
+            key={i.key}
+            className="flex items-center justify-between gap-2"
+            title={i.detail}
+          >
+            <span className="inline-flex items-center gap-[6px] min-w-0">
+              <span
+                className="w-[7px] h-[7px] rounded-full flex-none"
+                style={{ background: INFRA_COLOR[i.key] }}
+              />
+              <span className="text-muted text-[12px] truncate">{i.label}</span>
+            </span>
+            <span className="font-mono text-[11.5px] text-ink whitespace-nowrap">
+              {usdMo(i.usdPerMonth)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="text-[11px] text-faint mt-[10px] leading-[1.5]">
+        Trading fees + creator rewards top up the treasury — no payroll, the agent
+        pays its own bills while it&apos;s funded.
       </div>
     </div>
   );

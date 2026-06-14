@@ -152,6 +152,14 @@ This is fully real and not expensive:
   promise. Balance is already live via Helius (`lib/solana.ts`).
 - Spend is **metered server-side** against the budget; the agent cannot exceed
   it even if prompted to.
+- **The burn is an itemised infra bill, not a vibe.** [`lib/economics.ts`](../lib/economics.ts)
+  (`infraBreakdown`) splits a project's daily burn into compute / email / social /
+  hosting, tier-weighted (compute dominates more at Opus than Haiku), and renders
+  it on the project page's treasury card as an allocation bar + per-line `$/mo`.
+  Today it *explains* the snapshot burn (the line items always sum back to it);
+  the runtime swaps this for the real per-cycle metered spend, same seam. This is
+  the concrete "funded by fees" story: fees + creator rewards must cover these
+  four lines, and **X/Twitter is a paid (~$200/mo) opt-in line**, off by default.
 
 ---
 
@@ -192,8 +200,10 @@ This is fully real and not expensive:
    with a spend budget per agent.
 5. **Social strategy** — confirm Farcaster + Telegram default, X as paid opt-in.
 6. **Wallet custody** — Turnkey vs Privy server wallets.
-7. **`SUPABASE_SERVICE_ROLE_KEY`** in Vercel — still pending; unblocks trusted
-   writes for both launches and agent state.
+7. **`SUPABASE_SERVICE_ROLE_KEY`** in Vercel — set for **Production** and
+   **Development** (Preview optional, not required for the live runtime). This
+   unblocks trusted writes for both launches and agent state; the remaining work
+   is the runtime that actually uses it to write the `agent_*` tables.
 
 Everything above the line (the seam, the UI, the tables, the webhooks, the
 runtime skeleton) I can build incrementally against the simulated seam. The
