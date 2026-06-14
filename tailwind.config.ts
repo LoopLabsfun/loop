@@ -73,6 +73,12 @@ const config: Config = {
           from: { strokeDashoffset: "81.68" },
           to: { strokeDashoffset: "0" },
         },
+        // One continuous dash travelling the whole figure-8 path. Paired with
+        // pathLength="100" so the offset is in percent of the total path.
+        loopTrace: {
+          from: { strokeDashoffset: "0" },
+          to: { strokeDashoffset: "-100" },
+        },
       },
       animation: {
         pulseLoop: "loopPulse 2s infinite",
@@ -83,6 +89,7 @@ const config: Config = {
         marquee: "loopMarquee 26s linear infinite",
         spinLoop: "loopSpin 2.8s linear infinite",
         spinLoopR: "loopSpinR 2.8s linear infinite",
+        traceLoop: "loopTrace 3s linear infinite",
       },
     },
   },
