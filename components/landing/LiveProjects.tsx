@@ -116,7 +116,11 @@ function ProjectCard({
           </div>
           <div>
             Status
-            <div className="font-mono text-[12px] text-pos mt-[2px]">Active</div>
+            {p.mint ? (
+              <div className="font-mono text-[12px] text-pos mt-[2px]">Active</div>
+            ) : (
+              <div className="font-mono text-[12px] text-faint mt-[2px]">Pre-launch</div>
+            )}
           </div>
         </div>
       </div>

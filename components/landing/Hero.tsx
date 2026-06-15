@@ -77,10 +77,17 @@ function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: num
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
         <span className="font-display font-semibold text-[15px]">LOOP Treasury</span>
-        <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-accent-text">
-          <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseFast" />
-          LIVE
-        </span>
+        {engine.live ? (
+          <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-accent-text">
+            <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseFast" />
+            LIVE
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-faint">
+            <span className="w-[6px] h-[6px] rounded-full bg-faint" />
+            PRE-LAUNCH · DEVNET
+          </span>
+        )}
       </div>
       <div className="font-display font-bold text-[42px] tracking-[-0.02em] leading-none tabular-nums">
         {sol(engine.balance)}{" "}
@@ -96,18 +103,28 @@ function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: num
         preserveAspectRatio="none"
         className="block mb-[18px]"
       >
-        <polyline
-          points="0,40 12,38 24,39 36,34 48,35 60,30 72,32 84,27 96,28 108,24 120,26 132,20 144,22 156,16 168,18 180,12 192,13 200,9"
-          fill="none"
-          stroke="var(--accent)"
+        <line
+          x1="0"
+          y1="40"
+          x2="200"
+          y2="40"
+          stroke="var(--line-3)"
           strokeWidth={2}
+          strokeDasharray="3 4"
         />
       </svg>
       <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
         <Stat label="24h Income" value={`+${sol(engine.income)} SOL`} tone="pos" />
         <Stat label="24h Spend" value={`−${sol(engine.spend)} SOL`} />
-        <Stat label="Runtime" value="● Active" tone="pos" />
-        <Stat label="Next Check" value={countdown(engine.countdown)} />
+        <Stat
+          label="Runtime"
+          value={engine.live ? "● Active" : "○ Idle"}
+          tone={engine.live ? "pos" : undefined}
+        />
+        <Stat
+          label="Next Check"
+          value={engine.live ? countdown(engine.countdown) : "—"}
+        />
       </div>
     </div>
   );
