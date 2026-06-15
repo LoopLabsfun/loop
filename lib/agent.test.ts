@@ -7,6 +7,7 @@ import {
   seedTasks,
   seedInbox,
   seedSocial,
+  seedSummaries,
   businessStats,
 } from "./agent";
 import type { Project } from "./types";
@@ -83,5 +84,15 @@ describe("businessStats", () => {
   });
   it("zeroes revenue for official projects (the platform funds itself)", () => {
     expect(businessStats({ ...base, official: true }).revenueUsd).toBe(0);
+  });
+});
+
+describe("seedSummaries", () => {
+  it("is honest — includes a day with no ships and a note", () => {
+    const s = seedSummaries(base);
+    expect(s.length).toBeGreaterThan(0);
+    const noShipDay = s.find((d) => d.shipped.length === 0);
+    expect(noShipDay).toBeDefined();
+    expect(noShipDay!.note.length).toBeGreaterThan(0);
   });
 });

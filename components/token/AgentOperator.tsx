@@ -5,20 +5,23 @@ import {
   seedTasks,
   seedInbox,
   seedSocial,
+  seedSummaries,
   businessStats,
   CATEGORY_LABEL,
   STATUS_LABEL,
   type AgentTask,
   type InboxMessage,
   type SocialPost,
+  type DailySummary,
   type TaskStatus,
 } from "@/lib/agent";
 import { telegramBotHandle, telegramBotUrl } from "@/lib/telegram";
 import type { Project } from "@/lib/types";
 
-type Tab = "tasks" | "inbox" | "social";
+type Tab = "tasks" | "inbox" | "social" | "summary";
 const TABS: { id: Tab; label: string }[] = [
   { id: "tasks", label: "Tasks" },
+  { id: "summary", label: "Summary" },
   { id: "inbox", label: "Inbox" },
   { id: "social", label: "Social" },
 ];
@@ -35,11 +38,13 @@ export function AgentOperator({
   tasks: tasksProp,
   inbox: inboxProp,
   social: socialProp,
+  summaries: summariesProp,
 }: {
   project: Project;
   tasks?: AgentTask[];
   inbox?: InboxMessage[];
   social?: SocialPost[];
+  summaries?: DailySummary[];
 }) {
   const [tab, setTab] = useState<Tab>("tasks");
   const stats = businessStats(p);
@@ -47,6 +52,7 @@ export function AgentOperator({
   const tasks = tasksProp ?? seedTasks(p);
   const inbox = inboxProp ?? seedInbox(p);
   const social = socialProp ?? seedSocial(p);
+  const summaries = summariesProp ?? seedSummaries(p);
   const sent = inbox.filter((m) => m.direction === "out").length;
   const received = inbox.length - sent;
 
@@ -191,15 +197,56 @@ export function AgentOperator({
               </div>
             </div>
           ))}
+
+        {tab === "summary" &&
+          summaries.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-[10px] border border-line-3 bg-surface px-3 py-[10px]"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-display font-semibold text-[13px] text-ink">
+                  {s.day}
+                </span>
+                <span className="font-mono text-[10.5px] text-faint">
+                  {s.shipped.length ? `${s.shipped.length} shipped` : "no ships"}
+                </span>
+              </div>
+              {s.shipped.length > 0 ? (
+                <ul className="mt-[5px] flex flex-col gap-[3px]">
+                  {s.shipped.map((line, i) => (
+                    <li
+                      key={i}
+                      className="text-[12.5px] text-body flex gap-[6px]"
+                    >
+                      <span className="text-pos">✓</span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-[12.5px] text-muted mt-[5px]">
+                  Nothing shipped.
+                </div>
+              )}
+              {s.note && (
+                <div className="text-[12px] text-faint mt-[6px] italic">
+                  {s.note}
+                </div>
+              )}
+            </div>
+          ))}
       </div>
 
       {/* Footer note */}
       <div className="px-5 py-[11px] border-t border-line-4 text-[11px] text-faint">
         {tab === "tasks"
           ? "The agent works this queue autonomously within its mandate; blocked items escalate to the founder."
-          : tab === "inbox"
-            ? `Replies to ${stats.email} route into the Agent Console for the founder to handle.`
-            : "Posts are drafted by the agent; outreach beyond the mandate is escalated before publishing."}
+          : tab === "summary"
+            ? "Honest per-cycle log — what shipped and what didn't. \"No ships\" is a valid day."
+            : tab === "inbox"
+              ? `Replies to ${stats.email} route into the Agent Console for the founder to handle.`
+              : "Posts are drafted by the agent; outreach beyond the mandate is escalated before publishing."}
       </div>
     </div>
   );
