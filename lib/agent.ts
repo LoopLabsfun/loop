@@ -60,6 +60,14 @@ export interface BusinessStats {
   receivedCount: number;
 }
 
+/** An honest per-cycle summary: what shipped AND what didn't. */
+export interface DailySummary {
+  id: string;
+  day: string; // "Today", "Yesterday", "2 days ago"
+  shipped: string[]; // may be empty — "no ships" is a valid, honest day
+  note: string; // what didn't ship / blockers / why ("" when nothing notable)
+}
+
 /** Deterministic agent slug from a project key/ticker (lowercase a-z0-9). */
 export function agentSlug(p: Pick<Project, "key" | "ticker">): string {
   const raw = (p.key || p.ticker || "agent").toString();
@@ -231,6 +239,29 @@ export function businessStats(p: Project): BusinessStats {
     sentCount: inbox.filter((m) => m.direction === "out").length,
     receivedCount: inbox.filter((m) => m.direction === "in").length,
   };
+}
+
+export function seedSummaries(p: Project): DailySummary[] {
+  return [
+    {
+      id: "sum-0",
+      day: "Today",
+      shipped: [`Wired the ${p.ticker} treasury balance read`, "Fixed 2 lint errors"],
+      note: "Holder proposal on the mobile UI is still open — not started yet.",
+    },
+    {
+      id: "sum-1",
+      day: "Yesterday",
+      shipped: [],
+      note: "No ships today — the cycle went to chasing a flaky test; nothing merged.",
+    },
+    {
+      id: "sum-2",
+      day: "2 days ago",
+      shipped: ["Shipped the onboarding email flow", "Answered 3 support emails"],
+      note: "",
+    },
+  ];
 }
 
 export const CATEGORY_LABEL: Record<TaskCategory, string> = {
