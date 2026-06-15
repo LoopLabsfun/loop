@@ -129,18 +129,27 @@ async function createOnSpl(
 // silently faking a launch.
 
 async function createOnPumpfun(
-  _input: CreateTokenInput,
-  _cluster: LaunchCluster
+  input: CreateTokenInput,
+  cluster: LaunchCluster
 ): Promise<CreateTokenResult> {
-  const key = process.env.PUMPPORTAL_API_KEY;
-  if (!key) {
-    throw new Error(
-      "Pump.fun launch is selected but PUMPPORTAL_API_KEY is not set."
-    );
+  // Non-custodial Local flow — needs the creator signer, not an API key. Claims
+  // a vanity mint from the pool so the pump.fun CA still ends in "Loop".
+  if (!process.env.LAUNCH_SIGNER_SECRET) {
+    throw new Error("Pump.fun launch needs LAUNCH_SIGNER_SECRET (the creator wallet).");
   }
-  // TODO: call the PumpPortal create-token API (non-custodial: return a
-  // serialized tx for the creator wallet to sign), then return the mint.
-  throw new Error("Pump.fun launch integration is not implemented yet.");
+  const { createOnPumpPortal } = await import("./pumpfun");
+  const res = await createOnPumpPortal(
+    { name: input.name, symbol: input.ticker, description: input.prompt },
+    cluster
+  );
+  return {
+    launchpad: "Pump.fun",
+    cluster,
+    mint: res.mint,
+    treasuryWallet: res.treasuryWallet,
+    txSig: res.txSig,
+    simulated: false,
+  };
 }
 
 async function createOnBags(

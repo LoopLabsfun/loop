@@ -63,13 +63,13 @@ describe("createToken", () => {
     expect(launchpadConfigured()).toBe(false);
   });
 
-  it("fails loudly when a real provider is selected without its key", async () => {
+  it("pump.fun launch requires the creator signer", async () => {
     process.env.LAUNCHPAD_PROVIDER = "pumpfun";
-    delete process.env.PUMPPORTAL_API_KEY;
+    delete process.env.LAUNCH_SIGNER_SECRET; // non-custodial Local flow signs locally
     expect(launchpadConfigured()).toBe(true);
     await expect(
       createToken({ name: "X", ticker: "TST", prompt: "p" })
-    ).rejects.toThrow(/PUMPPORTAL_API_KEY/);
+    ).rejects.toThrow(/LAUNCH_SIGNER_SECRET/);
   });
 
   it("spl provider requires LAUNCH_SIGNER_SECRET", async () => {
