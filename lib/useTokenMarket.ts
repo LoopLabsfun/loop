@@ -58,32 +58,39 @@ function seedTrades(price: number): Trade[] {
 }
 
 export function useTokenMarket(project: Project) {
+  // Pre-launch (no mint) ⇒ no market: empty series, no animation. The UI shows
+  // "no market yet" empty states instead of any simulated price action.
+  const preLaunch = !project.mint;
   const [tf, setTf] = useState<Timeframe>("1D");
   const [mode, setMode] = useState<ChartMode>("candles");
   // Deterministic on first paint (matches SSR); randomized after mount.
   const [candles, setCandles] = useState<Candle[]>(() =>
-    seedCandles(project.price)
+    preLaunch ? [] : seedCandles(project.price)
   );
   const [trades, setTrades] = useState<Trade[]>(() =>
-    seedTrades(project.price)
+    preLaunch ? [] : seedTrades(project.price)
   );
-  const [agentLog, setAgentLog] = useState<AgentLogLine[]>(TOKEN_LOG);
+  const [agentLog, setAgentLog] = useState<AgentLogLine[]>(
+    preLaunch ? [] : TOKEN_LOG
+  );
   const logTick = useRef(0);
 
   // Swap in the lively randomized series once we're on the client.
   useEffect(() => {
+    if (preLaunch) return;
     setCandles(genCandles("1D", project.price));
     setTrades(genTrades(project.price, 7));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [preLaunch]);
 
   // Re-seed candles when the timeframe changes.
   const changeTf = (next: Timeframe) => {
     setTf(next);
-    setCandles(genCandles(next, project.price));
+    if (!preLaunch) setCandles(genCandles(next, project.price));
   };
 
   useEffect(() => {
+    if (preLaunch) return;
     const id = setInterval(() => {
       // Nudge the last candle.
       setCandles((cs) => {
@@ -113,7 +120,7 @@ export function useTokenMarket(project: Project) {
       }
     }, 2000);
     return () => clearInterval(id);
-  }, [project.price]);
+  }, [project.price, preLaunch]);
 
-  return { tf, mode, candles, trades, agentLog, changeTf, setMode };
+  return { tf, mode, candles, trades, agentLog, changeTf, setMode, preLaunch };
 }

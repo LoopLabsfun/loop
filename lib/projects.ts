@@ -43,6 +43,15 @@ export function isProjectKey(v: string | null | undefined): v is ProjectKey {
   return !!v && v in PROJECTS;
 }
 
+/**
+ * True until the project's token is actually minted on-chain. Pre-launch there
+ * is no market, so the UI shows "no market yet" empty states instead of any
+ * price / chart / trades.
+ */
+export function isPreLaunch(p: Pick<Project, "mint">): boolean {
+  return !p.mint;
+}
+
 /** Cover gradient classes keyed by `Project.cover`. */
 export const COVERS: Record<string, string> = {
   loop: "bg-[var(--accent-tint)]",

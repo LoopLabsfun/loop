@@ -24,13 +24,6 @@ const TOP_HOLDERS = [
   { addr: "Kp2w…5mRv", pct: "2.4%", tag: "early" },
 ];
 
-const COMMITS = [
-  { hash: "8f3a21c", msg: "feat: add project dashboard" },
-  { hash: "c2d9e07", msg: "fix: treasury balance sync" },
-  { hash: "41b7aa9", msg: "feat: auto-claim system" },
-  { hash: "e90c512", msg: "chore: optimize agent loop" },
-];
-
 export function TokenPage({
   project: p,
   solUsd,
@@ -42,15 +35,18 @@ export function TokenPage({
   commits: { hash: string; msg: string }[];
   agentState?: AgentState;
 }) {
-  // Live commits from the repo when available; otherwise the static sample.
-  const commitFeed = commits.length > 0 ? commits : COMMITS;
+  // Real commits from the repo only — no static sample (empty state otherwise).
+  const commitFeed = commits;
   const wallet = useWallet();
-  const { tf, mode, candles, trades, agentLog, changeTf, setMode } =
+  const { tf, mode, candles, trades, agentLog, changeTf, setMode, preLaunch } =
     useTokenMarket(p);
 
-  const last = candles[candles.length - 1].c;
-  const first = candles[0].o;
-  const change = (last / first - 1) * 100;
+  // Pre-launch (no mint) ⇒ no market: guard the candle math and render honest
+  // "no market yet" empty states instead of any simulated price/chart/trades.
+  const hasMarket = !preLaunch && candles.length > 0;
+  const last = hasMarket ? candles[candles.length - 1].c : 0;
+  const first = hasMarket ? candles[0].o : 0;
+  const change = hasMarket ? (last / first - 1) * 100 : 0;
 
   return (
     <>
@@ -79,7 +75,11 @@ export function TokenPage({
                   devnet
                 </span>
               )}
-              <span className="font-mono text-[11.5px] text-pos">● agent active</span>
+              {preLaunch ? (
+                <span className="font-mono text-[11.5px] text-faint">● pre-launch</span>
+              ) : (
+                <span className="font-mono text-[11.5px] text-pos">● agent active</span>
+              )}
             </div>
             <p className="text-[13.5px] text-muted mt-[5px] mb-0">{p.description}</p>
           </div>
@@ -87,14 +87,18 @@ export function TokenPage({
         <div className="flex items-center gap-7">
           <div>
             <div className="font-display font-bold text-[32px] tracking-[-0.02em] tabular-nums">
-              {fmtPrice(last)}
+              {preLaunch ? "—" : fmtPrice(last)}
             </div>
-            <div
-              className="font-mono text-[13px]"
-              style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}
-            >
-              {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
-            </div>
+            {preLaunch ? (
+              <div className="font-mono text-[13px] text-faint">not launched</div>
+            ) : (
+              <div
+                className="font-mono text-[13px]"
+                style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}
+              >
+                {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pl-7 border-l border-line-2">
             <HeaderStat label="Market Cap" value={p.marketCap} />
@@ -120,60 +124,84 @@ export function TokenPage({
           />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
-            <div className="flex items-center justify-between mb-[14px]">
-              <Segmented<Timeframe>
-                value={tf}
-                onChange={changeTf}
-                options={["1H", "4H", "1D"]}
-              />
-              <Segmented
-                value={mode}
-                onChange={setMode}
-                options={["candles", "line"]}
-                labels={{ candles: "Candles", line: "Line" }}
-              />
-            </div>
-            <Chart candles={candles} mode={mode} />
-            <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
-              <span>
-                {tf === "1H" ? "last 48 min" : tf === "4H" ? "last 3.2 hours" : "last 48 hours"}
-              </span>
-              <span className="inline-flex items-center gap-[6px]">
-                <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
-                live · updates every 2s
-              </span>
-            </div>
+            {preLaunch ? (
+              <div className="text-center py-12">
+                <div className="font-display font-semibold text-[15px] text-ink mb-1">
+                  No market yet
+                </div>
+                <div className="text-[12.5px] text-muted max-w-[380px] mx-auto">
+                  {p.ticker} isn&apos;t minted yet. The price chart appears once
+                  the token launches on-chain and trading begins.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-[14px]">
+                  <Segmented<Timeframe>
+                    value={tf}
+                    onChange={changeTf}
+                    options={["1H", "4H", "1D"]}
+                  />
+                  <Segmented
+                    value={mode}
+                    onChange={setMode}
+                    options={["candles", "line"]}
+                    labels={{ candles: "Candles", line: "Line" }}
+                  />
+                </div>
+                <Chart candles={candles} mode={mode} />
+                <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
+                  <span>
+                    {tf === "1H" ? "last 48 min" : tf === "4H" ? "last 3.2 hours" : "last 48 hours"}
+                  </span>
+                  <span className="inline-flex items-center gap-[6px]">
+                    <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+                    live · updates every 2s
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Trades */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             <div className="flex items-center justify-between mb-3">
               <span className="font-display font-semibold text-[15px]">Recent Trades</span>
-              <span className="font-mono text-[11px] text-faint">
-                {(1240 + trades.length).toLocaleString("en-US")} trades · 24h
-              </span>
-            </div>
-            <div className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
-              <span>ACCOUNT</span>
-              <span>TYPE</span>
-              <span>SOL</span>
-              <span>TOKENS</span>
-              <span className="text-right">AGE</span>
-            </div>
-            {trades.map((t, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
-              >
-                <span className="text-muted">{t.addr}</span>
-                <span style={{ color: t.side === "BUY" ? "var(--pos)" : "var(--neg)" }}>
-                  {t.side}
+              {!preLaunch && (
+                <span className="font-mono text-[11px] text-faint">
+                  {trades.length.toLocaleString("en-US")} trades · 24h
                 </span>
-                <span>{t.sol}</span>
-                <span className="text-muted">{t.tokens}</span>
-                <span className="text-faint text-right">{shortAge(t.ageSeconds)} ago</span>
+              )}
+            </div>
+            {preLaunch ? (
+              <div className="text-[12.5px] text-faint text-center py-8">
+                No trades yet — trading opens when {p.ticker} launches on-chain.
               </div>
-            ))}
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
+                  <span>ACCOUNT</span>
+                  <span>TYPE</span>
+                  <span>SOL</span>
+                  <span>TOKENS</span>
+                  <span className="text-right">AGE</span>
+                </div>
+                {trades.map((t, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
+                  >
+                    <span className="text-muted">{t.addr}</span>
+                    <span style={{ color: t.side === "BUY" ? "var(--pos)" : "var(--neg)" }}>
+                      {t.side}
+                    </span>
+                    <span>{t.sol}</span>
+                    <span className="text-muted">{t.tokens}</span>
+                    <span className="text-faint text-right">{shortAge(t.ageSeconds)} ago</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           {/* Agent activity */}
@@ -190,22 +218,34 @@ export function TokenPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="flex flex-col gap-[7px]">
                 <div className="text-[11px] text-muted mb-[2px]">LATEST COMMITS</div>
-                {commitFeed.map((c) => (
-                  <div key={c.hash} className="text-[12.5px] text-[#B7B2BE]">
-                    <span className="text-accent-400">{c.hash}</span> {c.msg}
-                  </div>
-                ))}
+                {commitFeed.length === 0 ? (
+                  <div className="text-[12.5px] text-muted">No commits yet.</div>
+                ) : (
+                  commitFeed.map((c) => (
+                    <div key={c.hash} className="text-[12.5px] text-[#B7B2BE]">
+                      <span className="text-accent-400">{c.hash}</span> {c.msg}
+                    </div>
+                  ))
+                )}
               </div>
               <div className="flex flex-col gap-[7px]">
                 <div className="text-[11px] text-muted mb-[2px]">LIVE LOG</div>
-                {agentLog.map((l, i) => (
-                  <div key={i} className="text-[12.5px] text-[#B7B2BE] animate-fadeInFast">
-                    <span className="text-accent-400">{l.t}</span> {l.msg}
+                {agentLog.length === 0 ? (
+                  <div className="text-[12.5px] text-muted">
+                    Agent starts logging once it runs.
                   </div>
-                ))}
-                <div className="text-[12.5px] text-muted">
-                  <span className="animate-pulseTick">▮</span>
-                </div>
+                ) : (
+                  <>
+                    {agentLog.map((l, i) => (
+                      <div key={i} className="text-[12.5px] text-[#B7B2BE] animate-fadeInFast">
+                        <span className="text-accent-400">{l.t}</span> {l.msg}
+                      </div>
+                    ))}
+                    <div className="text-[12.5px] text-muted">
+                      <span className="animate-pulseTick">▮</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -213,18 +253,18 @@ export function TokenPage({
 
         {/* Right column */}
         <div className="flex flex-col gap-4">
-          <SwapCard project={p} lastPrice={last} solUsd={solUsd} />
+          <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           <BondingCurve curve={p.curve} />
           <TreasuryStats project={p} solUsd={solUsd} />
           <FundCard project={p} />
-          <TopHolders />
+          <TopHolders preLaunch={preLaunch} />
 
         </div>
       </section>
       </main>
 
       <footer className="border-t border-line py-[22px] px-8 max-w-[1280px] mx-auto flex items-center justify-between">
-        <span className="text-[12.5px] text-faint">© 2026 Loop · simulated market data</span>
+        <span className="text-[12.5px] text-faint">© 2026 Loop · devnet</span>
         <span className="font-mono text-[12px] text-pos">● All systems operational</span>
       </footer>
     </>
@@ -357,7 +397,17 @@ function Segmented<T extends string>({
   );
 }
 
-function SwapCard({ project: p, lastPrice, solUsd }: { project: Project; lastPrice: number; solUsd: number }) {
+function SwapCard({
+  project: p,
+  lastPrice,
+  solUsd,
+  preLaunch,
+}: {
+  project: Project;
+  lastPrice: number;
+  solUsd: number;
+  preLaunch?: boolean;
+}) {
   const wallet = useWallet();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amt, setAmt] = useState("1.0");
@@ -368,6 +418,28 @@ function SwapCard({ project: p, lastPrice, solUsd }: { project: Project; lastPri
   const amtN = parseFloat(amt) || 0;
 
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  // Pre-launch: no token to trade yet. Show an honest disabled state instead of
+  // a simulated swap. To donate to the treasury, the Fund card is used instead.
+  if (preLaunch) {
+    return (
+      <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+        <div className="font-display font-semibold text-[15px] mb-1">
+          Trade {p.ticker}
+        </div>
+        <div className="text-[12.5px] text-muted leading-[1.5] mb-3">
+          Trading opens when {p.ticker} is minted on-chain. You can already fund
+          the treasury below to extend the agent&apos;s runway.
+        </div>
+        <button
+          disabled
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] bg-surface-3 text-faint cursor-not-allowed"
+        >
+          Trading opens at launch
+        </button>
+      </div>
+    );
+  }
 
   const est = buy
     ? Math.round((amtN * solUsd) / lastPrice).toLocaleString("en-US") + " " + sym
@@ -779,10 +851,16 @@ function InfraCosts({ project: p, solUsd }: { project: Project; solUsd: number }
   );
 }
 
-function TopHolders() {
+function TopHolders({ preLaunch }: { preLaunch?: boolean }) {
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="font-display font-semibold text-[14.5px] mb-3">Top Holders</div>
+      {preLaunch ? (
+        <div className="text-[12.5px] text-faint py-2">
+          No holders yet — the holder list appears once the token is minted and
+          trading begins.
+        </div>
+      ) : (
       <div className="flex flex-col gap-[10px]">
         {TOP_HOLDERS.map((h) => (
           <div
@@ -799,6 +877,7 @@ function TopHolders() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
