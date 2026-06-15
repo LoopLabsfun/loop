@@ -19,3 +19,4 @@ scripts/.devnet-keypair.json
 
 # Pre-ground vanity mint keypairs (secret keys — never commit)
 scripts/.vanity-pool/
+scripts/.vanity/
