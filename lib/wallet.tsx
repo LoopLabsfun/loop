@@ -5,10 +5,17 @@
 // against the stub (connected / address / label / connect / disconnect / toggle).
 
 import { useMemo } from "react";
-import { clusterApiUrl } from "@solana/web3.js";
+import {
+  clusterApiUrl,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
 import {
   ConnectionProvider,
   WalletProvider as AdapterWalletProvider,
+  useConnection,
   useWallet as useAdapterWallet,
 } from "@solana/wallet-adapter-react";
 import {
@@ -88,14 +95,51 @@ export interface WalletState {
   toggle: () => void;
   /** Sign the canonical launch message; null if the wallet can't sign. */
   signLaunchProof: (ticker: string) => Promise<LaunchProof | null>;
+  /**
+   * Send `sol` SOL from the connected wallet to `to` on the active cluster
+   * (a plain SystemProgram.transfer — used for project donations). Resolves
+   * with the transaction signature; throws if no wallet is connected, the
+   * amount is non-positive, or the address is invalid. The caller is
+   * responsible for ensuring the active cluster matches the recipient.
+   */
+  sendSol: (to: string, sol: number) => Promise<string>;
 }
 
 export function useWallet(): WalletState {
-  const { publicKey, connected, disconnect, signMessage } = useAdapterWallet();
+  const { publicKey, connected, disconnect, signMessage, sendTransaction } =
+    useAdapterWallet();
+  const { connection } = useConnection();
   const { setVisible } = useWalletModal();
 
   const address = publicKey?.toBase58() ?? null;
   const openModal = () => setVisible(true);
+
+  const sendSol = async (to: string, sol: number): Promise<string> => {
+    if (!publicKey || !sendTransaction) {
+      throw new Error("Connect a wallet first");
+    }
+    const lamports = Math.round(sol * LAMPORTS_PER_SOL);
+    if (!Number.isFinite(lamports) || lamports <= 0) {
+      throw new Error("Enter a positive amount");
+    }
+    const toPubkey = new PublicKey(to); // throws on an invalid address
+    const tx = new Transaction().add(
+      SystemProgram.transfer({ fromPubkey: publicKey, toPubkey, lamports })
+    );
+    const signature = await sendTransaction(tx, connection);
+    // Best-effort confirmation so the UI can show a settled state; the tx is
+    // already submitted, so a failed poll here is non-fatal.
+    try {
+      const latest = await connection.getLatestBlockhash();
+      await connection.confirmTransaction(
+        { signature, ...latest },
+        "confirmed"
+      );
+    } catch {
+      /* confirmation polling failed — the signature is still valid */
+    }
+    return signature;
+  };
 
   const signLaunchProof = async (
     ticker: string
@@ -119,5 +163,6 @@ export function useWallet(): WalletState {
     disconnect: () => void disconnect(),
     toggle: connected ? () => void disconnect() : openModal,
     signLaunchProof,
+    sendSol,
   };
 }
