@@ -1,92 +1,39 @@
 import type { Project, ProjectKey } from "./types";
 
-// The canonical project registry. In production this would come from
-// Supabase (`select * from projects`). Cover gradients stand in for the
-// generated cover art shown in the design boards.
+// The canonical project registry — the **fallback** used when Supabase is
+// unconfigured or a read fails (the UI never breaks on a cold backend). In
+// production the live list comes from the `projects` table (lib/queries.ts).
+//
+// Devnet-first phase: the only project is LOOP itself, on devnet, pre-launch
+// (no mint / no treasury / no market yet). Real numbers appear once LOOP is
+// minted on devnet and the agent runs against it — nothing here is simulated.
 export const PROJECTS: Record<ProjectKey, Project> = {
   loop: {
     key: "loop",
     name: "LOOP",
     ticker: "$LOOP",
-    description: "The project that builds Loop. The platform funds itself.",
+    description:
+      "The project that builds Loop — the platform funds its own development.",
     official: true,
     launchpad: "Pump.fun",
     repo: "github.com/godisrupt/loop-fun",
     cover: "loop",
-    price: 0.0421,
-    marketCap: "$4.21M",
-    liquidity: "$312K",
-    holders: "8,412",
-    volume24h: "45.2K SOL",
-    curve: 1,
-    supply: "100M",
-    treasurySol: 12.46,
-    earnedSol: 28.54,
-    burnPerDay: "0.42 SOL/day",
-    runway: "29 days",
-  },
-  gtavi: {
-    key: "gtavi",
-    name: "GTA-before-GTA6",
-    ticker: "$GTAVI",
-    description: "Recreating GTA 6 before its official release.",
-    official: false,
-    launchpad: "Pump.fun",
-    repo: "github.com/loop-fun/gtavi",
-    cover: "sunset",
-    price: 0.00084,
-    marketCap: "$840K",
-    liquidity: "$96K",
-    holders: "3,107",
-    volume24h: "23.7K SOL",
-    curve: 0.62,
-    supply: "1B",
-    treasurySol: 8.21,
-    earnedSol: 14.02,
-    burnPerDay: "0.31 SOL/day",
-    runway: "26 days",
-  },
-  owrpg: {
-    key: "owrpg",
-    name: "Open World RPG",
-    ticker: "$OWRPG",
-    description: "An open world RPG fully built by AI.",
-    official: false,
-    launchpad: "Bags.fun",
-    repo: "github.com/loop-fun/owrpg",
-    cover: "forest",
-    price: 0.00037,
-    marketCap: "$370K",
-    liquidity: "$48K",
-    holders: "1,584",
-    volume24h: "12.1K SOL",
-    curve: 0.41,
-    supply: "1B",
-    treasurySol: 3.47,
-    earnedSol: 6.88,
-    burnPerDay: "0.18 SOL/day",
-    runway: "19 days",
-  },
-  aivid: {
-    key: "aivid",
-    name: "AI Video Generator",
-    ticker: "$AIVID",
-    description: "Generate videos from text using autonomous AI.",
-    official: false,
-    launchpad: "Bags.fun",
-    repo: "github.com/loop-fun/aivid",
-    cover: "neon",
-    price: 0.00029,
-    marketCap: "$290K",
-    liquidity: "$39K",
-    holders: "1,102",
-    volume24h: "8.2K SOL",
-    curve: 0.33,
-    supply: "1B",
-    treasurySol: 2.91,
-    earnedSol: 4.95,
-    burnPerDay: "0.14 SOL/day",
-    runway: "21 days",
+    // Pre-launch: no market yet. The UI shows "no market yet" empty states
+    // until LOOP is minted and trading begins.
+    price: 0,
+    marketCap: "—",
+    liquidity: "—",
+    holders: "0",
+    volume24h: "0 SOL",
+    curve: 0,
+    supply: "—",
+    treasurySol: 0,
+    earnedSol: 0,
+    burnPerDay: "0.00 SOL/day",
+    runway: "pre-launch",
+    network: "devnet",
+    mint: null,
+    treasuryWallet: null,
   },
 };
 
