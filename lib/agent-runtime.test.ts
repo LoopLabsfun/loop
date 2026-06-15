@@ -71,6 +71,26 @@ describe("coerceDecision", () => {
     expect(coerceDecision("nope")).toBeNull();
   });
 
+  it("parses an optional sandbox command (enum-guarded)", () => {
+    const withCmd = coerceDecision({
+      ...good,
+      command: { language: "python", code: "print(1)" },
+    });
+    expect(withCmd?.command).toEqual({ language: "python", code: "print(1)" });
+
+    const badLang = coerceDecision({
+      ...good,
+      command: { language: "ruby", code: "puts 1" },
+    });
+    expect(badLang?.command?.language).toBe("python"); // fallback
+
+    const noCmd = coerceDecision(good);
+    expect(noCmd?.command).toBeUndefined();
+
+    const emptyCode = coerceDecision({ ...good, command: { language: "bash", code: "  " } });
+    expect(emptyCode?.command).toBeUndefined();
+  });
+
   it("clamps lengths", () => {
     const d = coerceDecision({
       summary: "x".repeat(500),
