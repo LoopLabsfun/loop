@@ -1,17 +1,24 @@
 import "server-only";
 
 import type { LaunchCluster } from "./launchpad";
+import { supabaseAdmin } from "./supabase";
 
-// Vanity mint addresses. Grinding a keypair whose pubkey ends in a suffix like
-// "Loop" costs ~40s of CPU each, and solana-keygen isn't available in the
-// serverless runtime — so we pre-grind a pool offline and pass it in via the
-// VANITY_POOL env (a JSON array of 64-byte secret-key arrays, solana-keygen
-// format). At mint time we pick the first pool keypair that (a) ends in the
-// suffix and (b) has no account on-chain yet — i.e. hasn't been used as a mint.
-// The chain itself tracks consumption, so no DB and it's idempotent on retry.
+// Vanity mint addresses (e.g. every CA ends in "Loop"). Grinding a keypair whose
+// pubkey ends in a 4-char suffix is ~11M tries — far too slow to do per launch,
+// and solana-keygen isn't in the serverless runtime. So we PRE-GRIND a pool
+// offline (CPU now, GPU later) and hand one out per launch in O(1). Two sources,
+// tried in order:
 //
-// Server-only: secret keys never reach the browser. Mint keypairs are inert
-// after createMint (no authority, hold no funds), but we still keep them server-side.
+//   1. DB pool (scalable): the `vanity_keypairs` table + `claim_vanity_keypair`
+//      RPC (FOR UPDATE SKIP LOCKED) atomically hand out one unused keypair —
+//      concurrency-safe and unbounded. Used when SUPABASE_SERVICE_ROLE_KEY is set.
+//   2. Env pool (fallback): VANITY_POOL, a JSON array of 64-byte secret keys.
+//
+// When a suffix is configured the caller treats a null result as a HARD FAILURE
+// (it never mints a non-matching address), so the "…Loop" guarantee always holds.
+//
+// Server-only: secret keys never reach the browser. Mint keypairs are inert after
+// createMint (no authority, hold no funds), but we keep them server-side anyway.
 
 /** Pure: parse VANITY_POOL into a list of 64-byte secret-key arrays. */
 export function parseVanityPool(raw: string | undefined): number[][] {
@@ -28,6 +35,23 @@ export function parseVanityPool(raw: string | undefined): number[][] {
   }
 }
 
+/** Pure: coerce a claimed secret_key (jsonb) into a 64-byte array, or null. */
+export function parseSecretKeyJson(value: unknown): number[] | null {
+  const arr = typeof value === "string" ? safeJson(value) : value;
+  if (Array.isArray(arr) && arr.length === 64 && arr.every((n) => typeof n === "number")) {
+    return arr as number[];
+  }
+  return null;
+}
+
+function safeJson(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
 function rpcEndpoint(cluster: LaunchCluster): string {
   const key = process.env.HELIUS_API_KEY;
   const host = cluster === "devnet" ? "devnet" : "mainnet";
@@ -37,22 +61,34 @@ function rpcEndpoint(cluster: LaunchCluster): string {
     : "https://api.mainnet-beta.solana.com";
 }
 
-/**
- * Pick an unused pool keypair ending in `suffix` for `cluster`, or null when
- * vanity isn't configured / the pool is empty / all matching keys are spent.
- * When a suffix is configured the caller treats null as a hard failure (it will
- * not mint a non-matching address), so the suffix guarantee always holds.
- */
-export async function nextVanityKeypair(
+/** Atomically claim one unused keypair from the DB pool, or null. */
+async function claimFromDb(
+  suffix: string
+): Promise<import("@solana/web3.js").Keypair | null> {
+  if (!supabaseAdmin) return null;
+  const { data, error } = await supabaseAdmin.rpc("claim_vanity_keypair", {
+    p_suffix: suffix,
+  });
+  if (error || !data) return null;
+  const secret = parseSecretKeyJson(data);
+  if (!secret) return null;
+  const { Keypair } = await import("@solana/web3.js");
+  try {
+    return Keypair.fromSecretKey(Uint8Array.from(secret));
+  } catch {
+    return null;
+  }
+}
+
+/** Pick an unused env-pool keypair ending in `suffix` that's unused on-chain. */
+async function claimFromEnv(
   suffix: string,
   cluster: LaunchCluster
 ): Promise<import("@solana/web3.js").Keypair | null> {
   const pool = parseVanityPool(process.env.VANITY_POOL);
-  if (!suffix || pool.length === 0) return null;
-
+  if (pool.length === 0) return null;
   const { Keypair, Connection } = await import("@solana/web3.js");
   const conn = new Connection(rpcEndpoint(cluster), "confirmed");
-
   for (const secret of pool) {
     let kp: import("@solana/web3.js").Keypair;
     try {
@@ -61,9 +97,21 @@ export async function nextVanityKeypair(
       continue;
     }
     if (!kp.publicKey.toBase58().endsWith(suffix)) continue;
-    // No account yet ⇒ this mint address is unused.
-    const info = await conn.getAccountInfo(kp.publicKey);
+    const info = await conn.getAccountInfo(kp.publicKey); // null ⇒ unused
     if (info === null) return kp;
   }
   return null;
+}
+
+/**
+ * Hand out an unused keypair ending in `suffix`, preferring the scalable DB pool
+ * and falling back to the env pool. Returns null when none is available — the
+ * caller then refuses to mint (preserving the suffix guarantee).
+ */
+export async function nextVanityKeypair(
+  suffix: string,
+  cluster: LaunchCluster
+): Promise<import("@solana/web3.js").Keypair | null> {
+  if (!suffix) return null;
+  return (await claimFromDb(suffix)) ?? (await claimFromEnv(suffix, cluster));
 }
