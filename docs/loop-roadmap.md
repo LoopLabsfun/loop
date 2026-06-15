@@ -191,3 +191,23 @@ failure modes — they are the gate for turning the simulated seam live:
    LOOP).
 
 *Build small, keep the gate honest, stay the engineer.*
+
+---
+
+## Cron cadence (Hobby vs. finer)
+
+Vercel **Hobby** allows **one daily cron only**, so `vercel.json` runs the agent
+tick once a day (`0 8 * * *`, 08:00 UTC). The tick is already bounded
+(`MAX_PER_RUN`) and budget-gated, so daily is a safe floor.
+
+For a finer cadence **without upgrading to Pro**, point an external scheduler at
+the same endpoint — it's protected by `CRON_SECRET`:
+
+```
+curl -fsS https://loop-fun-nine.vercel.app/api/agent/cron \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+Options: GitHub Actions `schedule` (free, ~5-min granularity), cron-job.org, or
+Upstash QStash. Keep the daily Vercel cron as a backstop. Upgrading to Vercel
+Pro instead unlocks arbitrary cron expressions (restore `0 * * * *` for hourly).
