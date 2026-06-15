@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AgentTask, TaskCategory, TaskStatus } from "./agent";
-import type { FeedItem } from "./console";
+import { defaultMandate, type AgentMandate, type FeedItem } from "./console";
 import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
 import { gateTaskStatus } from "./verifier";
@@ -71,17 +71,50 @@ export function agentRuntimeConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-/** Pure: the agent's persona/mandate for one project. */
-export function buildSystemPrompt(p: Project): string {
+/**
+ * Pure: the agent's persona built from its STANDING mandate — restated in full
+ * every cycle (mission + guardrails) to mitigate goal drift. Defaults to the
+ * project's derived mandate; pass a (persisted) override to reload it each tick.
+ */
+export function buildSystemPrompt(
+  p: Project,
+  mandate: AgentMandate = defaultMandate(p)
+): string {
   return [
     `You are the autonomous AI engineer that builds and grows the project "${p.name}" (${p.ticker}).`,
-    `Your mandate, set at launch: ${p.description || "(no prompt provided)"}.`,
+    `Your standing mandate — reread it every cycle and do NOT drift from it: ${mandate.mission}`,
+    `Hard guardrails you must never violate: ${mandate.guardrails.join("; ")}.`,
     `You are funded by the project's on-chain treasury and accountable to its token holders.`,
     `Each tick you pick ONE concrete next action that moves the project forward, do it, and report it honestly.`,
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
     `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
     `Never invent fake metrics or claim work you didn't do.`,
   ].join(" ");
+}
+
+/**
+ * Reload the canonical mandate each cycle: a founder-editable persisted override
+ * (latest `kind="mandate"` directive) if present, else the project's default.
+ * Fails safe to the default when there's no DB / no override.
+ */
+export async function loadMandate(p: Project): Promise<AgentMandate> {
+  const base = defaultMandate(p);
+  try {
+    const { supabase } = await import("./supabase");
+    if (!supabase) return base;
+    const { data } = await supabase
+      .from("directives")
+      .select("text")
+      .eq("project_key", p.key)
+      .eq("kind", "mandate")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const mission = (data as { text?: string } | null)?.text?.trim();
+    return mission ? { ...base, mission } : base;
+  } catch {
+    return base;
+  }
 }
 
 /** Pure: the current-state turn — tasks so far + steering directives. */
@@ -155,6 +188,8 @@ export async function decideNextAction(
   if (!agentRuntimeConfigured()) {
     throw new Error("Agent runtime selected but ANTHROPIC_API_KEY is not set.");
   }
+  // Reread the standing mandate every cycle (anti-drift).
+  const mandate = await loadMandate(p);
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
   // `output_config` (structured outputs) may be ahead of the installed SDK
@@ -164,7 +199,7 @@ export async function decideNextAction(
     max_tokens: 2000,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
-    system: buildSystemPrompt(p),
+    system: buildSystemPrompt(p, mandate),
     messages: [
       { role: "user", content: buildUserPrompt(state.tasks, state.directives) },
     ],
