@@ -7,6 +7,7 @@ import {
   isValidSplit,
   distribute,
   splitLabel,
+  splitForProject,
 } from "./fees";
 
 describe("DEFAULT_SPLIT", () => {
@@ -76,5 +77,19 @@ describe("splitLabel", () => {
   it("formats as founder / agent / platform", () => {
     expect(splitLabel(DEFAULT_SPLIT)).toBe("30 / 65 / 5");
     expect(PLATFORM_PCT).toBe(5);
+  });
+});
+
+describe("splitForProject", () => {
+  it("uses the default when the lever is unset", () => {
+    expect(splitForProject({})).toEqual(DEFAULT_SPLIT);
+    expect(splitForProject({ feeFounderPct: null })).toEqual(DEFAULT_SPLIT);
+  });
+  it("derives the split from the stored founder lever", () => {
+    expect(splitForProject({ feeFounderPct: 70 })).toEqual({
+      founderPct: 70,
+      agentPct: 25,
+      platformPct: 5,
+    });
   });
 });
