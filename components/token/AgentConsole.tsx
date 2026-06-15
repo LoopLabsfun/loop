@@ -1,26 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWallet } from "@/lib/wallet";
-import { nowStamp } from "@/lib/format";
 import {
-  ACTION_POOL,
-  ESCALATION_POOL,
   defaultMandate,
   roleFor,
-  seedFeed,
   type ConsoleRole,
   type FeedItem,
 } from "@/lib/console";
 import { submitDirectiveAction } from "@/lib/actions";
 import type { Project } from "@/lib/types";
-
-const ROLES: ConsoleRole[] = ["spectator", "holder", "founder"];
-const ROLE_LABEL: Record<ConsoleRole, string> = {
-  spectator: "Spectator",
-  holder: "Holder",
-  founder: "Founder",
-};
 
 export function AgentConsole({
   project: p,
@@ -34,53 +23,16 @@ export function AgentConsole({
   const sym = p.ticker.replace(/^\$/, "");
   const mandate = useMemo(() => defaultMandate(p), [p]);
 
-  const defaultRole = roleFor(wallet.connected, wallet.address, p.creatorWallet);
-  const [override, setOverride] = useState<ConsoleRole | null>(null);
-  const role = override ?? defaultRole;
+  // Role is derived from the connected wallet only — no manual role switcher.
+  // No wallet ⇒ spectator (read-only); the project's creator wallet ⇒ founder.
+  const role = roleFor(wallet.connected, wallet.address, p.creatorWallet);
 
-  // Persisted directives lead the feed; the simulated actions/escalations follow
-  // until the runtime streams real ones.
-  const [feed, setFeed] = useState<FeedItem[]>(() =>
-    directives?.length ? [...directives, ...seedFeed(p)] : seedFeed(p)
-  );
+  // Real persisted directives/proposals only — no simulated activity. Empty
+  // until a founder/holder steers or the runtime streams actions.
+  const [feed, setFeed] = useState<FeedItem[]>(() => directives ?? []);
   const [draft, setDraft] = useState("");
   const idRef = useRef(1000);
   const newId = () => `c${idRef.current++}`;
-
-  // Live agent activity: append an action every ~6s; occasionally a new
-  // escalation if none is open.
-  useEffect(() => {
-    let n = 0;
-    const id = setInterval(() => {
-      n += 1;
-      setFeed((f) => {
-        const hasOpen = f.some(
-          (x) => x.kind === "escalation" && x.status === "open"
-        );
-        const item: FeedItem =
-          !hasOpen && n % 4 === 0
-            ? {
-                id: newId(),
-                kind: "escalation",
-                at: "just now",
-                text: ESCALATION_POOL[
-                  Math.floor(Math.random() * ESCALATION_POOL.length)
-                ],
-                status: "open",
-              }
-            : {
-                id: newId(),
-                kind: "action",
-                at: nowStamp(),
-                text: ACTION_POOL[
-                  Math.floor(Math.random() * ACTION_POOL.length)
-                ],
-              };
-        return [item, ...f].slice(0, 14);
-      });
-    }, 6000);
-    return () => clearInterval(id);
-  }, []);
 
   const openEscalation = feed.find(
     (f) => f.kind === "escalation" && f.status === "open"
@@ -175,23 +127,6 @@ export function AgentConsole({
             Talk to {p.name}&apos;s agent · {mandate.model} · {mandate.budget}
           </div>
         </div>
-        {/* Role switcher (preview the three viewpoints) */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-faint hidden sm:inline">view as</span>
-          <div className="flex gap-1 bg-surface-3 rounded-[9px] p-[3px]">
-            {ROLES.map((r) => (
-              <button
-                key={r}
-                onClick={() => setOverride(r)}
-                className={`font-mono text-[11.5px] px-[10px] py-[5px] rounded-[7px] transition-colors ${
-                  role === r ? "bg-ink text-white" : "text-muted"
-                }`}
-              >
-                {ROLE_LABEL[r]}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Mandate */}
@@ -263,9 +198,16 @@ export function AgentConsole({
 
       {/* Feed */}
       <div className="px-5 py-3 flex flex-col gap-[10px] max-h-[300px] overflow-y-auto scroll-thin">
-        {feed.map((item) => (
-          <FeedRow key={item.id} item={item} sym={sym} role={role} onVote={vote} />
-        ))}
+        {feed.length === 0 ? (
+          <div className="text-[12.5px] text-faint text-center py-6">
+            No agent activity yet — directives and the agent&apos;s actions
+            appear here once it runs.
+          </div>
+        ) : (
+          feed.map((item) => (
+            <FeedRow key={item.id} item={item} sym={sym} role={role} onVote={vote} />
+          ))
+        )}
       </div>
 
       {/* Composer */}

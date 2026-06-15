@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 import {
-  seedTasks,
-  seedInbox,
-  seedSocial,
-  seedSummaries,
-  businessStats,
+  agentEmail,
+  agentSite,
+  agentTwitter,
   CATEGORY_LABEL,
   STATUS_LABEL,
   type AgentTask,
@@ -33,6 +31,13 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   blocked: "text-neg bg-surface-2 border-neg",
 };
 
+const EMPTY: Record<Tab, string> = {
+  tasks: "No tasks yet — the agent queues work once it runs.",
+  inbox: "Inbox empty — no agent emails yet.",
+  social: "No posts yet — the agent shares build updates here.",
+  summary: "No daily summaries yet.",
+};
+
 export function AgentOperator({
   project: p,
   tasks: tasksProp,
@@ -47,12 +52,21 @@ export function AgentOperator({
   summaries?: DailySummary[];
 }) {
   const [tab, setTab] = useState<Tab>("tasks");
-  const stats = businessStats(p);
-  // Live rows when the runtime has written them; otherwise the simulated seed.
-  const tasks = tasksProp ?? seedTasks(p);
-  const inbox = inboxProp ?? seedInbox(p);
-  const social = socialProp ?? seedSocial(p);
-  const summaries = summariesProp ?? seedSummaries(p);
+  // Real rows from the runtime, or honestly empty — no simulated seeds. Agent
+  // identity (email/site/socials) is real (derived from the project slug);
+  // visitor/signup/revenue metrics are 0 until real analytics are wired.
+  const tasks = tasksProp ?? [];
+  const inbox = inboxProp ?? [];
+  const social = socialProp ?? [];
+  const summaries = summariesProp ?? [];
+  const stats = {
+    email: agentEmail(p),
+    site: agentSite(p),
+    twitter: agentTwitter(p),
+    visitors: 0,
+    signups: 0,
+    revenueUsd: 0,
+  };
   const sent = inbox.filter((m) => m.direction === "out").length;
   const received = inbox.length - sent;
 
@@ -115,7 +129,9 @@ export function AgentOperator({
                 ? tasks.length
                 : t.id === "inbox"
                   ? inbox.length
-                  : social.length}
+                  : t.id === "social"
+                    ? social.length
+                    : summaries.length}
             </span>
           </button>
         ))}
@@ -123,6 +139,18 @@ export function AgentOperator({
 
       {/* Body */}
       <div className="px-5 py-3 flex flex-col gap-[10px] max-h-[340px] overflow-y-auto scroll-thin">
+        {(tab === "tasks"
+          ? tasks.length
+          : tab === "inbox"
+            ? inbox.length
+            : tab === "social"
+              ? social.length
+              : summaries.length) === 0 && (
+          <div className="text-[12.5px] text-faint text-center py-6">
+            {EMPTY[tab]}
+          </div>
+        )}
+
         {tab === "tasks" &&
           tasks.map((t) => (
             <div

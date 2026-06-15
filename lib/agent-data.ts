@@ -2,9 +2,6 @@ import "server-only";
 
 import { supabase } from "./supabase";
 import {
-  seedTasks,
-  seedInbox,
-  seedSocial,
   type AgentTask,
   type InboxMessage,
   type SocialPost,
@@ -80,10 +77,12 @@ const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 
 export async function getAgentState(p: Project): Promise<AgentState> {
+  // No simulated seeds: until the runtime writes real agent_* rows, each panel
+  // is honestly empty. The UI renders "nothing yet" empty states.
   const fallback: AgentState = {
-    tasks: seedTasks(p),
-    inbox: seedInbox(p),
-    social: seedSocial(p),
+    tasks: [],
+    inbox: [],
+    social: [],
     directives: [],
     live: false,
   };
@@ -157,9 +156,9 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     );
 
     return {
-      tasks: tasks.length ? tasks : fallback.tasks,
-      inbox: inbox.length ? inbox : fallback.inbox,
-      social: social.length ? social : fallback.social,
+      tasks,
+      inbox,
+      social,
       directives,
       live:
         tasks.length > 0 ||

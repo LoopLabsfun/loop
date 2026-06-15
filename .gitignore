@@ -20,3 +20,6 @@ scripts/.devnet-keypair.json
 # Pre-ground vanity mint keypairs (secret keys — never commit)
 scripts/.vanity-pool/
 scripts/.vanity/
+
+# local project-row backups (restore source, not committed)
+scripts/.backup-*.json
