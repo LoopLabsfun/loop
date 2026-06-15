@@ -1,0 +1,196 @@
+import "server-only";
+
+import type { AgentTask, TaskCategory, TaskStatus } from "./agent";
+import type { FeedItem } from "./console";
+import type { Project } from "./types";
+import { supabaseAdmin } from "./supabase";
+
+// The real per-project agent "brain". Given the project's mandate (its launch
+// prompt) plus the latest steering directives and current task state, it asks
+// Claude for the next concrete build action + a one-line build update, then
+// persists them to agent_tasks / agent_posts — which the Agent Operator UI
+// already reads. This is the thinking half of the runtime; code execution in a
+// sandbox (E2B) is a later layer.
+//
+// Env-gated like the launchpad providers: no ANTHROPIC_API_KEY ⇒ no-op-failing,
+// so the simulated UI keeps working until the runtime is switched on. Server-
+// only; the key never reaches the browser. Heavy SDK is imported dynamically.
+
+const AGENT_MODEL = "claude-opus-4-8";
+const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
+const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
+
+export interface AgentDecision {
+  /** One-line public build update (→ agent_posts). */
+  summary: string;
+  /** The task the agent is advancing this tick (→ agent_tasks). */
+  task: {
+    title: string;
+    detail: string;
+    category: TaskCategory;
+    status: TaskStatus;
+  };
+}
+
+/** Structured-output schema constraining Claude's decision. */
+export const DECISION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    summary: { type: "string" },
+    task: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        title: { type: "string" },
+        detail: { type: "string" },
+        category: { type: "string", enum: CATEGORIES },
+        status: { type: "string", enum: STATUSES },
+      },
+      required: ["title", "detail", "category", "status"],
+    },
+  },
+  required: ["summary", "task"],
+} as const;
+
+export function agentRuntimeConfigured(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
+/** Pure: the agent's persona/mandate for one project. */
+export function buildSystemPrompt(p: Project): string {
+  return [
+    `You are the autonomous AI engineer that builds and grows the project "${p.name}" (${p.ticker}).`,
+    `Your mandate, set at launch: ${p.description || "(no prompt provided)"}.`,
+    `You are funded by the project's on-chain treasury and accountable to its token holders.`,
+    `Each tick you pick ONE concrete next action that moves the project forward, do it, and report it honestly.`,
+    `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
+    `Never invent fake metrics or claim work you didn't do.`,
+  ].join(" ");
+}
+
+/** Pure: the current-state turn — tasks so far + steering directives. */
+export function buildUserPrompt(tasks: AgentTask[], directives: FeedItem[]): string {
+  const taskLines = tasks.length
+    ? tasks
+        .slice(0, 12)
+        .map((t) => `- [${t.status}] (${t.category}) ${t.title}`)
+        .join("\n")
+    : "(no tasks yet — you are just starting)";
+  const directiveLines = directives.length
+    ? directives
+        .slice(0, 8)
+        .map((d) => `- (${d.kind}${d.by ? `/${d.by}` : ""}) ${d.text}`)
+        .join("\n")
+    : "(no founder/holder directives yet)";
+  return [
+    "Current tasks:",
+    taskLines,
+    "",
+    "Steering directives from the founder and holders (honor these):",
+    directiveLines,
+    "",
+    "Decide the single next action to take now. Return a one-line build update",
+    "(`summary`) and the task you are advancing (`task`), with an honest status.",
+  ].join("\n");
+}
+
+/** Pure: clamp + normalise a parsed decision into the typed shape. */
+export function coerceDecision(raw: unknown): AgentDecision | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const t = (r.task ?? {}) as Record<string, unknown>;
+  const summary = typeof r.summary === "string" ? r.summary.trim() : "";
+  const title = typeof t.title === "string" ? t.title.trim() : "";
+  const detail = typeof t.detail === "string" ? t.detail.trim() : "";
+  if (!summary || !title) return null;
+  const category = CATEGORIES.includes(t.category as TaskCategory)
+    ? (t.category as TaskCategory)
+    : "feature";
+  const status = STATUSES.includes(t.status as TaskStatus)
+    ? (t.status as TaskStatus)
+    : "building";
+  return {
+    summary: summary.slice(0, 280),
+    task: {
+      title: title.slice(0, 120),
+      detail: detail.slice(0, 500),
+      category,
+      status,
+    },
+  };
+}
+
+/** Ask Claude for the next action. Throws if the runtime isn't configured. */
+export async function decideNextAction(
+  p: Project,
+  state: { tasks: AgentTask[]; directives: FeedItem[] }
+): Promise<AgentDecision> {
+  if (!agentRuntimeConfigured()) {
+    throw new Error("Agent runtime selected but ANTHROPIC_API_KEY is not set.");
+  }
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+  // `output_config` (structured outputs) may be ahead of the installed SDK
+  // types; call loosely and read the content blocks off the result.
+  const params = {
+    model: AGENT_MODEL,
+    max_tokens: 2000,
+    thinking: { type: "adaptive" },
+    output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
+    system: buildSystemPrompt(p),
+    messages: [
+      { role: "user", content: buildUserPrompt(state.tasks, state.directives) },
+    ],
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = (await (client.messages.create as any)(params)) as {
+    content: Array<{ type: string; text?: string }>;
+  };
+
+  const text = res.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Agent returned non-JSON output.");
+  }
+  const decision = coerceDecision(parsed);
+  if (!decision) throw new Error("Agent decision failed validation.");
+  return decision;
+}
+
+/** Persist a decision: a public build update + the advanced task. */
+export async function applyDecision(
+  p: Project,
+  d: AgentDecision
+): Promise<void> {
+  if (!supabaseAdmin) {
+    throw new Error("Agent runtime requires SUPABASE_SERVICE_ROLE_KEY to persist.");
+  }
+  await supabaseAdmin.from("agent_posts").insert({
+    project_key: p.key,
+    platform: "telegram",
+    body: d.summary,
+  });
+  await supabaseAdmin.from("agent_tasks").insert({
+    project_key: p.key,
+    title: d.task.title,
+    detail: d.task.detail,
+    category: d.task.category,
+    status: d.task.status,
+  });
+}
+
+/** One full agent tick for a project: decide → persist. Returns the decision. */
+export async function runAgentTick(
+  p: Project,
+  state: { tasks: AgentTask[]; directives: FeedItem[] }
+): Promise<AgentDecision> {
+  const decision = await decideNextAction(p, state);
+  await applyDecision(p, decision);
+  return decision;
+}
