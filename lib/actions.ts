@@ -6,6 +6,7 @@ import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { createToken, parseCluster } from "./launchpad";
 import { verifyLaunchProof } from "./signature";
 import { hasRequiredStake, stakeEnforced, STAKE_REQUIRED_LOOP } from "./stake";
+import { sanitizeDirectiveText } from "./directives";
 
 /**
  * Persist a newly launched project.
@@ -125,4 +126,55 @@ export async function launchProjectAction(
   });
 
   return result;
+}
+
+export interface DirectiveInput {
+  projectKey: string;
+  text: string;
+  /** "directive" (a founder-style instruction) or "proposal" (holder vote). */
+  kind?: "directive" | "proposal";
+  /** Connected wallet, recorded as the author when available. */
+  authorWallet?: string | null;
+}
+
+export interface DirectiveResult {
+  ok: boolean;
+  /** False when persistence is unavailable (the UI keeps its optimistic item). */
+  persisted: boolean;
+  error?: string;
+}
+
+/**
+ * Persist a steering directive submitted from the Agent Console. The insert is
+ * locked to the hardened RLS invariants — every submission lands as an `open`,
+ * `holder`-role row with zeroed tallies, so a direct REST call can't spoof an
+ * already-applied founder directive. Promoting a directive to applied/adopted is
+ * a runtime/service_role action.
+ *
+ * Still TODO (mirrors the launch flow): verify the author wallet (signature) and
+ * gate holder directives on a project-token stake before accepting.
+ */
+export async function submitDirectiveAction(
+  input: DirectiveInput
+): Promise<DirectiveResult> {
+  const text = sanitizeDirectiveText(input.text ?? "");
+  if (!text) return { ok: false, persisted: false, error: "Directive is empty." };
+  if (!input.projectKey) {
+    return { ok: false, persisted: false, error: "Missing project." };
+  }
+  // No backend configured (cold/prototype) — succeed without persistence so the
+  // Console's optimistic item still stands.
+  if (!supabase) return { ok: true, persisted: false };
+
+  const wallet = input.authorWallet?.slice(0, 64) || null;
+  const { error } = await supabase.from("directives").insert({
+    project_key: input.projectKey,
+    kind: input.kind === "proposal" ? "proposal" : "directive",
+    text,
+    role: "holder",
+    status: "open",
+    author_wallet: wallet,
+  });
+  if (error) return { ok: false, persisted: false, error: error.message };
+  return { ok: true, persisted: true };
 }
