@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { runAgentTick, agentRuntimeConfigured } from "@/lib/agent-runtime";
+import { canAffordTick } from "@/lib/budget";
 
 // Scheduler entrypoint: Vercel Cron hits this on a schedule (see vercel.json) and
 // it ticks the agent for each funded project — "the agent builds while the
@@ -28,9 +29,11 @@ export async function GET(req: Request) {
     );
   }
 
-  const projects = (await getProjects())
-    .filter((p) => p.treasurySol > 0) // funded ⇒ the agent works
-    .slice(0, MAX_PER_RUN);
+  // Budget hard-stop: only tick projects whose treasury can absorb a cycle.
+  // Empty/dust treasury ⇒ the agent sleeps until buyers refill it.
+  const all = await getProjects();
+  const asleep = all.filter((p) => !canAffordTick(p).ok).map((p) => p.key);
+  const projects = all.filter((p) => canAffordTick(p).ok).slice(0, MAX_PER_RUN);
 
   const results: { key: string; ok: boolean; summary?: string; error?: string }[] =
     [];
@@ -52,7 +55,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(
-    { ticked: results.length, results },
+    { ticked: results.length, asleep, results },
     { headers: { "Cache-Control": "no-store" } }
   );
 }
