@@ -6,6 +6,8 @@ import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
 import { gateTaskStatus } from "./verifier";
 import type { SandboxLanguage } from "./sandbox";
+import { formatLearningsForPrompt, type Learning } from "./learnings";
+import { getTopLearnings } from "./agent-data";
 
 // The real per-project agent "brain". Given the project's mandate (its launch
 // prompt) plus the latest steering directives and current task state, it asks
@@ -117,8 +119,12 @@ export async function loadMandate(p: Project): Promise<AgentMandate> {
   }
 }
 
-/** Pure: the current-state turn — tasks so far + steering directives. */
-export function buildUserPrompt(tasks: AgentTask[], directives: FeedItem[]): string {
+/** Pure: the current-state turn — tasks, steering directives, shared learnings. */
+export function buildUserPrompt(
+  tasks: AgentTask[],
+  directives: FeedItem[],
+  learnings: Learning[] = []
+): string {
   const taskLines = tasks.length
     ? tasks
         .slice(0, 12)
@@ -137,6 +143,9 @@ export function buildUserPrompt(tasks: AgentTask[], directives: FeedItem[]): str
     "",
     "Steering directives from the founder and holders (honor these):",
     directiveLines,
+    "",
+    "Shared learnings from across the Loop network (apply if relevant):",
+    formatLearningsForPrompt(learnings),
     "",
     "Decide the single next action to take now. Return a one-line build update",
     "(`summary`) and the task you are advancing (`task`), with an honest status.",
@@ -190,6 +199,8 @@ export async function decideNextAction(
   }
   // Reread the standing mandate every cycle (anti-drift).
   const mandate = await loadMandate(p);
+  // Pull the network's shared learnings (A5) into the turn context.
+  const learnings = await getTopLearnings(6);
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
   // `output_config` (structured outputs) may be ahead of the installed SDK
@@ -201,7 +212,10 @@ export async function decideNextAction(
     output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
     system: buildSystemPrompt(p, mandate),
     messages: [
-      { role: "user", content: buildUserPrompt(state.tasks, state.directives) },
+      {
+        role: "user",
+        content: buildUserPrompt(state.tasks, state.directives, learnings),
+      },
     ],
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

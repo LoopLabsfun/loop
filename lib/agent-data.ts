@@ -13,6 +13,7 @@ import {
 } from "./agent";
 import { rowToFeedItem, type DirectiveRow } from "./directives";
 import type { FeedItem } from "./console";
+import type { Learning, LearningCategory } from "./learnings";
 import type { Project } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,5 +169,42 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     };
   } catch {
     return fallback;
+  }
+}
+
+interface LearningRow {
+  id: string;
+  category: string;
+  insight: string;
+  source: string;
+  upvotes: number;
+  created_at: string;
+}
+
+/**
+ * Top cross-project learnings (A5), highest-upvoted first. Read by every agent
+ * tick and surfaced in the UI. Returns [] if unconfigured or on failure — the
+ * caller treats an empty layer as "no shared learnings yet".
+ */
+export async function getTopLearnings(limit = 6): Promise<Learning[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("learnings")
+      .select("*")
+      .order("upvotes", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return (data as LearningRow[]).map((r) => ({
+      id: r.id,
+      category: r.category as LearningCategory,
+      insight: r.insight,
+      source: r.source,
+      upvotes: r.upvotes,
+      at: r.created_at,
+    }));
+  } catch {
+    return [];
   }
 }

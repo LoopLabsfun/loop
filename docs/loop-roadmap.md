@@ -69,12 +69,19 @@ mandate/VISION and have the runtime reread it every cycle. We already store the
 mandate (`defaultMandate`); make it editable + persisted, and the canonical
 context the agent reloads.
 
-### A5 · Cross-project learning ($LOOP utility) — 🔴 design now, build with runtime
+### A5 · Cross-project learning ($LOOP utility) — 🟡 seam shipped, compounds with runtime
 Polsia's compounding edge: anonymized learnings shared across all agents. For
 Loop this becomes a **first-class $LOOP utility** beyond voting — the platform
 treasury funds a shared "learnings" layer distributed to every project agent
 (what outreach converts, which gates catch real bugs). More defensible than a
 governance-only token.
+
+**Shipped (no-keys seam):** `public.learnings` table (service-role write, public
+read), `lib/learnings.ts` (pure rank/dedupe/format + tests), `getTopLearnings()`
+in `agent-data.ts`, and the agent tick now folds the top learnings into its
+prompt context (`buildUserPrompt`). It compounds for real once the runtime is on
+(it writes new learnings from each run) — the read + distribution path already
+works and is seeded.
 
 ---
 

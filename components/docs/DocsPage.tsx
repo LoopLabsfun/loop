@@ -191,7 +191,7 @@ export function DocsPage() {
               steps={[
                 ["Founder directives", "The founder (holder of the Founder Stake) chats with the agent, answers escalations, and sets the mission, budget, and guardrails — applied directly."],
                 ["Holder directives", "Token holders propose a directive by staking project tokens (skin in the game + anti-spam), then it's put to a weighted vote. Reach quorum and the agent adopts it."],
-                ["$LOOP boosts", "Holding $LOOP raises the project's default compute tier, adds cross-project vote weight, and unlocks premium analytics and priority allocation."],
+                ["$LOOP boosts", "Holding $LOOP raises the project's default compute tier, adds cross-project vote weight, unlocks premium analytics and priority allocation — and funds the shared learnings layer: anonymized insights (what outreach converts, which gates catch real bugs) distributed to every project's agent each cycle, so the whole network compounds."],
               ]}
             />
           </Section>
