@@ -270,6 +270,29 @@ export async function applyDecision(
     category: d.task.category,
     status: gated.status,
   });
+
+  // Read-only Telegram build update — only when something actually shipped (so
+  // the bot reports news, not every tick). Phase 1: a single bot + chat via env
+  // (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID); per-project chats come with a
+  // telegram_chat_id column later. No-ops unless both are set, and a send
+  // failure must never abort the agent cycle.
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (gated.status === "shipped" && chatId && process.env.TELEGRAM_BOT_TOKEN) {
+    try {
+      const { sendBuildUpdate } = await import("./telegram-send");
+      const shipped: AgentTask = {
+        id: "",
+        title: d.task.title,
+        detail: d.task.detail,
+        category: d.task.category,
+        status: "shipped",
+        at: "now",
+      };
+      await sendBuildUpdate(chatId, p, { shipped: [shipped] });
+    } catch {
+      /* telegram unavailable/failed — never abort the cycle */
+    }
+  }
 }
 
 /** One full agent tick for a project: decide → persist. Returns the decision. */
