@@ -44,6 +44,15 @@ export interface Project {
   network?: Network;
   /** Verified launcher pubkey (Founder); enables founder-mode in the console. */
   creatorWallet?: string | null;
+  // Economics + steering (see lib/fees.ts, docs/loop-economics.md).
+  /** Founder share of creator fees, 0..95 (agent = 95 − this; platform = 5). */
+  feeFounderPct?: number;
+  /** Agent wallet pubkey (custody provider–backed); null until provisioned. */
+  agentWallet?: string | null;
+  /** Founder/DAO content policy steering the agent. */
+  contentPolicy?: string | null;
+  /** Editable guardrails the agent rereads each cycle. */
+  guardrails?: string | null;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
 }

@@ -89,6 +89,14 @@ export function splitLabel(s: FeeSplit): string {
   return `${s.founderPct} / ${s.agentPct} / ${s.platformPct}`;
 }
 
+/**
+ * The split for a project from its stored founder lever (`feeFounderPct`).
+ * Falls back to the default when unset, so existing/seed projects stay valid.
+ */
+export function splitForProject(p: { feeFounderPct?: number | null }): FeeSplit {
+  return p.feeFounderPct == null ? DEFAULT_SPLIT : makeSplit(p.feeFounderPct);
+}
+
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.min(hi, Math.max(lo, Math.round(n)));
