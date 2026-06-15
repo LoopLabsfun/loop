@@ -4,6 +4,7 @@ import type { AgentTask, TaskCategory, TaskStatus } from "./agent";
 import type { FeedItem } from "./console";
 import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
+import type { SandboxLanguage } from "./sandbox";
 
 // The real per-project agent "brain". Given the project's mandate (its launch
 // prompt) plus the latest steering directives and current task state, it asks
@@ -19,6 +20,7 @@ import { supabaseAdmin } from "./supabase";
 const AGENT_MODEL = "claude-opus-4-8";
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
+const SANDBOX_LANGS: SandboxLanguage[] = ["python", "javascript", "bash"];
 
 export interface AgentDecision {
   /** One-line public build update (→ agent_posts). */
@@ -30,6 +32,8 @@ export interface AgentDecision {
     category: TaskCategory;
     status: TaskStatus;
   };
+  /** Optional real code the agent runs in the E2B sandbox this tick. */
+  command?: { language: SandboxLanguage; code: string };
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -49,6 +53,15 @@ export const DECISION_SCHEMA = {
       },
       required: ["title", "detail", "category", "status"],
     },
+    command: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        language: { type: "string", enum: SANDBOX_LANGS },
+        code: { type: "string" },
+      },
+      required: ["language", "code"],
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -65,6 +78,7 @@ export function buildSystemPrompt(p: Project): string {
     `You are funded by the project's on-chain treasury and accountable to its token holders.`,
     `Each tick you pick ONE concrete next action that moves the project forward, do it, and report it honestly.`,
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
+    `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
     `Never invent fake metrics or claim work you didn't do.`,
   ].join(" ");
 }
@@ -110,6 +124,16 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
   const status = STATUSES.includes(t.status as TaskStatus)
     ? (t.status as TaskStatus)
     : "building";
+
+  const c = (r.command ?? null) as Record<string, unknown> | null;
+  let command: AgentDecision["command"];
+  if (c && typeof c.code === "string" && c.code.trim()) {
+    const language = SANDBOX_LANGS.includes(c.language as SandboxLanguage)
+      ? (c.language as SandboxLanguage)
+      : "python";
+    command = { language, code: c.code };
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -118,6 +142,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
       category,
       status,
     },
+    ...(command ? { command } : {}),
   };
 }
 
@@ -191,6 +216,26 @@ export async function runAgentTick(
   state: { tasks: AgentTask[]; directives: FeedItem[] }
 ): Promise<AgentDecision> {
   const decision = await decideNextAction(p, state);
+
+  // Hands: if the agent asked to run code and the sandbox is configured, execute
+  // it and fold the result into the build update. A sandbox failure must not
+  // abort the tick (the plan still stands).
+  if (decision.command && process.env.E2B_API_KEY) {
+    try {
+      const { runInSandbox, summarizeSandbox } = await import("./sandbox");
+      const result = await runInSandbox(
+        decision.command.code,
+        decision.command.language
+      );
+      decision.summary = `${decision.summary} — ${decision.command.language}: ${summarizeSandbox(result)}`.slice(
+        0,
+        280
+      );
+    } catch {
+      /* sandbox unavailable/failed — keep the planned summary */
+    }
+  }
+
   await applyDecision(p, decision);
   return decision;
 }
