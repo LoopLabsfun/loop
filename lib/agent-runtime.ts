@@ -4,6 +4,7 @@ import type { AgentTask, TaskCategory, TaskStatus } from "./agent";
 import type { FeedItem } from "./console";
 import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
+import { gateTaskStatus } from "./verifier";
 import type { SandboxLanguage } from "./sandbox";
 
 // The real per-project agent "brain". Given the project's mandate (its launch
@@ -196,17 +197,29 @@ export async function applyDecision(
   if (!supabaseAdmin) {
     throw new Error("Agent runtime requires SUPABASE_SERVICE_ROLE_KEY to persist.");
   }
+
+  // Verifier gate (A1): the maker can't ship its own work. Until an independent
+  // checker records a passing objective gate, a self-declared "shipped" is
+  // downgraded to "building" — the Ralph Wiggum guardrail. The block reason is
+  // surfaced in the public build update for transparency.
+  const gated = gateTaskStatus({
+    project: p,
+    status: d.task.status,
+    makerId: `agent:${p.key}`,
+  });
+  const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
+
   await supabaseAdmin.from("agent_posts").insert({
     project_key: p.key,
     platform: "telegram",
-    body: d.summary,
+    body: summary,
   });
   await supabaseAdmin.from("agent_tasks").insert({
     project_key: p.key,
     title: d.task.title,
     detail: d.task.detail,
     category: d.task.category,
-    status: d.task.status,
+    status: gated.status,
   });
 }
 
