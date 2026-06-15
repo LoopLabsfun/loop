@@ -13,6 +13,7 @@ import {
   type SocialPost,
   type TaskStatus,
 } from "@/lib/agent";
+import { telegramBotHandle, telegramBotUrl } from "@/lib/telegram";
 import type { Project } from "@/lib/types";
 
 type Tab = "tasks" | "inbox" | "social";
@@ -64,6 +65,16 @@ export function AgentOperator({
             <span className="text-accent-text">{stats.email}</span>
             <span className="text-faint">·</span>
             <span>{stats.twitter}</span>
+            <span className="text-faint">·</span>
+            <a
+              href={telegramBotUrl(p)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Follow this project's read-only build-update bot on Telegram"
+              className="hover:text-accent-text transition-colors"
+            >
+              {telegramBotHandle(p)}
+            </a>
             <span className="text-faint">·</span>
             <span>{stats.site}</span>
           </div>
