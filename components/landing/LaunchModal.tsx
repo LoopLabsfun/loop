@@ -1,11 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
+import { scoreReadiness, type ReadinessLevel } from "@/lib/agent-readiness";
 import { explorerUrl, shortAddr } from "@/lib/format";
 import type { LaunchResult } from "@/lib/api";
+
+const READINESS_STYLE: Record<ReadinessLevel, { dot: string; text: string }> = {
+  strong: { dot: "bg-pos", text: "text-pos" },
+  workable: { dot: "bg-accent-400", text: "text-accent-text" },
+  early: { dot: "bg-warn", text: "text-warn" },
+};
 
 type Step = "form" | "stake" | "deploying" | "done";
 
@@ -60,6 +67,7 @@ export function LaunchModal({
 
   const summaryName = name.trim() || "Open Source Cursor";
   const summaryTicker = "$" + (ticker.trim() || "OSCUR");
+  const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
 
   const goStake = () => {
     if (!name.trim() || !ticker.trim()) {
@@ -178,6 +186,37 @@ export function LaunchModal({
             {error && (
               <div className="text-[12.5px] text-warn">
                 Project name and ticker are required.
+              </div>
+            )}
+            {(prompt.trim() || repo.trim()) && (
+              <div className="bg-surface-2 rounded-[12px] p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] text-faint">Agent readiness</span>
+                  <span
+                    className={`inline-flex items-center gap-[6px] text-[12.5px] font-medium ${READINESS_STYLE[readiness.level].text}`}
+                  >
+                    <span
+                      className={`w-[7px] h-[7px] rounded-full ${READINESS_STYLE[readiness.level].dot}`}
+                    />
+                    {readiness.headline} · {readiness.score}/4
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {readiness.conditions.map((c) => (
+                    <span
+                      key={c.key}
+                      className={`text-[11.5px] ${c.met ? "text-body" : "text-faint"}`}
+                      title={c.hint}
+                    >
+                      {c.met ? "✓" : "○"} {c.label}
+                    </span>
+                  ))}
+                </div>
+                {readiness.guidance && (
+                  <div className="text-[12px] text-muted leading-[1.45]">
+                    {readiness.guidance}
+                  </div>
+                )}
               </div>
             )}
             <button
