@@ -24,6 +24,17 @@ describe("buildSystemPrompt", () => {
     expect(s).toContain("$LOOP");
     expect(s).toContain("Build the platform itself");
   });
+  it("restates guardrails every cycle (anti-drift) and honors an override", () => {
+    expect(buildSystemPrompt(project)).toContain("guardrails");
+    const s = buildSystemPrompt(project, {
+      mission: "Pivot to a mobile-first relaunch",
+      model: "Sonnet",
+      budget: "0.4 SOL/day",
+      guardrails: ["No treasury withdrawals"],
+    });
+    expect(s).toContain("Pivot to a mobile-first relaunch");
+    expect(s).toContain("No treasury withdrawals");
+  });
 });
 
 describe("buildUserPrompt", () => {
