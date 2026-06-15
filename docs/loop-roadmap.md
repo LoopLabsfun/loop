@@ -28,7 +28,12 @@ buyers refill it ⇒ it wakes.** The market is the budget.
 
 Each item notes the source insight, who can build it, and the acceptance bar.
 
-### A1 · Machine gate (verifier seam) — 🟢 buildable now
+> **Status (A1–A4 shipped + budget hard-stop):** the runtime-safety floor is in
+> place — A1 verifier gate (#61), budget hard-stop (#62), A2 launch filter (#63),
+> A3 honest summaries (#64), A4 standing mandate reread each cycle (#65). All
+> env-gated and live in prod.
+
+### A1 · Machine gate (verifier seam) — ✅ shipped (#61)
 A project's agent must pass an **objective** check (tests / build / type-check /
 lint) run by a **separate verifier**, not self-review. This is the single most
 important guardrail: it's what prevents the *Ralph Wiggum loop* (agent emits
@@ -40,7 +45,7 @@ agents.
 - **Done when:** no directive/task is marked `applied`/`shipped` without a
   recorded objective signal; the maker agent never grades its own output.
 
-### A2 · 4-condition launch filter — 🟢 buildable now
+### A2 · 4-condition launch filter — ✅ shipped (#63)
 Be honest at launch: *most projects don't need an autonomous loop yet.* The
 LaunchModal should **score/guide** a new project against the four conditions
 (repeats? automated verification? budget? senior-eng tools?) and steer founders
@@ -50,7 +55,7 @@ toward agent-suitable scopes (a repo with tests) vs judgment-call work.
 - **Done when:** a founder sees, before paying the stake, whether their project is
   a good agent candidate — protecting the platform's **cost-per-accepted-change**.
 
-### A3 · Honest daily summaries — 🟡 UI seam now, table later
+### A3 · Honest daily summaries — ✅ shipped (#64, seam; table later)
 Polsia's "honest daily summaries" + the article's state discipline: a per-project
 **Summary** surface reporting what shipped *and what didn't* ("no ships today" is
 valid). The public build log is the social version of *"read the diffs"* —
@@ -58,7 +63,7 @@ transparency is the anti-comprehension-debt mechanism.
 - **Build now:** a seam (`seedSummaries` + a Summary tab in AgentOperator),
   fallback-simulated. **Later (needs migration):** a `daily_summaries` table.
 
-### A4 · Standing VISION/mandate, reread each cycle — 🟡 seam now
+### A4 · Standing VISION/mandate, reread each cycle — ✅ shipped (#65, seam)
 Mitigate *goal drift* (constraints vanish ~turn 47): persist each project's
 mandate/VISION and have the runtime reread it every cycle. We already store the
 mandate (`defaultMandate`); make it editable + persisted, and the canonical
