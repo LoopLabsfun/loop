@@ -11,6 +11,8 @@ import {
   type TaskCategory,
   type TaskStatus,
 } from "./agent";
+import { rowToFeedItem, type DirectiveRow } from "./directives";
+import type { FeedItem } from "./console";
 import type { Project } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +30,8 @@ export interface AgentState {
   tasks: AgentTask[];
   inbox: InboxMessage[];
   social: SocialPost[];
+  /** Persisted steering directives/proposals, newest first ([] until any). */
+  directives: FeedItem[];
   /** True when at least one panel came from real rows this request. */
   live: boolean;
 }
@@ -79,12 +83,13 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     tasks: seedTasks(p),
     inbox: seedInbox(p),
     social: seedSocial(p),
+    directives: [],
     live: false,
   };
   if (!supabase) return fallback;
 
   try {
-    const [t, e, s] = await Promise.all([
+    const [t, e, s, d] = await Promise.all([
       supabase
         .from("agent_tasks")
         .select("*")
@@ -99,6 +104,12 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         .limit(20),
       supabase
         .from("agent_posts")
+        .select("*")
+        .eq("project_key", p.key)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("directives")
         .select("*")
         .eq("project_key", p.key)
         .order("created_at", { ascending: false })
@@ -140,11 +151,20 @@ export async function getAgentState(p: Project): Promise<AgentState> {
       })
     );
 
+    const directives: FeedItem[] = ((d.data as DirectiveRow[] | null) ?? []).map(
+      (r) => rowToFeedItem(r, rel(r.created_at))
+    );
+
     return {
       tasks: tasks.length ? tasks : fallback.tasks,
       inbox: inbox.length ? inbox : fallback.inbox,
       social: social.length ? social : fallback.social,
-      live: tasks.length > 0 || inbox.length > 0 || social.length > 0,
+      directives,
+      live:
+        tasks.length > 0 ||
+        inbox.length > 0 ||
+        social.length > 0 ||
+        directives.length > 0,
     };
   } catch {
     return fallback;

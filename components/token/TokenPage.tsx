@@ -110,7 +110,7 @@ export function TokenPage({
         {/* Left column */}
         <div className="flex flex-col gap-4">
           {/* Agent Console — steer the project's AI */}
-          <AgentConsole project={p} />
+          <AgentConsole project={p} directives={agentState?.directives} />
           {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
           <AgentOperator
             project={p}

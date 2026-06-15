@@ -12,6 +12,7 @@ import {
   type ConsoleRole,
   type FeedItem,
 } from "@/lib/console";
+import { submitDirectiveAction } from "@/lib/actions";
 import type { Project } from "@/lib/types";
 
 const ROLES: ConsoleRole[] = ["spectator", "holder", "founder"];
@@ -21,7 +22,14 @@ const ROLE_LABEL: Record<ConsoleRole, string> = {
   founder: "Founder",
 };
 
-export function AgentConsole({ project: p }: { project: Project }) {
+export function AgentConsole({
+  project: p,
+  directives,
+}: {
+  project: Project;
+  /** Persisted directives/proposals from the backend (newest first). */
+  directives?: FeedItem[];
+}) {
   const wallet = useWallet();
   const sym = p.ticker.replace(/^\$/, "");
   const mandate = useMemo(() => defaultMandate(p), [p]);
@@ -30,7 +38,11 @@ export function AgentConsole({ project: p }: { project: Project }) {
   const [override, setOverride] = useState<ConsoleRole | null>(null);
   const role = override ?? defaultRole;
 
-  const [feed, setFeed] = useState<FeedItem[]>(() => seedFeed(p));
+  // Persisted directives lead the feed; the simulated actions/escalations follow
+  // until the runtime streams real ones.
+  const [feed, setFeed] = useState<FeedItem[]>(() =>
+    directives?.length ? [...directives, ...seedFeed(p)] : seedFeed(p)
+  );
   const [draft, setDraft] = useState("");
   const idRef = useRef(1000);
   const newId = () => `c${idRef.current++}`;
@@ -136,6 +148,16 @@ export function AgentConsole({ project: p }: { project: Project }) {
           };
     setFeed((f) => [item, ...f].slice(0, 14));
     setDraft("");
+
+    // Persist in the background; the optimistic item stays regardless. The
+    // server locks every submission to a safe open/holder row (RLS), so this is
+    // a fire-and-forget write — failures don't disrupt the conversation.
+    void submitDirectiveAction({
+      projectKey: p.key,
+      text,
+      kind: role === "founder" ? "directive" : "proposal",
+      authorWallet: wallet.address,
+    });
   }
 
   return (
