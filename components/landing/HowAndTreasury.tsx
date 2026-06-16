@@ -1,12 +1,15 @@
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import { countdown, sol } from "@/lib/format";
 
+// Natural 1→6 order so the DOM (and the single-column mobile layout) reads in
+// sequence. On ≥sm the grid flows column-first (see below) so it still renders
+// as 1-2-3 (left) / 4-5-6 (right) on desktop.
 const STEPS = [
   { n: 1, title: "Launch a Project", body: "Submit a name, a vision, and an initial prompt." },
-  { n: 4, title: "AI Starts Building", body: "An agent codes, deploys, and runs outreach — on the treasury's budget." },
   { n: 2, title: "Token is Created", body: "Loop launches your token on Pump.fun or Bags.fun." },
-  { n: 5, title: "Traders Fund It", body: "Trading activity generates fees and fills the treasury." },
   { n: 3, title: "Rewards Connect", body: "Creator rewards stream into the project wallet." },
+  { n: 4, title: "AI Starts Building", body: "An agent codes, deploys, and runs outreach — on the treasury's budget." },
+  { n: 5, title: "Traders Fund It", body: "Trading activity generates fees and fills the treasury." },
   { n: 6, title: "Project Evolves", body: "The more it grows, the more it gets funded." },
 ];
 
@@ -21,7 +24,7 @@ export function HowAndTreasury({ engine }: { engine: LoopEngineState }) {
         <h2 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0 mb-[22px]">
           How Loop Works
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-[18px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-flow-col sm:grid-rows-3 gap-x-6 gap-y-[18px]">
           {STEPS.map((s) => (
             <div key={s.n} className="flex gap-3">
               <span className="flex-none w-7 h-7 rounded-full bg-accent-tint text-accent-text font-display font-semibold text-[13px] flex items-center justify-center">
