@@ -34,6 +34,8 @@ export interface PumpfunCreateInput {
   symbol: string; // bare ticker, no leading "$"
   description: string;
   suffix?: string; // vanity suffix; defaults to MINT_VANITY_SUFFIX
+  /** Optional real logo; falls back to a transparent placeholder. */
+  logo?: { bytes: Uint8Array; filename: string; contentType: string };
 }
 
 export interface PumpfunCreateResult {
@@ -65,8 +67,11 @@ export function buildCreatePayload(args: {
 
 async function uploadMetadata(input: PumpfunCreateInput): Promise<string> {
   const form = new FormData();
-  const png = Buffer.from(PLACEHOLDER_PNG_BASE64, "base64");
-  form.append("file", new Blob([png], { type: "image/png" }), "logo.png");
+  const logo = input.logo;
+  const fileBytes = logo ? logo.bytes : Buffer.from(PLACEHOLDER_PNG_BASE64, "base64");
+  const fileType = logo ? logo.contentType : "image/png";
+  const fileName = logo ? logo.filename : "logo.png";
+  form.append("file", new Blob([fileBytes], { type: fileType }), fileName);
   form.append("name", input.name);
   form.append("symbol", input.symbol);
   form.append("description", input.description);
