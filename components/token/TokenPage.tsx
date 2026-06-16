@@ -19,6 +19,7 @@ import { infraBreakdown, type CostKey } from "@/lib/economics";
 import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
 import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
+import { TREASURY_EXITS } from "@/lib/governance";
 
 const TOP_HOLDERS = [
   { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
@@ -725,13 +726,10 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
           <span className="font-mono">{p.supply}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-muted">LOOP staked</span>
-          <span className="font-mono">1,000 · locked</span>
-        </div>
-        <div className="flex justify-between">
           <span className="text-muted">Rewards → Loop</span>
           <span className="font-mono">5%</span>
         </div>
+        <TreasuryExits />
         {(p.mint || p.treasuryWallet) && (
           <div className="flex flex-col gap-[10px] border-t border-line-4 pt-[10px]">
             {p.mint && (
@@ -763,6 +761,41 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// No-stuck-funds guarantee, made visible: the three governed exits a buyer
+// should know about before sending SOL. Rendered from lib/governance.ts's
+// TREASURY_EXITS so the UI and the runtime share one source of truth.
+function TreasuryExits() {
+  return (
+    <div className="flex flex-col gap-[8px] border-t border-line-4 pt-[10px]">
+      <div className="flex items-center justify-between">
+        <span className="text-muted">Governed · no stuck funds</span>
+        <span
+          className="w-[6px] h-[6px] rounded-full bg-pos-bright"
+          title="Treasury is a governed vault — SOL can always exit"
+        />
+      </div>
+      {TREASURY_EXITS.map((e) => (
+        <div key={e.kind} className="flex items-start gap-[7px]">
+          <span
+            className={`mt-[5px] w-[5px] h-[5px] rounded-[2px] flex-none ${
+              e.needsVote ? "bg-accent" : "bg-pos"
+            }`}
+          />
+          <div className="leading-[1.4]">
+            <span className="text-body">{e.label}</span>
+            {e.needsVote && (
+              <span className="ml-[6px] font-mono text-[10.5px] text-accent-text">
+                vote-gated
+              </span>
+            )}
+            <div className="text-[11.5px] text-faint">{e.detail}</div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
