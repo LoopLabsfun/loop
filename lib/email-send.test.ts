@@ -43,7 +43,7 @@ describe("isEmailConfigured", () => {
 
 describe("agentFrom", () => {
   it("is the project agent's own mailbox", () => {
-    expect(agentFrom(base)).toBe("demo@agents.loop.fun");
+    expect(agentFrom(base)).toBe("demo@agents.looplabs.fun");
   });
 });
 
@@ -81,7 +81,7 @@ describe("sendAgentEmail", () => {
     expect(init.headers.Authorization).toBe("Bearer re_x");
     const body = JSON.parse(init.body);
     expect(body).toMatchObject({
-      from: "demo@agents.loop.fun",
+      from: "demo@agents.looplabs.fun",
       to: "founders@earlyusers.io",
       subject: "Built something for Demo Co",
       text: "intro body",
@@ -97,9 +97,9 @@ describe("sendAgentEmail", () => {
       to: "x@y.com",
       subject: "s",
       text: "t",
-      from: "ops@loop.fun",
+      from: "ops@looplabs.fun",
     });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).from).toBe("ops@loop.fun");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).from).toBe("ops@looplabs.fun");
   });
 
   it("surfaces a provider error (ok:false)", async () => {

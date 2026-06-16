@@ -35,7 +35,7 @@ Vercel prod.
 |---|---|---|
 | **Build its product** (write/run code) | ✅ E2B sandbox **wired into the tick** (`agent-runtime.ts` → `runInSandbox`) | `E2B_API_KEY` **+ the LOOP GitHub repo** (founder, "later") + `GITHUB_TOKEN` (write) |
 | **Telegram** (build updates) | ✅ wired (`telegram-send.ts`, broadcast on shipped) | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` |
-| **Email** (outreach mailbox `<slug>@agents.loop.fun`) | ✅ send seam (`email-send.ts`, Resend) | `RESEND_API_KEY` to send; **a real domain** (buy `loop.fun`) + Cloudflare Email Routing for *inbound* replies → `agent_emails` |
+| **Email** (outreach mailbox `<slug>@agents.looplabs.fun`) | ✅ send seam (`email-send.ts`, Resend) | `RESEND_API_KEY` to send; **a real domain** (buy `looplabs.fun` (done)) + Cloudflare Email Routing for *inbound* replies → `agent_emails` |
 | **X / Twitter** (launch recap, bounties) | ✅ recap seam (`x-recap.ts`) | X API (paid ~$200/mo) + a **human-created** account (never auto-create — ToS) |
 | **Manage its token** (buyback/burn/airdrop/bounty/swap) | ✅ decided by the brain, routed by guardrails (buyback auto via Jupiter; irreversible → escalate) | `AGENT_WALLET_SECRET` (Privy) + **funding the agent wallet** (`5Fk6…XwRV` on devnet) |
 
@@ -77,7 +77,7 @@ sequence is founder-driven and irreversible.
 - [ ] **dry-run → smoke launch (throwaway token) → launch LOOP** — explicit per-step "go", never autonomous
 - [ ] fund the **LOOP treasury** so the agent auto-runs (separate from the agent wallet)
 - [ ] recommended before launch: `E2B_API_KEY` + the LOOP repo + `GITHUB_TOKEN`, so the live agent actually builds (not just plans)
-- [ ] white-label infra (multi-tenant): a Loop-owned **GitHub org** (`GITHUB_ORG`, default `loop-labs`) + **Vercel team** (`VERCEL_TOKEN` + `VERCEL_TEAM_ID`), so every project builds under Loop, never a personal account (`lib/provisioning.ts` plans it; launch already defaults the repo)
+- [ ] white-label infra (multi-tenant): a Loop-owned **GitHub org** (`GITHUB_ORG`, default `LoopLabsfun`) + **Vercel team** (`VERCEL_TOKEN` + `VERCEL_TEAM_ID`), so every project builds under Loop, never a personal account (`lib/provisioning.ts` plans it; launch already defaults the repo)
 - [ ] compute rail (funded-by-fees): `COMPUTE_RAIL_PROVIDER` + a KYC'd exchange/bank account held by the **Loop legal entity**, so the agent-share SOL can convert to provider credit (`lib/compute-rail.ts`)
 
 When these are checked, Loop is mainnet-ready. Everything above the line is done.
@@ -91,7 +91,7 @@ The buildable backlog is essentially cleared:
 - ✅ **Fee-ledger + compute-ledger DB** (§3) — both tables + stores exist.
 - ✅ **Email inbound webhook route** (`app/api/email/inbound`) — wired, secret-gated,
   activates the moment a domain + provider exist.
-- ✅ **White-label provisioning** (`lib/provisioning.ts`) — `loop-labs/<slug>` by default.
+- ✅ **White-label provisioning** (`lib/provisioning.ts`) — `LoopLabsfun/<slug>` by default.
 - ⏭️ **Farcaster** — intentionally skipped (founder's call).
 
 What remains is the **runtime wiring** that needs the activation keys (real fee

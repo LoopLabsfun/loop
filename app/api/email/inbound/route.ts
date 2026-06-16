@@ -6,7 +6,7 @@ import { slugFromAgentAddress, inboundRow } from "@/lib/email-inbound";
 
 // Inbound webhook for the agent mailbox: a real domain's email router
 // (Cloudflare Email Routing / Resend inbound) maps each message received at
-// `<slug>@agents.loop.fun` to the InboundPayload shape and POSTs it here. We
+// `<slug>@agents.looplabs.fun` to the InboundPayload shape and POSTs it here. We
 // resolve the project, then store the message in `agent_emails` (direction "in").
 //
 // Gated by a shared secret (the router's worker sends it) — same posture as the
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   const project = projects.find((p) => agentSlug(p) === slug);
   if (!project) {
     return NextResponse.json(
-      { error: `no project for ${slug}@agents.loop.fun` },
+      { error: `no project for ${slug}@agents.looplabs.fun` },
       { status: 404 }
     );
   }

@@ -71,7 +71,7 @@ holders** (`windDownDistribution`). See `lib/governance.ts`.
 | **Orchestration** | **Trigger.dev** (or Inngest) | Durable cron + steps + retries + observability. Each cycle is a run; survives restarts; scales to zero between cycles. |
 | **Code execution / deploy** | **E2B** (or Daytona) sandbox per cycle + **GitHub** + **Vercel** APIs | Isolated env to clone → edit → test → open PR → deploy. Never run project code in the orchestrator. |
 | **State** | **Supabase** (already wired) | Tasks, escalations, emails, social posts, daily summaries, action log. Realtime → live console feed. |
-| **Email** | **Cloudflare Email Routing** (free catch-all → Worker) or **Postmark** inbound | Real `<slug>@agents.loop.fun` mailbox. Send via Resend/Postmark/SES; inbound webhook → `agent_emails` table → Inbox panel + console. |
+| **Email** | **Cloudflare Email Routing** (free catch-all → Worker) or **Postmark** inbound | Real `<slug>@agents.looplabs.fun` mailbox. Send via Resend/Postmark/SES; inbound webhook → `agent_emails` table → Inbox panel + console. |
 | **Social** | **Farcaster + Telegram** first; **X/Twitter** as founder-connected OAuth (paid) | Farcaster/Telegram are automation-friendly and crypto-native. X API is paid and **does not allow programmatic account creation** (see §5). |
 | **Agent wallet / custody** | **Turnkey** or **Privy** server wallets | Policy-controlled keys, no raw secrets. Claims rewards → treasury; transfers are guardrailed. |
 | **Secrets** | Per-project, KMS-backed; `service_role` for trusted Supabase writes | The launch insert + agent writes must run server-side only. |
@@ -108,12 +108,12 @@ visibility rules.
 
 This is fully real and not expensive:
 
-1. Point a domain's MX at the provider (need a real domain — **buy `loop.fun`**;
+1. Point a domain's MX at the provider (need a real domain — **buy `looplabs.fun` (done)**;
    the app is on a Vercel subdomain today).
-2. **Cloudflare Email Routing** (free): catch-all `*@agents.loop.fun` → Worker →
+2. **Cloudflare Email Routing** (free): catch-all `*@agents.looplabs.fun` → Worker →
    `POST /api/agent/email/inbound` → insert into `agent_emails`.
 3. Sending: **Resend** or **Postmark** with a per-project `from` of
-   `<slug>@agents.loop.fun`. Set **SPF / DKIM / DMARC** or it lands in spam.
+   `<slug>@agents.looplabs.fun`. Set **SPF / DKIM / DMARC** or it lands in spam.
 4. Replies surface in the **Inbox** panel and notify the founder via the console;
    the agent may auto-reply only within its mandate, else it escalates.
 
@@ -194,7 +194,7 @@ This is fully real and not expensive:
 - **Phase 2 — devnet projects.** New launches get an auto-provisioned agent on
   devnet, manual approval, capped budgets. White-label by default: every project
   builds under a Loop-owned GitHub org + Vercel team, not a personal account
-  ([`lib/provisioning.ts`](../lib/provisioning.ts) plans `loop-labs/<slug>`;
+  ([`lib/provisioning.ts`](../lib/provisioning.ts) plans `LoopLabsfun/<slug>`;
   launch already defaults the repo to it). Execution gates on `GITHUB_TOKEN` +
   `VERCEL_TOKEN`/`VERCEL_TEAM_ID`.
 - **Phase 3 — mainnet.** Real mint + on-chain pay-to-launch payment + LOOP
@@ -206,7 +206,7 @@ This is fully real and not expensive:
 
 ## 9. Decisions that need the founder (blockers I can't self-serve)
 
-1. **Domain** — buy `loop.fun` (or pick the agent-email domain). Needed for real
+1. **Domain** — buy `looplabs.fun` (done) (or pick the agent-email domain). Needed for real
    email + branded agent identities.
 2. **Email provider** — Cloudflare Email Routing (free) vs Postmark/Resend.
 3. **Orchestration + sandbox** — Trigger.dev vs Inngest; E2B account.

@@ -8,30 +8,30 @@ import {
 
 describe("slugFromAgentAddress", () => {
   it("extracts the slug from a bare agent address", () => {
-    expect(slugFromAgentAddress("loop@agents.loop.fun")).toBe("loop");
+    expect(slugFromAgentAddress("loop@agents.looplabs.fun")).toBe("loop");
   });
   it("unwraps a `Name <addr>` form and lowercases", () => {
-    expect(slugFromAgentAddress('"LOOP Agent" <Loop@agents.loop.fun>')).toBe("loop");
+    expect(slugFromAgentAddress('"LOOP Agent" <Loop@agents.looplabs.fun>')).toBe("loop");
   });
   it("normalizes to alphanumerics (matches agentSlug)", () => {
-    expect(slugFromAgentAddress("gta-vi@agents.loop.fun")).toBe("gtavi");
+    expect(slugFromAgentAddress("gta-vi@agents.looplabs.fun")).toBe("gtavi");
   });
   it("rejects a non-agent domain", () => {
     expect(slugFromAgentAddress("loop@gmail.com")).toBeNull();
-    expect(slugFromAgentAddress("loop@evil.agents.loop.fun")).toBeNull();
+    expect(slugFromAgentAddress("loop@evil.agents.looplabs.fun")).toBeNull();
   });
   it("rejects malformed / empty input", () => {
     expect(slugFromAgentAddress("")).toBeNull();
     expect(slugFromAgentAddress(null)).toBeNull();
     expect(slugFromAgentAddress("not-an-email")).toBeNull();
-    expect(slugFromAgentAddress("@agents.loop.fun")).toBeNull();
+    expect(slugFromAgentAddress("@agents.looplabs.fun")).toBeNull();
   });
 });
 
 describe("inboundRow", () => {
   it("builds a clean 'in' row for the resolved project", () => {
     const row = inboundRow("loop", {
-      to: "loop@agents.loop.fun",
+      to: "loop@agents.looplabs.fun",
       from: '"Jane" <jane@acme.com>',
       subject: "Re: partnership",
       text: "Hey — let's talk.",

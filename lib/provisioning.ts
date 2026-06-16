@@ -3,7 +3,7 @@
 // account.
 //
 // A launched project needs a home for its code + deploys. To keep the platform
-// white-label — the UI shows `loop-labs/<slug>`, never the operator's personal
+// white-label — the UI shows `LoopLabsfun/<slug>`, never the operator's personal
 // GitHub/Vercel — each launch is auto-provisioned a GitHub repo under a Loop-
 // owned org and a Vercel project under a Loop-owned team. The agent (with a
 // scoped token) pushes and deploys there; the operator's account never appears.
@@ -22,7 +22,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The Loop-owned GitHub org every project's repo lives under (override: GITHUB_ORG). */
-export const DEFAULT_GITHUB_ORG = "loop-labs";
+export const DEFAULT_GITHUB_ORG = "LoopLabsfun";
+
+/**
+ * Sanitize a GitHub org login: alphanumerics + single hyphens, case preserved
+ * (org logins are case-insensitive but should display as created). Falls back to
+ * the default for empty/garbage. Distinct from `safeName`, which lowercases.
+ */
+export function safeOrg(org: string | undefined | null): string {
+  const s = String(org ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return s || DEFAULT_GITHUB_ORG;
+}
 
 /**
  * Sanitize a project key into a valid GitHub repo / Vercel project name:
@@ -59,7 +73,7 @@ export interface ProvisionPlan {
  * home, every time (so a re-run is idempotent, not a duplicate).
  */
 export function provisionPlan(key: string, opts?: { org?: string }): ProvisionPlan {
-  const org = safeName(opts?.org || process.env.GITHUB_ORG || DEFAULT_GITHUB_ORG);
+  const org = safeOrg(opts?.org || process.env.GITHUB_ORG || DEFAULT_GITHUB_ORG);
   const name = safeName(key);
   return {
     org,
