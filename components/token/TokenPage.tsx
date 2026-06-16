@@ -15,6 +15,8 @@ import type { AgentState } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
 import { infraBreakdown, type CostKey } from "@/lib/economics";
+import { splitForProject } from "@/lib/fees";
+import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
 
 const TOP_HOLDERS = [
   { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
@@ -256,6 +258,7 @@ export function TokenPage({
           <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           <BondingCurve curve={p.curve} />
           <TreasuryStats project={p} solUsd={solUsd} />
+          <FeesCustodyCard project={p} preLaunch={preLaunch} />
           <FundCard project={p} />
           <TopHolders preLaunch={preLaunch} />
 
@@ -567,6 +570,99 @@ function BondingCurve({ curve }: { curve: number }) {
           ? "Curve complete — liquidity migrated to Raydium. Trading is fully open."
           : "Graduates to Raydium at $69K market cap. Every buy moves the curve forward."}
       </div>
+    </div>
+  );
+}
+
+function FeesCustodyCard({
+  project: p,
+  preLaunch,
+}: {
+  project: Project;
+  preLaunch: boolean;
+}) {
+  const split = splitForProject(p);
+  // No fees can have accrued before launch; once the ledger table is live this
+  // reads the project's real swept-and-unclaimed founder balance. Honest 0 now.
+  const founderClaimable = claimable(ZERO_TOTALS, ZERO_TOTALS).founderSol;
+  const net = p.network === "devnet" ? "devnet" : "mainnet";
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="font-display font-semibold text-[14.5px] mb-3">
+        Creator Fees &amp; Custody
+      </div>
+      <div className="flex flex-col gap-[10px] text-[13px]">
+        {/* Split */}
+        <div className="flex justify-between">
+          <span className="text-muted">Fee split</span>
+          <span className="font-mono" title="founder / agent / platform">
+            {split.founderPct} / {split.agentPct} / {split.platformPct}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <SplitChip label="Founder" pct={split.founderPct} tone="ink" />
+          <SplitChip label="Agent" pct={split.agentPct} tone="accent" />
+          <SplitChip label="Platform" pct={split.platformPct} tone="muted" />
+        </div>
+
+        {/* Agent wallet (external custody) */}
+        <div className="flex justify-between border-t border-line-4 pt-[10px]">
+          <span className="text-muted">Agent wallet</span>
+          {p.agentWallet ? (
+            <a
+              href={explorerUrl(p.agentWallet, net)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-accent-text hover:text-accent-d transition-colors"
+            >
+              {shortAddr(p.agentWallet)} ↗
+            </a>
+          ) : (
+            <span className="font-mono text-faint">provisioning…</span>
+          )}
+        </div>
+
+        {/* Claimable dev-fees */}
+        <div className="flex justify-between">
+          <span className="text-muted">Your dev-fees</span>
+          <span className="font-mono">{founderClaimable.toFixed(4)} SOL</span>
+        </div>
+        <button
+          disabled
+          title={
+            preLaunch
+              ? "Dev-fees accrue from trading once the token is live."
+              : "Nothing to claim yet — fees accrue as the token trades."
+          }
+          className="mt-1 w-full font-display font-semibold text-[13.5px] py-[10px] rounded-[10px] border border-line-3 bg-surface-2 text-faint cursor-not-allowed"
+        >
+          Claim dev-fees
+        </button>
+        <p className="text-[11.5px] text-faint leading-[1.45]">
+          The agent auto-claims creator fees on pump.fun; Loop custodies them and
+          your share becomes claimable here. {preLaunch ? "0 before launch." : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SplitChip({
+  label,
+  pct,
+  tone,
+}: {
+  label: string;
+  pct: number;
+  tone: "ink" | "accent" | "muted";
+}) {
+  const color =
+    tone === "accent" ? "text-accent-text" : tone === "muted" ? "text-faint" : "text-ink";
+  return (
+    <div className="bg-surface-2 rounded-[9px] px-2 py-[7px] text-center">
+      <div className={`font-mono font-semibold text-[13px] ${color}`}>{pct}%</div>
+      <div className="text-[10.5px] text-faint mt-[1px]">{label}</div>
     </div>
   );
 }
