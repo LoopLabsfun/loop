@@ -62,3 +62,22 @@ export function canAffordTick(
     needSol,
   };
 }
+
+/** Honest agent run-state for the UI, derived from the same gate the cron uses. */
+export type AgentRunState = "pre-launch" | "asleep" | "active";
+
+/**
+ * What the agent is actually doing, for the status badge:
+ * - `pre-launch` — token not minted yet (no market, nothing to run on);
+ * - `asleep` — minted but the treasury can't afford a cycle (cron skips it);
+ * - `active` — treasury funds cycles, so the scheduler ticks it.
+ *
+ * NB: the gate is the **treasury** (`treasurySol`), not the agent's own wallet —
+ * funding the agent wallet enables buybacks, it does not wake the agent.
+ */
+export function agentRunState(
+  p: Pick<Project, "mint" | "treasurySol" | "burnPerDay">
+): AgentRunState {
+  if (!p.mint) return "pre-launch";
+  return canAffordTick(p).ok ? "active" : "asleep";
+}

@@ -16,6 +16,7 @@ import type { AgentState } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
 import { infraBreakdown, type CostKey } from "@/lib/economics";
+import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
 import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
 
@@ -78,11 +79,7 @@ export function TokenPage({
                   devnet
                 </span>
               )}
-              {preLaunch ? (
-                <span className="font-mono text-[11.5px] text-faint">● pre-launch</span>
-              ) : (
-                <span className="font-mono text-[11.5px] text-pos">● agent active</span>
-              )}
+              <AgentStatusBadge project={p} />
             </div>
             <p className="text-[13.5px] text-muted mt-[5px] mb-0">{p.description}</p>
           </div>
@@ -370,6 +367,29 @@ function HeaderStat({ label, value }: { label: string; value: string }) {
       <div className="font-mono text-[14px]">{value}</div>
     </div>
   );
+}
+
+// Honest agent status — reflects the real budget gate (the cron skips a project
+// whose treasury can't afford a cycle), not a hardcoded "active".
+function AgentStatusBadge({ project: p }: { project: Project }) {
+  const state = agentRunState(p);
+  if (state === "pre-launch") {
+    return <span className="font-mono text-[11.5px] text-faint">● pre-launch</span>;
+  }
+  if (state === "asleep") {
+    const b = canAffordTick(p);
+    return (
+      <span
+        className="font-mono text-[11.5px] text-warn"
+        title={`Agent asleep — treasury ${b.treasurySol} SOL, needs ${b.needSol.toFixed(
+          3
+        )} SOL to run a cycle. Fund the project treasury (not the agent wallet) to wake it.`}
+      >
+        ● asleep · treasury empty
+      </span>
+    );
+  }
+  return <span className="font-mono text-[11.5px] text-pos">● agent active</span>;
 }
 
 function Segmented<T extends string>({
