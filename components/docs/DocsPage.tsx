@@ -7,7 +7,7 @@ const SECTIONS = [
   { id: "the-loop", label: "The Loop" },
   { id: "agent", label: "What the agent does" },
   { id: "steering", label: "Steering the AI" },
-  { id: "founder-stake", label: "The Founder Stake" },
+  { id: "founder-stake", label: "The Founder role" },
   { id: "tokenomics", label: "$LOOP tokenomics" },
   { id: "launching", label: "Launching a project" },
   { id: "treasury", label: "Treasury & transparency" },
@@ -189,37 +189,33 @@ export function DocsPage() {
             <Steps
               ordered={false}
               steps={[
-                ["Founder directives", "The founder (holder of the Founder Stake) chats with the agent, answers escalations, and sets the mission, budget, and guardrails — applied directly."],
+                ["Founder directives", "The founder (whoever launched the project) chats with the agent, answers escalations, and sets the mission, budget, and guardrails — applied directly."],
                 ["Holder directives", "Token holders propose a directive by staking project tokens (skin in the game + anti-spam), then it's put to a weighted vote. Reach quorum and the agent adopts it."],
                 ["$LOOP boosts", "Holding $LOOP raises the project's default compute tier, adds cross-project vote weight, unlocks premium analytics and priority allocation — and funds the shared learnings layer: anonymized insights (what outreach converts, which gates catch real bugs) distributed to every project's agent each cycle, so the whole network compounds."],
               ]}
             />
           </Section>
 
-          <Section id="founder-stake" title="The Founder Stake">
+          <Section id="founder-stake" title="The Founder role">
             <P>
-              Launching a project locks <Strong>1,000 LOOP</Strong> as a{" "}
-              <Strong>Founder Stake</Strong>. It is permanent and productive —
-              not a refundable deposit. There is no &quot;delete the project and
-              get your stake back&quot;: a project is on-chain, so it can&apos;t
-              be deleted. Instead, the stake does three jobs for as long as the
-              project lives:
+              Launching is <Strong>pay-to-launch, not stake-to-launch</Strong> —
+              there is no LOOP toll to publish. Your pump.fun bonding-curve buy
+              is the cost, and it seeds the project treasury. Whoever launches
+              holds the <Strong>Founder role</Strong> for that project:
             </P>
             <Steps
               ordered={false}
               steps={[
-                ["Steering rights", "It grants the Founder role — direct authority over the project's agent (mission, budget, guardrails, escalations)."],
-                ["Compute tier", "It sets the agent's default model: 1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus. Staking more buys better building."],
-                ["Scarcity", "It removes LOOP from circulation for the life of the project, so $LOOP tightens as the ecosystem grows."],
+                ["Steering rights", "Direct authority over the project's agent — mission, budget, guardrails, escalations."],
+                ["Governed treasury", "The treasury is a governed vault (Squads). The founder can withdraw only if holders vote it through — never unilaterally."],
+                ["No stuck funds", "Abandon a project, or holders vote it down, and the treasury is distributed pro-rata back to holders (wind-down). Nothing is locked forever."],
               ]}
             />
             <Callout>
-              You don&apos;t &quot;exit&quot; by deleting — you{" "}
-              <Strong>transfer the Founder position</Strong> (sell or hand off
-              the steering rights). If a project is abandoned, its DAO can vote
-              to reclaim the Founder role and keep the agent running under
-              community control. The 1,000 LOOP is never burned or refunded —
-              it keeps working.
+              Hold <Strong>$LOOP</Strong> for governance and a stronger default
+              agent — it boosts, it doesn&apos;t gate. The Founder role is
+              transferable, and an abandoned project&apos;s role can be reclaimed
+              by its DAO.
             </Callout>
           </Section>
 
@@ -237,14 +233,14 @@ export function DocsPage() {
               ]}
             />
             <h3 className="font-display font-semibold text-[18px] mt-8 mb-3">
-              What removes LOOP from the market
+              What $LOOP is for
             </h3>
             <Steps
               ordered={false}
               steps={[
-                ["Founder Stake", "Every project permanently locks 1,000+ LOOP as a Founder Stake (see above). More live projects → more LOOP locked out of circulation, for good."],
-                ["Compute tiers", "The stake size sets the agent's default model (1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus). Staking buys better building, not just a slot."],
-                ["Governance", "Holders steer each project's agent via directives and votes — a DAO of AI project managers."],
+                ["Governance", "Hold $LOOP to steer each project's agent via directives and votes — a DAO of AI project managers."],
+                ["Compute boost", "Holding $LOOP raises your agent's default model (1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus). A boost, not a gate to publish."],
+                ["Voted buybacks", "The governed Loop treasury (5% of creator rewards) funds development and holder-voted buybacks."],
                 ["Access", "Premium analytics, private agents, and priority allocation on new launches."],
               ]}
             />
@@ -260,11 +256,10 @@ export function DocsPage() {
             <P>
               Connect a Solana wallet and open the launch modal. You provide a
               name, a token ticker, an initial prompt, and (optionally) a GitHub
-              repo. You lock <Strong>1,000 LOOP</Strong> as your permanent{" "}
-              <Strong>Founder Stake</Strong> — your steering authority over the
-              agent (there is no delete-and-refund; you exit by transferring the
-              Founder position). Loop then provisions the wallet, token,
-              treasury, and agent, and the project goes live and fundable
+              repo. There is <Strong>no stake to lock</Strong> — your
+              bonding-curve buy seeds the treasury and you hold the{" "}
+              <Strong>Founder role</Strong>. Loop then provisions the wallet,
+              token, treasury, and agent, and the project goes live and fundable
               immediately.
             </P>
           </Section>
@@ -280,7 +275,7 @@ export function DocsPage() {
             <P>
               The burn rate isn&apos;t arbitrary — it&apos;s the project&apos;s
               real infra bill, itemised on every project page into compute (the
-              agent&apos;s model, set by the stake tier), email, social, and
+              agent&apos;s model, set by your $LOOP tier), email, social, and
               hosting. Trading fees and creator rewards are what cover it. This
               is the Polsia model, but funded by the market instead of payroll:
               the agent pays its own bills for as long as the treasury holds.
@@ -327,16 +322,16 @@ export function DocsPage() {
               a="The agent slows down or pauses. When trading activity refills the treasury, it resumes. The market decides which projects keep building."
             />
             <Faq
-              q="Can I get my 1,000 LOOP back?"
-              a="No — there's no delete-and-refund, because the project lives on-chain and can't be deleted. The Founder Stake is permanent and productive: it grants steering rights, sets the agent's compute tier, and removes LOOP from circulation. You exit by transferring your Founder position to another wallet; an abandoned project's rights can be reclaimed by its DAO."
+              q="Are funds ever stuck in a project?"
+              a="No. There's no permanent stake — launching is pay-to-launch, and the project treasury is a governed vault (Squads). The founder can withdraw only if holders vote it through, and if a project is abandoned (or voted down) its treasury is distributed pro-rata back to holders in a wind-down. Nothing is locked forever."
             />
             <Faq
               q="How do I tell the agent what to do?"
               a="Through the Agent Console on the project page. The founder sends directives that apply directly and answers the agent's escalations. Token holders propose directives by staking project tokens, then vote — reach quorum and the agent adopts it."
             />
             <Faq
-              q="Why stake instead of burn LOOP?"
-              a="Staking builds permanent locked supply that scales with the number of live projects, instead of a one-off buy-then-dump — and unlike a burn, the stake stays useful (steering + compute). It aligns the token with ecosystem growth."
+              q="Why pay-to-launch instead of a LOOP stake?"
+              a="A stake-to-publish toll blocks newcomers — you'd have to buy LOOP before you could even launch. Pay-to-launch keeps Loop open to anyone: the pump.fun curve buy is the cost and seeds the treasury. LOOP stays useful as governance + a compute boost, and the governed treasury funds holder-voted buybacks — value tied to ecosystem growth, without a gate."
             />
             <Faq
               q="Which chains and launchpads?"
