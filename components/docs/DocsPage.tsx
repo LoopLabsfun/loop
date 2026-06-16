@@ -285,6 +285,25 @@ export function DocsPage() {
               is the Polsia model, but funded by the market instead of payroll:
               the agent pays its own bills for as long as the treasury holds.
             </P>
+            <h3 className="font-display font-semibold text-[18px] mt-8 mb-3">
+              No funds get stuck
+            </h3>
+            <P>
+              A treasury is a <Strong>governed vault</Strong>, not a one-way
+              deposit. SOL can always leave — but never unilaterally:
+            </P>
+            <Steps
+              ordered={false}
+              steps={[
+                ["Operating spend", "The agent spends within its budget; an empty treasury just means it sleeps until trading refills it."],
+                ["Founder withdrawal", "Executes only when a holder vote passes (quorum + majority) — the founder can never drain the treasury alone."],
+                ["Wind-down", "An abandoned or closed project redistributes its treasury pro-rata to token holders. Nothing stays locked."],
+              ]}
+            />
+            <P>
+              Buying a project&apos;s token is never a trapdoor: there is a
+              defined, governed way for every lamport to leave.
+            </P>
           </Section>
 
           <Section id="project-tokens" title="Project tokens">
