@@ -58,7 +58,7 @@ the repo + a domain, all listed above. None of it is more code.
 ## 4. Mainnet launch — the go/no-go checklist
 
 The launch infra is built (`pumpfun.ts` PumpPortal, `mint-spl.ts`, `vanity.ts`
-`…Loop` pool, `stake.ts` gate, treasury). **Pump.fun is mainnet-only**; the
+`…Loop` pool, `stake.ts` holdings reader, treasury). **Pump.fun is mainnet-only**; the
 sequence is founder-driven and irreversible.
 
 - [ ] `PUMPPORTAL_API_KEY` in Vercel prod (create token + claim fees)

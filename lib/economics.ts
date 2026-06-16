@@ -13,9 +13,10 @@ import { SOL_USD } from "./format";
 //
 // Pure — no React, no network — so it's unit-testable and can be swapped for the
 // runtime's real per-cycle metering without touching components. The model tier
-// is the single biggest cost lever and is set by the on-chain stake tier
-// (1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus); we reuse `defaultMandate` so
-// the cost card and the Agent Console always agree on which model is running.
+// is the single biggest cost lever and is set by the LOOP holdings boost tier
+// (hold 1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus — a boost, not a launch
+// toll); we reuse `defaultMandate` so the cost card and the Agent Console
+// always agree on which model is running.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ModelTier = "Haiku" | "Sonnet" | "Opus";
@@ -93,7 +94,7 @@ export function parseSolPerDay(
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-/** Which model the agent runs — the single biggest cost lever (stake tier). */
+/** Which model the agent runs — the single biggest cost lever (holdings tier). */
 export function modelTier(p: Project): ModelTier {
   return defaultMandate(p).model;
 }

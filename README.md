@@ -97,10 +97,13 @@ Schema is a single `public.projects` table (see the `create_projects_table`
 migration). RLS is on with:
 
 - **public SELECT** (`using (true)`) — project pages are public. Intentional.
-- **open INSERT** (`with check (true)`) — ⚠️ **prototype only.** Lets the Launch
-  flow insert with the anon key. Before production, replace with an authenticated
-  server action that verifies the 1,000 LOOP stake on-chain. The Supabase
-  security linter flags this (`rls_policy_always_true`) — that warning is expected
-  until the policy is tightened.
+- **safe INSERT** (`anon can launch safe projects (prototype)`) — the anon Launch
+  flow can insert, but the `with check` enforces safe invariants (`official = false`,
+  `treasury_wallet`/`mint`/`agent_wallet` null, `treasury_sol`/`earned_sol` = 0, text
+  length caps), mirroring `launchProjectAction`'s defaults so a direct REST call can't
+  spoof an official/funded project. Pay-to-launch (no stake toll): the activation step
+  before production is collecting the launch payment / bonding-curve buy on-chain and
+  recording the verified creator wallet — not a stake check. Supabase security advisors
+  are clean.
 
 > Source design prototypes are in `loop-handoff/` (git-ignored).

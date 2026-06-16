@@ -15,8 +15,9 @@ Loop is **three layers**:
    (*loop-engineering*).
 3. **The market & governance** — what neither Polsia nor a plain loop has: the
    **market funds the compute** (treasury via trading fees), a **tradable token**
-   per project, a **transferable Founder Stake**, and **two-token steering**
-   (project token steers the project; $LOOP steers the platform).
+   per project, **pay-to-launch with a no-stuck-funds governed treasury**
+   (vote-gated founder withdrawal + pro-rata wind-down), and **two-token
+   steering** (project token steers the project; $LOOP steers the platform).
 
 The product bet, stated as the loop-engineering 4th condition made on-chain:
 *"the token budget can absorb the waste"* → **empty treasury ⇒ the agent sleeps;
@@ -90,13 +91,13 @@ works and is seeded.
 > The infra already exists: providers `spl` / `pumpfun` / `bags`
 > ([launchpad.ts](../lib/launchpad.ts)), SPL mint ([mint-spl.ts](../lib/mint-spl.ts)),
 > pump.fun via PumpPortal ([pumpfun.ts](../lib/pumpfun.ts)), the `…Loop` vanity
-> pool ([vanity.ts](../lib/vanity.ts)), the on-chain stake gate
+> pool ([vanity.ts](../lib/vanity.ts)), the on-chain LOOP holdings reader
 > ([stake.ts](../lib/stake.ts)), and scripts (`e2e-launch.ts`,
 > `devnet-mint-loop.cjs`, `mint-vanity-proof.cjs`). What's missing is keys/SOL.
 
 ### Step 1 — Real devnet launch of LOOP (validate the whole pipeline)
-Goal: prove mint → vanity `…Loop` → treasury → service-role persist → stake gate
-end-to-end on devnet, with **no real money**.
+Goal: prove mint → vanity `…Loop` → treasury → service-role persist → LOOP
+holdings read end-to-end on devnet, with **no real money**.
 
 Prereqs (founder): a devnet keypair at `scripts/.devnet-keypair.json`, funded
 from the faucet and holding ≥ 1,000 test-LOOP; env in `.env.local`:
@@ -105,7 +106,7 @@ LAUNCHPAD_PROVIDER=spl
 LAUNCH_CLUSTER=devnet
 LAUNCH_SIGNER_SECRET=<json array of the devnet secret key>
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
-LOOP_MINT=<devnet $LOOP mint from scripts/devnet-mint-loop.cjs>   # to exercise the stake gate
+LOOP_MINT=<devnet $LOOP mint from scripts/devnet-mint-loop.cjs>   # to exercise the LOOP holdings boost tier
 MINT_VANITY_SUFFIX=Loop                                            # optional, to test vanity on devnet
 VANITY_POOL=<json array of pre-ground devnet keypairs>            # optional
 ```
@@ -159,7 +160,7 @@ Process (safety-first):
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | persist real launches + runtime writes | 1, 3 |
 | `LAUNCH_SIGNER_SECRET` (devnet, funded) | devnet mint/treasury | 1 |
-| `LOOP_MINT` (devnet) | exercise the 1,000-LOOP stake gate | 1 |
+| `LOOP_MINT` (devnet) | read LOOP holdings (model boost tier) | 1 |
 | `PUMPPORTAL_API_KEY` | pump.fun create | 3 |
 | `LAUNCH_SIGNER_SECRET` (mainnet, real SOL) | pay for the mainnet launch | 3 |
 | mainnet `VANITY_POOL` (`Loop`) | the `…Loop` CA | 3 |

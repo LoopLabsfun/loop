@@ -91,7 +91,8 @@ mainnet phases, and the founder-only blockers) is in
   mirroring `launchProjectAction`'s defaults so direct REST calls can't spoof an official/funded
   project. The unused `rls_auto_enable()` SECURITY DEFINER fn has had `execute` revoked from
   `anon`/`authenticated`. Supabase security advisors are clean. **Still TODO for real launch:**
-  verify/lock the 1,000 LOOP stake on-chain (wallet-signature ownership proof) before inserting.
+  pay-to-launch (no stake toll) — collect the launch payment / bonding-curve buy on-chain and
+  record the verified creator wallet (signature proof) before inserting a funded row.
 
 ## Solana / Helius (devnet + mainnet)
 
