@@ -99,3 +99,15 @@ export interface Candle {
   l: number;
   c: number;
 }
+
+/** A token holder's share of supply (0..1), for governance + wind-down math. */
+export interface Holder {
+  address: string;
+  share: number;
+}
+
+/** A SOL payout to a holder (e.g. a wind-down distribution). */
+export interface Payout {
+  address: string;
+  sol: number;
+}
