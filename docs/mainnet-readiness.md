@@ -50,6 +50,12 @@ the repo + a domain, all listed above. None of it is more code.
 - **Claim creator-fees** `lib/creator-fees.ts` via PumpPortal. ✅ (needs
   `PUMPPORTAL_API_KEY`, present in `.env.local`; real fees only flow post-launch).
 - **Accounting** `lib/fee-ledger.ts` — pure per-role claimable. ✅
+- **Compute rail** `lib/compute-rail.ts` — the agent pays its own fiat bills from
+  its *own* fee share: `agent-share SOL → (Jupiter) USDC → provider credit`,
+  metered per project (credited − consumed USD). Safety invariant: top-ups can
+  only draw the agent's 65%, never founder/platform funds. ✅ pure + tested,
+  env-gated on `COMPUTE_RAIL_PROVIDER`; the per-project credit DB ledger + the
+  real swap/top-up are the activation step.
 - **TODO (buildable now, empty until fees flow):** a `fee_distributions` /
   `fee_claims` DB table + record/claim wired into the `FeesCustodyCard`, so the
   30/65/5 split and claims are tracked once trading begins. The actual SOL payout

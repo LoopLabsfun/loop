@@ -161,6 +161,14 @@ This is fully real and not expensive:
   the runtime swaps this for the real per-cycle metered spend, same seam. This is
   the concrete "funded by fees" story: fees + creator rewards must cover these
   four lines, and **X/Twitter is a paid (~$200/mo) opt-in line**, off by default.
+- **The payment rail — agent pays its own bills.** Providers bill in fiat, a
+  project earns SOL: the agent can't pay Anthropic in SOL. [`lib/compute-rail.ts`](../lib/compute-rail.ts)
+  is the custodial seam — `agent-share SOL → (Jupiter) USDC → Loop's provider
+  account credit → metered + debited per project` (a compute-ledger of
+  `credited − consumed` USD). **Safety invariant:** a top-up may only draw from
+  the agent's *own* claimable share (the 65%), never founder/platform funds —
+  `planTopUp` takes that as a hard cap. Pure + tested; env-gated on
+  `COMPUTE_RAIL_PROVIDER` for execution, the DB ledger is the activation step.
 
 ---
 
