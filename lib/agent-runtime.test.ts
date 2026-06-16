@@ -3,6 +3,7 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   coerceDecision,
+  routeAction,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
 } from "./agent-runtime";
@@ -110,6 +111,49 @@ describe("coerceDecision", () => {
     expect(d!.summary.length).toBeLessThanOrEqual(280);
     expect(d!.task.title.length).toBeLessThanOrEqual(120);
     expect(d!.task.detail.length).toBeLessThanOrEqual(500);
+  });
+
+  it("parses an optional on-chain action (enum-guarded)", () => {
+    const withAction = coerceDecision({
+      ...good,
+      action: { kind: "buyback", amountSol: 0.2, rationale: "support the floor" },
+    });
+    expect(withAction?.action).toEqual({
+      kind: "buyback",
+      amountSol: 0.2,
+      rationale: "support the floor",
+    });
+    // bad kind or missing rationale ⇒ dropped
+    expect(
+      coerceDecision({ ...good, action: { kind: "rug", amountSol: 1, rationale: "no" } })?.action
+    ).toBeUndefined();
+    expect(
+      coerceDecision({ ...good, action: { kind: "burn", amountSol: 1, rationale: "" } })?.action
+    ).toBeUndefined();
+    // negative amount is clamped to 0
+    expect(
+      coerceDecision({ ...good, action: { kind: "swap", amountSol: -5, rationale: "x" } })?.action
+        ?.amountSol
+    ).toBe(0);
+    expect(coerceDecision(good).action).toBeUndefined();
+  });
+});
+
+describe("routeAction", () => {
+  it("approves a small reversible buyback for execution", () => {
+    const r = routeAction({ kind: "buyback", amountSol: 0.1 });
+    expect(r.disposition).toBe("execute");
+    expect(r.note).toContain("buyback");
+  });
+  it("always escalates irreversible actions (burn, airdrop)", () => {
+    expect(routeAction({ kind: "burn", amountSol: 0.1 }).disposition).toBe("escalate");
+    expect(routeAction({ kind: "airdrop", amountSol: 0.1 }).disposition).toBe("escalate");
+  });
+  it("escalates an over-cap action", () => {
+    expect(routeAction({ kind: "buyback", amountSol: 999 }).disposition).toBe("escalate");
+  });
+  it("denies an invalid (negative) action", () => {
+    expect(routeAction({ kind: "buyback", amountSol: -1 }).disposition).toBe("deny");
   });
 });
 
