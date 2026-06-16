@@ -27,7 +27,17 @@ describe("sanitizeLaunch", () => {
       ticker: "OSCUR",
       prompt: "build it",
       repo: "https://github.com/you/project",
+      feeFounderPct: 30, // default split when unset
     });
+  });
+
+  it("defaults, clamps, and rounds the founder fee share", () => {
+    const base = { name: "X", ticker: "ABC", prompt: "" };
+    expect(sanitizeLaunch(base).feeFounderPct).toBe(30); // unset → default
+    expect(sanitizeLaunch({ ...base, feeFounderPct: 70 }).feeFounderPct).toBe(70);
+    expect(sanitizeLaunch({ ...base, feeFounderPct: 200 }).feeFounderPct).toBe(95); // clamp to max
+    expect(sanitizeLaunch({ ...base, feeFounderPct: -10 }).feeFounderPct).toBe(0); // clamp to min
+    expect(sanitizeLaunch({ ...base, feeFounderPct: 30.6 }).feeFounderPct).toBe(31); // round
   });
 
   it("uppercases and strips junk from the ticker", () => {
