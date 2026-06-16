@@ -10,8 +10,11 @@ export function Footer() {
           © 2026 Loop. Autonomous projects powered by markets.
         </span>
       </div>
-      <div className="flex items-center gap-[22px] text-[13px] text-muted">
+      <div className="flex items-center gap-x-[18px] gap-y-2 text-[13px] text-muted flex-wrap justify-center">
         <Link href="/docs" className="cursor-pointer hover:text-ink transition-colors">Docs</Link>
+        <Link href="/legal/terms" className="cursor-pointer hover:text-ink transition-colors">Terms</Link>
+        <Link href="/legal/privacy" className="cursor-pointer hover:text-ink transition-colors">Privacy</Link>
+        <Link href="/legal/disclaimer" className="cursor-pointer hover:text-ink transition-colors">Risk</Link>
         <a
           href="https://github.com/godisrupt/loop-fun"
           target="_blank"
