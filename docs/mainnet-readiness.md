@@ -74,6 +74,8 @@ sequence is founder-driven and irreversible.
 - [ ] **dry-run → smoke launch (throwaway token) → launch LOOP** — explicit per-step "go", never autonomous
 - [ ] fund the **LOOP treasury** so the agent auto-runs (separate from the agent wallet)
 - [ ] recommended before launch: `E2B_API_KEY` + the LOOP repo + `GITHUB_TOKEN`, so the live agent actually builds (not just plans)
+- [ ] white-label infra (multi-tenant): a Loop-owned **GitHub org** (`GITHUB_ORG`, default `loop-labs`) + **Vercel team** (`VERCEL_TOKEN` + `VERCEL_TEAM_ID`), so every project builds under Loop, never a personal account (`lib/provisioning.ts` plans it; launch already defaults the repo)
+- [ ] compute rail (funded-by-fees): `COMPUTE_RAIL_PROVIDER` + a KYC'd exchange/bank account held by the **Loop legal entity**, so the agent-share SOL can convert to provider credit (`lib/compute-rail.ts`)
 
 When these are checked, Loop is mainnet-ready. Everything above the line is done.
 

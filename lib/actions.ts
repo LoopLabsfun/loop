@@ -3,6 +3,7 @@
 import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
+import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
 import { verifyLaunchProof } from "./signature";
 import { sanitizeDirectiveText } from "./directives";
@@ -94,7 +95,9 @@ export async function launchProjectAction(
     description: clean.prompt.slice(0, DESCRIPTION_MAX),
     official: false,
     launchpad: token.launchpad,
-    repo: clean.repo,
+    // White-label by default: no personal repo supplied ⇒ the project builds
+    // under the Loop-owned org (loop-labs/<slug>), never the operator's account.
+    repo: clean.repo || provisionPlan(key).repo,
     cover: "neon",
     prompt: clean.prompt,
     price: 0.00003,

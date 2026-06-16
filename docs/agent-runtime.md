@@ -192,7 +192,11 @@ This is fully real and not expensive:
   Claude Agent SDK + GitHub/Vercel deploy + email inbox + Farcaster, escalating
   to the founder console. Lowest risk: we own the repo and the consequences.
 - **Phase 2 — devnet projects.** New launches get an auto-provisioned agent on
-  devnet, manual approval, capped budgets.
+  devnet, manual approval, capped budgets. White-label by default: every project
+  builds under a Loop-owned GitHub org + Vercel team, not a personal account
+  ([`lib/provisioning.ts`](../lib/provisioning.ts) plans `loop-labs/<slug>`;
+  launch already defaults the repo to it). Execution gates on `GITHUB_TOKEN` +
+  `VERCEL_TOKEN`/`VERCEL_TEAM_ID`.
 - **Phase 3 — mainnet.** Real mint + on-chain pay-to-launch payment + LOOP
   holdings reader for the boost tier (partly built: `lib/mint-spl.ts`,
   `lib/stake.ts`, vanity pool) + agent provisioned per project at launch. Custody
