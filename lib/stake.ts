@@ -1,11 +1,14 @@
 import type { LaunchCluster } from "./launchpad";
 
-// On-chain LOOP stake verification for launch gating.
+// On-chain LOOP holdings reader.
 //
-// Reads a wallet's LOOP token balance over JSON-RPC (no @solana/web3.js on the
-// server path — same reason as lib/solana.ts). Env-gated on LOOP_MINT: when
-// unset (prototype mode) the stake gate is open so launches keep working; when
-// set, a launcher must hold at least STAKE_REQUIRED_LOOP of that mint.
+// Pay-to-launch removed the launch stake gate — LOOP is no longer a toll to
+// publish. A wallet's LOOP balance now sets its *model boost tier* (hold 1,000 →
+// Haiku, 5,000 → Sonnet, 25,000 → Opus) and its platform governance weight.
+// This module reads that balance over JSON-RPC (no @solana/web3.js on the server
+// path — same reason as lib/solana.ts). Env-gated on LOOP_MINT: when unset
+// (prototype mode) the boost threshold is treated as met so the default tier
+// applies; when set, the wallet must hold at least the tier amount of that mint.
 //
 // Server-intended (pairs with HELIUS_API_KEY). Reads env lazily so it stays
 // unit-testable; secret env has no NEXT_PUBLIC_ prefix so nothing leaks client-side.
@@ -20,7 +23,7 @@ export function loopMint(): string | null {
   return m && BASE58.test(m) ? m : null;
 }
 
-/** True when a LOOP_MINT is configured, i.e. the stake gate is active. */
+/** True when a LOOP_MINT is configured, i.e. the holdings tier check is active. */
 export function stakeEnforced(): boolean {
   return loopMint() !== null;
 }
@@ -86,8 +89,9 @@ export async function getLoopBalance(
 }
 
 /**
- * Launch gate. Open when stake isn't enforced (no LOOP_MINT). Otherwise the
- * (proven) creator wallet must hold at least STAKE_REQUIRED_LOOP.
+ * Holdings threshold check (e.g. for a boost tier). Met when no LOOP_MINT is
+ * configured (prototype). Otherwise the wallet must hold at least the required
+ * amount of LOOP. Not a launch gate — launch is pay-to-launch.
  */
 export async function hasRequiredStake(
   owner: string | null,

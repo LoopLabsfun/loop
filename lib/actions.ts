@@ -17,8 +17,9 @@ import { sanitizeDirectiveText } from "./directives";
  * mint/treasury_wallet are persisted via the service-role client (which the
  * anon insert policy forbids).
  *
- * Still TODO for real launch: verify/lock the 1,000 LOOP stake on-chain
- * (wallet-signature ownership proof) before minting.
+ * Pay-to-launch (no stake toll): the bonding-curve buy is the cost and seeds
+ * the treasury — there's no LOOP holding to verify. Still TODO for real launch:
+ * collect the launch payment / curve buy on-chain before minting.
  */
 export async function launchProjectAction(
   input: LaunchInput
@@ -31,7 +32,7 @@ export async function launchProjectAction(
   // (a forged/replayed one is rejected); the verified pubkey is recorded as the
   // creator. Absent proof is allowed in prototype mode — wallets that can't
   // signMessage still launch — and will become required alongside on-chain
-  // stake verification.
+  // launch-payment verification.
   let creatorWallet: string | null = null;
   if (input.proof) {
     if (!verifyLaunchProof(input.proof, clean.ticker)) {

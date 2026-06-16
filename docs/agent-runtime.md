@@ -46,19 +46,20 @@ rows** and **block on their resolution**.
 
 **Who steers, with which token.** Steering is **two-token**:
 
-- **Project token** governs *that* project. A holder submits a directive by
-  staking project tokens (skin in the game + anti-spam), then it goes to a
-  token-weighted vote; on quorum the runtime applies it on the next cycle.
+- **Project token** governs *that* project. A holder submits a directive; it
+  goes to a token-weighted vote and applies on the next cycle once it clears
+  quorum (`lib/governance.ts` — `votePassed`).
 - **$LOOP** governs the *platform* layer: it sets the default compute tier,
   adds cross-project vote weight, and unlocks priority allocation / premium
   analytics.
 
-The **Founder Stake** (1,000+ LOOP locked at launch) is a permanent,
-**transferable** bond — it is *never* refunded by deletion (an on-chain
-project can't be deleted) and is **reclaimable by the project DAO** if the
-founder abandons it. The runtime reads the current Founder address (the stake
-holder, via `lib/stake.ts`) to authorize founder-level directives, and treats a
-DAO-reclaim vote as a change of that address.
+**Founder authority & no-stuck-funds.** Launch is **pay-to-launch**, not a
+stake — there's no locked bond. The runtime authorizes founder-level directives
+from the **recorded creator wallet** (the verified launch-payment / signature
+proof persisted by `launchProjectAction`). Funds are never trapped: the founder
+can only withdraw treasury via a passing holder vote (`canWithdraw`), and an
+abandoned project can be wound down with its treasury distributed **pro-rata to
+holders** (`windDownDistribution`). See `lib/governance.ts`.
 
 ---
 
@@ -144,9 +145,9 @@ This is fully real and not expensive:
 
 ## 6. Treasury-gated compute (already half-real)
 
-- **Stake → model tier** is in the mandate (`defaultMandate`): 1,000 → Haiku,
-  5,000 → Sonnet, 25,000 → Opus. The runtime reads the on-chain stake
-  (`lib/stake.ts`) to pick the model.
+- **LOOP holdings → model tier** is in the mandate (`defaultMandate`): hold
+  1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus (a boost, not a launch toll). The
+  runtime reads the on-chain LOOP balance (`lib/stake.ts`) to pick the model.
 - **Treasury balance → cadence + per-cycle token budget.** Empty treasury ⇒ the
   agent sleeps — this is the literal "builds it while the treasury is funded"
   promise. Balance is already live via Helius (`lib/solana.ts`).
@@ -184,9 +185,10 @@ This is fully real and not expensive:
   to the founder console. Lowest risk: we own the repo and the consequences.
 - **Phase 2 — devnet projects.** New launches get an auto-provisioned agent on
   devnet, manual approval, capped budgets.
-- **Phase 3 — mainnet.** Real mint + on-chain stake lock (partly built:
-  `lib/mint-spl.ts`, `lib/stake.ts`, vanity pool) + agent provisioned per project
-  at launch. Custody via Turnkey/Privy.
+- **Phase 3 — mainnet.** Real mint + on-chain pay-to-launch payment + LOOP
+  holdings reader for the boost tier (partly built: `lib/mint-spl.ts`,
+  `lib/stake.ts`, vanity pool) + agent provisioned per project at launch. Custody
+  via Turnkey/Privy.
 
 ---
 
