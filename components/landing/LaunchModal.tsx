@@ -4,6 +4,7 @@ import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
+import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "@/lib/launch-config";
 import { scoreReadiness, type ReadinessLevel } from "@/lib/agent-readiness";
 import { explorerUrl, shortAddr } from "@/lib/format";
 import {
@@ -167,7 +168,38 @@ export function LaunchModal({
           </button>
         </div>
 
-        {step === "form" && (
+        {step === "form" && !launchesOpen() && (
+          <div className="flex flex-col gap-4 py-2">
+            <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
+              <div className="font-display font-semibold text-[15px] text-ink mb-1">
+                Launches open soon
+              </div>
+              <p className="text-[13.5px] text-muted leading-[1.55] m-0">
+                {LAUNCHES_CLOSED_MESSAGE} Loop is launching its own project,
+                LOOP, first — once it&apos;s live and proven, project creation
+                opens to everyone.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Link
+                href="/token?p=loop"
+                onClick={onClose}
+                className="flex-1 text-center font-display font-semibold text-[14px] py-[11px] rounded-[11px] bg-accent text-white hover:bg-accent-d transition-colors"
+              >
+                See LOOP
+              </Link>
+              <Link
+                href="/docs"
+                onClick={onClose}
+                className="flex-1 text-center font-display font-semibold text-[14px] py-[11px] rounded-[11px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+              >
+                Read the docs
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {step === "form" && launchesOpen() && (
           <div className="flex flex-col gap-[14px]">
             <Field label="Project name">
               <input

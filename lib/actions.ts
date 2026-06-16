@@ -7,6 +7,7 @@ import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
 import { verifyLaunchProof } from "./signature";
 import { sanitizeDirectiveText } from "./directives";
+import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "./launch-config";
 
 /**
  * Persist a newly launched project.
@@ -25,6 +26,14 @@ import { sanitizeDirectiveText } from "./directives";
 export async function launchProjectAction(
   input: LaunchInput
 ): Promise<LaunchResult> {
+  // Phase A (LOOP-only): public launches are closed. The founder creates LOOP
+  // via the service-role launch script, not this action, so this never blocks
+  // the LOOP mainnet deploy. Authoritative gate (the UI also reflects it, and
+  // RLS forbids anon inserts) — reopen with NEXT_PUBLIC_LAUNCHES_OPEN=true.
+  if (!launchesOpen()) {
+    throw new Error(LAUNCHES_CLOSED_MESSAGE);
+  }
+
   const clean = sanitizeLaunch(input);
   const ticker = "$" + clean.ticker;
   let key = slugify(clean.ticker, clean.name);
