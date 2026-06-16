@@ -135,7 +135,7 @@ describe("coerceDecision", () => {
       coerceDecision({ ...good, action: { kind: "swap", amountSol: -5, rationale: "x" } })?.action
         ?.amountSol
     ).toBe(0);
-    expect(coerceDecision(good).action).toBeUndefined();
+    expect(coerceDecision(good)?.action).toBeUndefined();
   });
 });
 

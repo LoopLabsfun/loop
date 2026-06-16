@@ -378,7 +378,16 @@ export async function applyDecision(
       note: d.action.rationale,
     };
     const routed = routeAction(act);
+    // disposition for the wallet ledger: escalate/deny from the gate; an
+    // approved buyback becomes executed/simulated/escalated per the exec.
+    let disposition: "executed" | "simulated" | "escalated" | "denied" =
+      routed.disposition === "escalate"
+        ? "escalated"
+        : routed.disposition === "deny"
+          ? "denied"
+          : "simulated";
     let note = routed.note;
+    let txSig: string | null = null;
     if (routed.disposition === "execute" && act.kind === "buyback" && p.mint) {
       try {
         const { executeBuyback } = await import("./agent-actions-exec");
@@ -386,14 +395,24 @@ export async function applyDecision(
           outputMint: p.mint,
           cluster: p.network === "mainnet" ? "mainnet" : "devnet",
         });
+        disposition = r.executed
+          ? "executed"
+          : r.escalated
+            ? "escalated"
+            : "simulated";
+        txSig = r.txSig ?? null;
         note = `${r.executed ? "🟢 buyback executed" : r.simulated ? "🟡 buyback simulated" : "⚠️ buyback held"} ${act.amountSol ?? 0} SOL — ${r.reason}`.slice(0, 280);
       } catch {
         /* exec unavailable — keep the routed decision note */
       }
     }
-    await supabaseAdmin.from("agent_posts").insert({
+    // Structured row → the project Wallet panel (positions: buy/burn/airdrop…).
+    await supabaseAdmin.from("agent_actions").insert({
       project_key: p.key,
-      platform: "telegram",
+      kind: act.kind,
+      amount_sol: act.amountSol ?? 0,
+      disposition,
+      tx_sig: txSig,
       body: note,
     });
   }
