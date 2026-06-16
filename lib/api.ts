@@ -157,7 +157,6 @@ export interface LaunchResult {
   /** Project key (slug) — used to link to the new project's page. */
   key: string;
   ticker: string;
-  staked: string;
   /** Launchpad the token was created on. */
   launchpad?: Launchpad;
   /** SPL mint address for a real launch; null/undefined in simulated mode. */

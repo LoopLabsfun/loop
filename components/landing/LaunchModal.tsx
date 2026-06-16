@@ -31,7 +31,7 @@ type Step = "form" | "stake" | "deploying" | "done";
 
 const TITLES: Record<Step, string> = {
   form: "Launch a Project",
-  stake: "Stake & Confirm",
+  stake: "Confirm & Launch",
   deploying: "Deploying…",
   done: "Project Live",
 };
@@ -116,7 +116,7 @@ export function LaunchModal({
     ]);
     const lines = [
       `Token ${summaryTicker.toUpperCase()} deployed on Pump.fun`,
-      "1,000 LOOP staked & locked",
+      "Bonding-curve buy → treasury seeded",
       "Creator rewards connected to treasury",
     ];
     for (let i = 0; i < lines.length; i++) {
@@ -297,7 +297,7 @@ export function LaunchModal({
               onClick={goStake}
               className="mt-1 font-display font-semibold text-[15px] py-[13px] rounded-[12px] bg-accent text-white hover:bg-accent-d transition-colors"
             >
-              Continue → Stake
+              Continue → Launch
             </button>
           </div>
         )}
@@ -330,16 +330,16 @@ export function LaunchModal({
             <div className="border border-accent-tint-border bg-accent-tint rounded-[12px] p-4">
               <div className="flex justify-between items-baseline mb-[6px]">
                 <span className="font-display font-semibold text-[15px]">
-                  Founder Stake
+                  Pay to launch
                 </span>
                 <span className="font-mono text-[16px] text-accent-text">
-                  1,000 LOOP
+                  pump.fun curve
                 </span>
               </div>
               <p className="text-[12.5px] text-muted leading-[1.5] m-0">
-                Permanent — grants steering rights over your agent and sets its
-                compute tier. No delete-and-refund; you exit by transferring it.
-                5% of creator rewards route to the Loop treasury.
+                No stake, no toll — open to anyone. Your bonding-curve buy seeds
+                the project treasury; 5% of creator rewards route to the Loop
+                treasury. Hold $LOOP for governance + a stronger default agent.
               </p>
             </div>
             {!wallet.connected ? (
@@ -364,7 +364,7 @@ export function LaunchModal({
                 onClick={startDeploy}
                 className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] bg-accent text-white hover:bg-accent-d transition-colors"
               >
-                Stake &amp; Launch
+                Pay &amp; Launch
               </button>
             )}
             {launchError && (
@@ -413,8 +413,8 @@ export function LaunchModal({
               <Row label="Launched by">
                 <span>{wallet.label}</span>
               </Row>
-              <Row label="Stake">
-                <span>{result?.staked ?? "1,000 LOOP"} locked</span>
+              <Row label="Fee split">
+                <span>{splitLabel(split)}</span>
               </Row>
               <Row label="Network">
                 <span className={network === "devnet" ? "text-warn" : "text-pos"}>
