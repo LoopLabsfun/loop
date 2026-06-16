@@ -38,11 +38,11 @@ export function Tokenomics() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Mechanic label="MECHANIC 01" title="1,000 LOOP Founder Stake">
+        <Mechanic label="MECHANIC 01" title="Pay to launch — open to all">
           <p className="text-[13.5px] text-muted leading-[1.55] m-0 mb-4">
-            A permanent stake that grants steering rights over your project&apos;s
-            agent. No delete-and-refund — you exit by transferring it. Stake more
-            for a stronger default agent.
+            No stake, no toll: anyone launches. The bonding-curve buy seeds your
+            treasury. $LOOP isn&apos;t a gate — hold it for governance and a
+            stronger default agent:
           </p>
           <div className="flex flex-col gap-[6px] font-mono text-[12px] text-body bg-surface-2 rounded-[10px] p-3">
             {[

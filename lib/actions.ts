@@ -5,7 +5,6 @@ import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { createToken, parseCluster } from "./launchpad";
 import { verifyLaunchProof } from "./signature";
-import { hasRequiredStake, stakeEnforced, STAKE_REQUIRED_LOOP } from "./stake";
 import { sanitizeDirectiveText } from "./directives";
 
 /**
@@ -44,19 +43,10 @@ export async function launchProjectAction(
   // The UI network switch selects the cluster; fall back to LAUNCH_CLUSTER.
   const cluster = input.network ?? parseCluster(process.env.LAUNCH_CLUSTER);
 
-  // On-chain stake gate. When a LOOP mint is configured, the proven creator
-  // wallet must hold the required LOOP before we mint/persist. Open (no-op) in
-  // prototype mode where no LOOP_MINT is set.
-  if (stakeEnforced()) {
-    if (!creatorWallet) {
-      throw new Error("Connect and verify your wallet to stake LOOP.");
-    }
-    if (!(await hasRequiredStake(creatorWallet, cluster))) {
-      throw new Error(
-        `You need at least ${STAKE_REQUIRED_LOOP.toLocaleString()} LOOP to launch a project.`
-      );
-    }
-  }
+  // Pay-to-launch (not stake-to-launch): launching is open to anyone — no
+  // LOOP-holding toll. The pump.fun bonding-curve buy is the cost and seeds the
+  // project treasury; Loop earns via its 5% of the creator-fee split. Holding
+  // LOOP is a governance + boost (default model tier), never a gate to publish.
 
   // Mint the token (no-op in simulated mode).
   const token = await createToken({
@@ -69,7 +59,6 @@ export async function launchProjectAction(
   const result: LaunchResult = {
     key,
     ticker,
-    staked: "1,000 LOOP",
     launchpad: token.launchpad,
     mint: token.mint,
     network: token.cluster,
