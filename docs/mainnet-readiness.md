@@ -43,23 +43,26 @@ Vercel prod.
 email.** Every capability is wired or seam-ready; what's missing is the keys +
 the repo + a domain, all listed above. None of it is more code.
 
-## 3. Economics — built; ledger DB is the one remaining buildable prep
+## 3. Economics — built end to end; the runtime that writes real data is the activation step
 
 - **Fee split** `lib/fees.ts` — founder/agent/platform **30/65/5**, Loop-custodial
   (Loop is the on-chain pump.fun creator). ✅
 - **Claim creator-fees** `lib/creator-fees.ts` via PumpPortal. ✅ (needs
   `PUMPPORTAL_API_KEY`, present in `.env.local`; real fees only flow post-launch).
-- **Accounting** `lib/fee-ledger.ts` — pure per-role claimable. ✅
+- **Accounting** `lib/fee-ledger.ts` — pure per-role claimable, backed by the
+  **`fee_ledger`** table (earned + claimed per role; service-role write, public
+  read). ✅
 - **Compute rail** `lib/compute-rail.ts` — the agent pays its own fiat bills from
   its *own* fee share: `agent-share SOL → (Jupiter) USDC → provider credit`,
   metered per project (credited − consumed USD). Safety invariant: top-ups can
   only draw the agent's 65%, never founder/platform funds. ✅ pure + tested,
-  env-gated on `COMPUTE_RAIL_PROVIDER`; the per-project credit DB ledger + the
-  real swap/top-up are the activation step.
-- **TODO (buildable now, empty until fees flow):** a `fee_distributions` /
-  `fee_claims` DB table + record/claim wired into the `FeesCustodyCard`, so the
-  30/65/5 split and claims are tracked once trading begins. The actual SOL payout
-  is an irreversible transfer ⇒ it escalates like other on-chain actions.
+  backed by the **`compute_ledger`** table + `lib/compute-ledger-store.ts`
+  (get/save), env-gated on `COMPUTE_RAIL_PROVIDER`.
+- **Both ledger tables exist; what's left is the runtime that writes them:** record
+  each fee sweep into `fee_ledger`, meter each cycle's real spend into
+  `compute_ledger`, and run the auto-top-up (`planTopUp` → real Jupiter swap →
+  `recordTopUp`). The actual SOL payouts are irreversible transfers ⇒ they
+  escalate like other on-chain actions. Empty until trading begins.
 
 ## 4. Mainnet launch — the go/no-go checklist
 
@@ -83,8 +86,14 @@ When these are checked, Loop is mainnet-ready. Everything above the line is done
 
 ## What I (the build) can still do without keys
 
-1. **Fee-ledger DB** (§3) — the last buildable economics piece (prep; empty until fees).
-2. **Farcaster seam** — the one social channel not yet stubbed (Telegram/X done).
-3. **Email inbound webhook route** — ready to wire the moment a domain + provider exist.
+The buildable backlog is essentially cleared:
 
-Everything else is provisioning, and provisioning is yours.
+- ✅ **Fee-ledger + compute-ledger DB** (§3) — both tables + stores exist.
+- ✅ **Email inbound webhook route** (`app/api/email/inbound`) — wired, secret-gated,
+  activates the moment a domain + provider exist.
+- ✅ **White-label provisioning** (`lib/provisioning.ts`) — `loop-labs/<slug>` by default.
+- ⏭️ **Farcaster** — intentionally skipped (founder's call).
+
+What remains is the **runtime wiring** that needs the activation keys (real fee
+sweeps, compute metering + auto-top-up, GitHub/Vercel API calls) and the
+provisioning in §1–4. Provisioning is yours.
