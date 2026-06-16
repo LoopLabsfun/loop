@@ -20,6 +20,41 @@ import type { Holder, Payout } from "./types";
 
 export type ProposalKind = "withdrawal" | "wind_down";
 
+export interface TreasuryExit {
+  kind: "operating" | ProposalKind;
+  label: string;
+  detail: string;
+  /** Whether this exit requires a passing holder vote to execute. */
+  needsVote: boolean;
+}
+
+/**
+ * The governed treasury's exits, as data — so the UI renders the "no stuck
+ * funds" guarantee from the same source the runtime executes. Covers every
+ * `ProposalKind` plus day-to-day operating spend; SOL can always leave by at
+ * least one of these, so none is ever permanently locked.
+ */
+export const TREASURY_EXITS: TreasuryExit[] = [
+  {
+    kind: "operating",
+    label: "Operating spend",
+    detail: "the agent spends within its budget",
+    needsVote: false,
+  },
+  {
+    kind: "withdrawal",
+    label: "Founder withdrawal",
+    detail: "only when a holder vote passes — never unilateral",
+    needsVote: true,
+  },
+  {
+    kind: "wind_down",
+    label: "Wind-down",
+    detail: "treasury returns pro-rata to holders if the project closes",
+    needsVote: false,
+  },
+];
+
 export interface VoteTally {
   forVotes: number;
   againstVotes: number;

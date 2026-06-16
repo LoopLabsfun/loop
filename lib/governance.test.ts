@@ -3,6 +3,7 @@ import {
   votePassed,
   canWithdraw,
   windDownDistribution,
+  TREASURY_EXITS,
 } from "./governance";
 
 describe("votePassed", () => {
@@ -79,5 +80,19 @@ describe("windDownDistribution (no stuck funds)", () => {
   it("returns nothing for an empty treasury or no holders", () => {
     expect(windDownDistribution(0, [{ address: "a", share: 1 }])).toEqual([]);
     expect(windDownDistribution(5, [])).toEqual([]);
+  });
+});
+
+describe("TREASURY_EXITS (no stuck funds, as data)", () => {
+  it("covers every ProposalKind plus operating spend", () => {
+    expect(TREASURY_EXITS.map((e) => e.kind)).toEqual([
+      "operating",
+      "withdrawal",
+      "wind_down",
+    ]);
+  });
+  it("gates ONLY the founder withdrawal behind a holder vote", () => {
+    const needsVote = TREASURY_EXITS.filter((e) => e.needsVote).map((e) => e.kind);
+    expect(needsVote).toEqual(["withdrawal"]);
   });
 });
