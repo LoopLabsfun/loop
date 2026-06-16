@@ -24,12 +24,37 @@ import type { Project } from "./types";
 // Mirrors the live/fallback pattern in lib/queries.ts. Server-only.
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type WalletActionKind =
+  | "buyback"
+  | "burn"
+  | "airdrop"
+  | "bounty"
+  | "swap";
+export type WalletActionDisposition =
+  | "executed"
+  | "simulated"
+  | "escalated"
+  | "denied";
+
+/** One on-chain position/action the agent took (or proposed) on its token. */
+export interface WalletAction {
+  id: string;
+  kind: WalletActionKind;
+  amountSol: number;
+  disposition: WalletActionDisposition;
+  txSig: string | null;
+  note: string;
+  at: string;
+}
+
 export interface AgentState {
   tasks: AgentTask[];
   inbox: InboxMessage[];
   social: SocialPost[];
   /** Persisted steering directives/proposals, newest first ([] until any). */
   directives: FeedItem[];
+  /** Agent on-chain positions (buyback/burn/airdrop/bounty/swap), newest first. */
+  actions: WalletAction[];
   /** True when at least one panel came from real rows this request. */
   live: boolean;
 }
@@ -72,6 +97,15 @@ interface PostRow {
   replies: number;
   created_at: string;
 }
+interface ActionRow {
+  id: number;
+  kind: string | null;
+  amount_sol: number | null;
+  disposition: string | null;
+  tx_sig: string | null;
+  body: string | null;
+  created_at: string;
+}
 
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
@@ -84,12 +118,13 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     inbox: [],
     social: [],
     directives: [],
+    actions: [],
     live: false,
   };
   if (!supabase) return fallback;
 
   try {
-    const [t, e, s, d] = await Promise.all([
+    const [t, e, s, d, a] = await Promise.all([
       supabase
         .from("agent_tasks")
         .select("*")
@@ -112,6 +147,13 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         .from("directives")
         .select("*")
         .eq("project_key", p.key)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("agent_actions")
+        .select("*")
+        .eq("project_key", p.key)
+        .not("kind", "is", null)
         .order("created_at", { ascending: false })
         .limit(20),
     ]);
@@ -155,16 +197,45 @@ export async function getAgentState(p: Project): Promise<AgentState> {
       (r) => rowToFeedItem(r, rel(r.created_at))
     );
 
+    const ACTION_KINDS: WalletActionKind[] = [
+      "buyback",
+      "burn",
+      "airdrop",
+      "bounty",
+      "swap",
+    ];
+    const DISPOSITIONS: WalletActionDisposition[] = [
+      "executed",
+      "simulated",
+      "escalated",
+      "denied",
+    ];
+    const actions: WalletAction[] = ((a.data as ActionRow[] | null) ?? [])
+      .filter((r) => ACTION_KINDS.includes(r.kind as WalletActionKind))
+      .map((r) => ({
+        id: `a${r.id}`,
+        kind: r.kind as WalletActionKind,
+        amountSol: r.amount_sol ?? 0,
+        disposition: DISPOSITIONS.includes(r.disposition as WalletActionDisposition)
+          ? (r.disposition as WalletActionDisposition)
+          : "simulated",
+        txSig: r.tx_sig ?? null,
+        note: r.body ?? "",
+        at: rel(r.created_at),
+      }));
+
     return {
       tasks,
       inbox,
       social,
       directives,
+      actions,
       live:
         tasks.length > 0 ||
         inbox.length > 0 ||
         social.length > 0 ||
-        directives.length > 0,
+        directives.length > 0 ||
+        actions.length > 0,
     };
   } catch {
     return fallback;

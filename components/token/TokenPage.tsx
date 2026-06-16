@@ -11,6 +11,7 @@ import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { AgentConsole } from "./AgentConsole";
 import { AgentOperator } from "./AgentOperator";
+import { ProjectWallet } from "./ProjectWallet";
 import type { AgentState } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
@@ -124,6 +125,8 @@ export function TokenPage({
             inbox={agentState?.inbox}
             social={agentState?.social}
           />
+          {/* Project Wallet — the agent's on-chain positions (buyback/burn/airdrop) */}
+          <ProjectWallet project={p} actions={agentState?.actions} />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             {preLaunch ? (
