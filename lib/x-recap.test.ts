@@ -30,7 +30,7 @@ describe("buildLaunchTweet", () => {
     expect(t).toContain("Demo Co ($DEMO)");
     expect(t).toContain("@loop");
     expect(t).toContain("builds itself");
-    expect(t).toContain("demo.loop.fun");
+    expect(t).toContain("demo.looplabs.fun");
     expect(t).toContain("funded by its market");
   });
 
@@ -44,7 +44,7 @@ describe("buildLaunchTweet", () => {
     const t = buildLaunchTweet({ ...base, description: "x".repeat(600) });
     expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
     expect(t).toContain("…"); // the vision got trimmed
-    expect(t).toContain("demo.loop.fun"); // the link is preserved
+    expect(t).toContain("demo.looplabs.fun"); // the link is preserved
   });
 
   it("drops the vision line cleanly when there's no description", () => {

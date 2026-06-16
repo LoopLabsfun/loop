@@ -46,9 +46,9 @@ describe("agent identity", () => {
     expect(agentSlug({ key: "" as Project["key"], ticker: "$" })).toBe("agent");
   });
   it("builds email / twitter / site from the slug", () => {
-    expect(agentEmail(base)).toBe("demo@agents.loop.fun");
+    expect(agentEmail(base)).toBe("demo@agents.looplabs.fun");
     expect(agentTwitter(base)).toBe("@demo_agent");
-    expect(agentSite(base)).toBe("demo.loop.fun");
+    expect(agentSite(base)).toBe("demo.looplabs.fun");
   });
 });
 
@@ -68,7 +68,7 @@ describe("seeds", () => {
   it("social posts reference the project handle/site", () => {
     const posts = seedSocial(base);
     expect(posts.length).toBeGreaterThan(0);
-    expect(posts.some((s) => s.text.includes("demo.loop.fun"))).toBe(true);
+    expect(posts.some((s) => s.text.includes("demo.looplabs.fun"))).toBe(true);
   });
 });
 

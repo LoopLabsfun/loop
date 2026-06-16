@@ -10,7 +10,7 @@ import type { Project } from "./types";
 // runtime later (see docs/agent-runtime.md) without touching the UI.
 //
 // Each project gets a dedicated agent identity:
-//   email:   <slug>@agents.loop.fun
+//   email:   <slug>@agents.looplabs.fun
 //   socials: @<slug>_agent
 // derived deterministically from the project key.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export function agentSlug(p: Pick<Project, "key" | "ticker">): string {
 }
 
 export function agentEmail(p: Pick<Project, "key" | "ticker">): string {
-  return `${agentSlug(p)}@agents.loop.fun`;
+  return `${agentSlug(p)}@agents.looplabs.fun`;
 }
 
 export function agentTwitter(p: Pick<Project, "key" | "ticker">): string {
@@ -84,7 +84,7 @@ export function agentTwitter(p: Pick<Project, "key" | "ticker">): string {
 }
 
 export function agentSite(p: Pick<Project, "key" | "ticker">): string {
-  return `${agentSlug(p)}.loop.fun`;
+  return `${agentSlug(p)}.looplabs.fun`;
 }
 
 // --- Seeds (stand-ins for a real runtime stream) ----------------------------
@@ -176,7 +176,7 @@ export function seedInbox(p: Project): InboxMessage[] {
     {
       id: "m5",
       direction: "in",
-      party: "ops@loop.fun",
+      party: "ops@looplabs.fun",
       subject: `Inbox ready: ${email}`,
       preview: "Your agent mailbox is live. Replies route to the console.",
       at: "2d ago",

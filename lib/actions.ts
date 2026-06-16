@@ -96,7 +96,7 @@ export async function launchProjectAction(
     official: false,
     launchpad: token.launchpad,
     // White-label by default: no personal repo supplied ⇒ the project builds
-    // under the Loop-owned org (loop-labs/<slug>), never the operator's account.
+    // under the Loop-owned org (LoopLabsfun/<slug>), never the operator's account.
     repo: clean.repo || provisionPlan(key).repo,
     cover: "neon",
     prompt: clean.prompt,

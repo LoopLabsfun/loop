@@ -33,8 +33,8 @@ describe("provisionPlan", () => {
   it("homes a project under the Loop org with the owner/name repo shape", () => {
     const p = provisionPlan("loop");
     expect(p.org).toBe(DEFAULT_GITHUB_ORG);
-    expect(p.repo).toBe("loop-labs/loop");
-    expect(p.repoUrl).toBe("https://github.com/loop-labs/loop");
+    expect(p.repo).toBe("LoopLabsfun/loop");
+    expect(p.repoUrl).toBe("https://github.com/LoopLabsfun/loop");
     expect(p.vercelProject).toBe("loop");
     expect(p.vercelUrl).toBe("https://loop.vercel.app");
   });
@@ -42,10 +42,10 @@ describe("provisionPlan", () => {
     expect(provisionPlan("aivid")).toEqual(provisionPlan("aivid"));
   });
   it("sanitizes the key into a valid repo name", () => {
-    expect(provisionPlan("My Token #1").repo).toBe("loop-labs/my-token-1");
+    expect(provisionPlan("My Token #1").repo).toBe("LoopLabsfun/my-token-1");
   });
-  it("accepts an org override", () => {
-    expect(provisionPlan("x", { org: "Other Org" }).repo).toBe("other-org/x");
+  it("accepts an org override, preserving case", () => {
+    expect(provisionPlan("x", { org: "Other-Org" }).repo).toBe("Other-Org/x");
   });
 });
 

@@ -4,7 +4,7 @@ import type { Project } from "./types";
 import { agentEmail } from "./agent";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EMAIL SEND PATH — the agent's outreach mailbox (`<slug>@agents.loop.fun`),
+// EMAIL SEND PATH — the agent's outreach mailbox (`<slug>@agents.looplabs.fun`),
 // the email pillar of the Polsia model (the agent writes intros / answers /
 // outreach). Server-only: reads RESEND_API_KEY (no NEXT_PUBLIC_ prefix → never
 // ships to the browser) and POSTs to Resend's HTTP API.
@@ -43,7 +43,7 @@ export interface OutboundEmail {
   from?: string;
 }
 
-/** The agent's own from-address for a project: `<slug>@agents.loop.fun`. */
+/** The agent's own from-address for a project: `<slug>@agents.looplabs.fun`. */
 export function agentFrom(p: Pick<Project, "key" | "ticker">): string {
   return agentEmail(p);
 }

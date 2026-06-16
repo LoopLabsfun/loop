@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// EMAIL INBOUND — the receiving half of the agent mailbox (`<slug>@agents.loop.fun`).
+// EMAIL INBOUND — the receiving half of the agent mailbox (`<slug>@agents.looplabs.fun`).
 //
 // The send path (email-send.ts) lets the agent write out; this is how replies
 // come back in. A real domain + Cloudflare Email Routing (or Resend inbound)
@@ -13,14 +13,14 @@
 // resolves the slug to a real project (by agentSlug) and inserts via service-role.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const AGENT_EMAIL_DOMAIN = "agents.loop.fun";
+export const AGENT_EMAIL_DOMAIN = "agents.looplabs.fun";
 export const SUBJECT_MAX = 200;
 export const PREVIEW_MAX = 280;
 export const PARTY_MAX = 200;
 
 /** A raw inbound webhook payload (provider-agnostic; the worker maps to this). */
 export interface InboundPayload {
-  /** Recipient, e.g. `loop@agents.loop.fun` or `"Agent" <loop@agents.loop.fun>`. */
+  /** Recipient, e.g. `loop@agents.looplabs.fun` or `"Agent" <loop@agents.looplabs.fun>`. */
   to?: string | null;
   /** Sender address (the conversation party). */
   from?: string | null;
@@ -36,7 +36,7 @@ function bareAddress(raw: string): string {
 }
 
 /**
- * The normalized agent slug from a `<slug>@agents.loop.fun` recipient, matching
+ * The normalized agent slug from a `<slug>@agents.looplabs.fun` recipient, matching
  * `agentSlug` (lowercase, alphanumerics only). `null` when `to` isn't an agent
  * address (wrong domain / malformed) — the route rejects those.
  */
