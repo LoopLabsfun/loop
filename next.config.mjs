@@ -15,6 +15,21 @@ const nextConfig = {
     "@solana/wallet-adapter-react-ui",
     "@solana/wallet-adapter-wallets",
   ],
+  webpack: (config) => {
+    // Privy declares several integrations as OPTIONAL peer deps (Abstract Global
+    // Wallet, Stripe crypto on-ramp, ERC-4337 `permissionless`). We install with
+    // legacy-peer-deps (an `ox` version clash with the wallet-adapter stack), so
+    // these optional peers aren't pulled in — but Privy's bundle still statically
+    // imports them. Loop uses none of these features, so stub them to empty
+    // modules instead of failing the build on the missing packages.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@abstract-foundation/agw-client": false,
+      "@stripe/crypto": false,
+      permissionless: false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
