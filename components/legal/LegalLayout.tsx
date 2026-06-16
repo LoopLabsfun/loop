@@ -15,7 +15,7 @@ export function LegalLayout({
   slug,
   title,
   intro,
-  lastUpdated = "TO COMPLETE",
+  lastUpdated = "—",
   sections,
   children,
 }: {
@@ -177,12 +177,8 @@ export function LList({ items }: { items: React.ReactNode[] }) {
   );
 }
 
-/** A loud, unmissable placeholder for content that needs the real entity /
- *  jurisdiction / counsel before launch. */
+/** A neutral inline blank for details to be filled in before a real launch.
+ *  Renders as a subtle muted placeholder — nothing alarming, just a space. */
 export function ToComplete({ children }: { children: React.ReactNode }) {
-  return (
-    <mark className="font-mono text-[12px] text-warn bg-surface-2 border border-warn rounded-[5px] px-[6px] py-[1px] mx-[1px]">
-      ⚠ TO COMPLETE: {children}
-    </mark>
-  );
+  return <span className="text-muted">{children}</span>;
 }
