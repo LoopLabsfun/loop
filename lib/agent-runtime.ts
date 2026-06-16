@@ -8,6 +8,15 @@ import { gateTaskStatus } from "./verifier";
 import type { SandboxLanguage } from "./sandbox";
 import { formatLearningsForPrompt, type Learning } from "./learnings";
 import { getTopLearnings } from "./agent-data";
+import {
+  evaluateAction,
+  walletFor,
+  DEFAULT_POLICY,
+  type AgentAction,
+  type AgentActionKind,
+  type ActionVerdict,
+  type WalletRole,
+} from "./agent-actions";
 
 // The real per-project agent "brain". Given the project's mandate (its launch
 // prompt) plus the latest steering directives and current task state, it asks
@@ -24,6 +33,13 @@ const AGENT_MODEL = "claude-opus-4-8";
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 const SANDBOX_LANGS: SandboxLanguage[] = ["python", "javascript", "bash"];
+const ACTION_KINDS: AgentActionKind[] = [
+  "buyback",
+  "burn",
+  "airdrop",
+  "bounty",
+  "swap",
+];
 
 export interface AgentDecision {
   /** One-line public build update (→ agent_posts). */
@@ -37,6 +53,13 @@ export interface AgentDecision {
   };
   /** Optional real code the agent runs in the E2B sandbox this tick. */
   command?: { language: SandboxLanguage; code: string };
+  /**
+   * Optional on-chain action the agent wants to take on its own token
+   * (buyback / burn / airdrop / bounty / swap). Routed through the action
+   * guardrails: irreversible or over-budget ⇒ escalate to founder, never
+   * executed by the agent alone.
+   */
+  action?: { kind: AgentActionKind; amountSol: number; rationale: string };
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -65,6 +88,16 @@ export const DECISION_SCHEMA = {
       },
       required: ["language", "code"],
     },
+    action: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        kind: { type: "string", enum: ACTION_KINDS },
+        amountSol: { type: "number" },
+        rationale: { type: "string" },
+      },
+      required: ["kind", "amountSol", "rationale"],
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -90,6 +123,7 @@ export function buildSystemPrompt(
       ? [`Content & brand policy for everything you publish (posts, emails, copy): ${mandate.contentPolicy}`]
       : []),
     `You are funded by the project's on-chain treasury and accountable to its token holders.`,
+    `You may manage the token on-chain: optionally return an "action" (buyback/burn/airdrop/bounty/swap) with an amountSol and a rationale. Irreversible actions (burn, airdrop) and anything over budget are escalated to the founder for sign-off — never executed by you alone. Only propose one when it clearly serves the project.`,
     `Each tick you pick ONE concrete next action that moves the project forward, do it, and report it honestly.`,
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
     `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
@@ -180,6 +214,25 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     command = { language, code: c.code };
   }
 
+  const a = (r.action ?? null) as Record<string, unknown> | null;
+  let action: AgentDecision["action"];
+  if (
+    a &&
+    ACTION_KINDS.includes(a.kind as AgentActionKind) &&
+    typeof a.rationale === "string" &&
+    a.rationale.trim()
+  ) {
+    const amountSol =
+      typeof a.amountSol === "number" && a.amountSol >= 0 && Number.isFinite(a.amountSol)
+        ? a.amountSol
+        : 0;
+    action = {
+      kind: a.kind as AgentActionKind,
+      amountSol,
+      rationale: a.rationale.trim().slice(0, 280),
+    };
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -189,7 +242,45 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
       status,
     },
     ...(command ? { command } : {}),
+    ...(action ? { action } : {}),
   };
+}
+
+export interface RoutedAction {
+  /** What the runtime does with the proposal. */
+  disposition: "execute" | "escalate" | "deny";
+  /** Which risk-tiered wallet the action draws from. */
+  wallet: WalletRole;
+  verdict: ActionVerdict;
+  /** One-line public note for the build feed. */
+  note: string;
+}
+
+/**
+ * Pure: route a proposed on-chain action through the guardrails. Irreversible
+ * (burn/airdrop) or over-budget ⇒ escalate to the founder; an invalid one is
+ * denied; otherwise it's approved for execution. The agent never executes an
+ * irreversible action on its own — this is the on-chain extension of the
+ * escalation ladder.
+ */
+export function routeAction(action: AgentAction, spentTodaySol = 0): RoutedAction {
+  const verdict = evaluateAction(action, DEFAULT_POLICY, spentTodaySol);
+  const wallet = walletFor(action.kind);
+  // escalate wins over ok: evaluateAction returns ok:false + escalate:true for
+  // over-budget and irreversible actions (those go to the founder, not denied).
+  const disposition: RoutedAction["disposition"] = verdict.escalate
+    ? "escalate"
+    : verdict.ok
+      ? "execute"
+      : "deny";
+  const amt = action.amountSol ? `${action.amountSol} SOL ` : "";
+  const note =
+    disposition === "execute"
+      ? `🟢 on-chain ${action.kind} ${amt}approved — ${verdict.reason}`
+      : disposition === "escalate"
+        ? `⚠️ ${action.kind} ${amt}escalated to founder — ${verdict.reason}`
+        : `⛔ ${action.kind} ${amt}rejected — ${verdict.reason}`;
+  return { disposition, wallet, verdict, note: note.slice(0, 280) };
 }
 
 /** Ask Claude for the next action. Throws if the runtime isn't configured. */
@@ -273,6 +364,39 @@ export async function applyDecision(
     category: d.task.category,
     status: gated.status,
   });
+
+  // On-chain action (buyback/burn/airdrop/bounty/swap) the agent proposed this
+  // tick. Route it through the guardrails: irreversible/over-budget escalate to
+  // the founder (never auto-executed). A permitted buyback runs through the
+  // Jupiter exec — which stays simulated until the agent wallet is funded, and
+  // needs a mint (so it's a no-op pre-launch). Either way we record an honest
+  // public note; a failure here never aborts the cycle.
+  if (d.action) {
+    const act: AgentAction = {
+      kind: d.action.kind,
+      amountSol: d.action.amountSol,
+      note: d.action.rationale,
+    };
+    const routed = routeAction(act);
+    let note = routed.note;
+    if (routed.disposition === "execute" && act.kind === "buyback" && p.mint) {
+      try {
+        const { executeBuyback } = await import("./agent-actions-exec");
+        const r = await executeBuyback(act, {
+          outputMint: p.mint,
+          cluster: p.network === "mainnet" ? "mainnet" : "devnet",
+        });
+        note = `${r.executed ? "🟢 buyback executed" : r.simulated ? "🟡 buyback simulated" : "⚠️ buyback held"} ${act.amountSol ?? 0} SOL — ${r.reason}`.slice(0, 280);
+      } catch {
+        /* exec unavailable — keep the routed decision note */
+      }
+    }
+    await supabaseAdmin.from("agent_posts").insert({
+      project_key: p.key,
+      platform: "telegram",
+      body: note,
+    });
+  }
 
   // Read-only Telegram build update — only when something actually shipped (so
   // the bot reports news, not every tick). Phase 1: a single bot + chat via env
