@@ -84,9 +84,27 @@ All actions are budget-capped, logged (the action feed), and irreversible /
 out-of-mandate ones escalate to the founder, then the DAO — same ladder as the
 Agent Console.
 
-**Recovering the idea's revenue** — two streams, both into the project treasury:
-(1) creator fees (above); (2) product revenue the agent's product earns
-(Stripe / on-chain), governed by the mandate.
+**Value is on-chain; Loop never custodies fiat.** A project's success accrues to
+its **token**, and the agent returns value to holders **on-chain**: **buybacks**,
+**airdrops** to holders, and **pump.fun bounties** — all from the agent's fee
+share, within the guardrails. Loop holds **no** product-revenue account; the
+only fiat touchpoint anywhere is the compute rail (§7), and even there Loop only
+fronts against the agent's own crypto earnings.
+
+**Founder-operated product revenue (opt-in, off-Loop).** A founder *may* monetize
+the product in fiat through **their own Stripe / their own legal entity** — Loop
+never touches it, never custodies it, and is not the payment principal (Polsia-
+style: "payouts in *your* Stripe"). Two guardrails keep this aligned with the
+holders who funded the token:
+- **Transparency** — the project page discloses *whether* it has founder-operated
+  off-Loop revenue (vs token-only), so buyers aren't misled.
+- **Holder alignment** — the founder is encouraged (via the mandate/governance)
+  to commit a **% of product revenue back to the treasury** (→ buybacks/airdrops).
+  It's off-chain fiat, so this is a *disclosed commitment*, not on-chain-enforced.
+
+The Loop-native, fully-aligned alternative remains **crypto-native** monetization
+(charge in USDC/SOL → straight to the treasury → holders) — recommended where it
+fits, since it needs no Stripe and no trust.
 
 ---
 
@@ -115,3 +133,31 @@ seam. The launch form captures the initial mandate + fee split.
 Founder-only blockers stay the same (`ANTHROPIC_API_KEY`, `CRON_SECRET`,
 `E2B_API_KEY`, `PUMPPORTAL_API_KEY`, Turnkey/Privy creds, a real domain). See
 [agent-runtime.md](agent-runtime.md) and [loop-roadmap.md](loop-roadmap.md).
+
+---
+
+## 7. Multi-tenant: who pays for compute (founder decisions, 2026-06)
+
+When projects are launched by **strangers**, the agent brain still bills in fiat
+(Anthropic). An AI agent cannot legally hold a card / pass KYC, so there is
+always a human/company principal at the financial root. Locked model:
+
+- **Compute = hybrid graduation.** By default **Loop fronts** each project's
+  compute on Loop's provider account, **capped to that project's own agent fee
+  share** (the compute rail's invariant — a project can never spend more than it
+  earned; no cross-subsidy). A project can **graduate** to its **own** provider/
+  GitHub keys when it wants full self-custody. Frictionless onboarding, bounded
+  exposure.
+- **No fiat product revenue to custody.** Value returns to holders on-chain
+  (buybacks / airdrops / bounties) — see §4. Loop never holds strangers' product
+  income.
+- **Custodial reality.** Because Loop fronts the fiat compute and runs the
+  SOL→USDC→provider conversion, Loop is a **custodial platform** for that flow:
+  it needs a real **legal entity**, ToS, and (before opening to the public)
+  **KYC/AML** — possibly money-services registration depending on jurisdiction.
+  This is the main non-code prerequisite for Phase 3.
+- **Staged opening.** **Phase A** — LOOP only (the founder is the sole
+  principal; zero custody of strangers). **Phase B** — invite-only (bounded
+  exposure). **Phase C** — public, only after the legal entity + compliance +
+  the graduation/BYO path exist. No license needed on day 1 — needed before the
+  public phase.

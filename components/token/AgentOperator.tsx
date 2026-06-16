@@ -65,7 +65,6 @@ export function AgentOperator({
     twitter: agentTwitter(p),
     visitors: 0,
     signups: 0,
-    revenueUsd: 0,
   };
   const sent = inbox.filter((m) => m.direction === "out").length;
   const received = inbox.length - sent;
@@ -99,14 +98,11 @@ export function AgentOperator({
             <span>{stats.site}</span>
           </div>
         </div>
-        {/* Business stats row */}
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
+            buyback/airdrop/bounty to holders), surfaced in Project Wallet. */}
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <Stat label="Visitors" value={stats.visitors.toLocaleString()} />
           <Stat label="Signups" value={String(stats.signups)} />
-          <Stat
-            label="Revenue"
-            value={stats.revenueUsd ? `$${stats.revenueUsd}` : "$0"}
-          />
           <Stat label="Email" value={`${sent} sent · ${received} in`} />
         </div>
       </div>
