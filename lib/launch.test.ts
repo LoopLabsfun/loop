@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeLaunch, slugify, NAME_MAX, PROMPT_MAX } from "./launch";
+import {
+  sanitizeLaunch,
+  slugify,
+  NAME_MAX,
+  PROMPT_MAX,
+  GUARDRAILS_MAX,
+  CONTENT_POLICY_MAX,
+} from "./launch";
 
 describe("slugify", () => {
   it("lowercases the ticker and strips non-alphanumerics", () => {
@@ -28,6 +35,8 @@ describe("sanitizeLaunch", () => {
       prompt: "build it",
       repo: "https://github.com/you/project",
       feeFounderPct: 30, // default split when unset
+      guardrails: "",
+      contentPolicy: "",
     });
   });
 
@@ -88,5 +97,25 @@ describe("sanitizeLaunch", () => {
     });
     expect(out.name.length).toBe(NAME_MAX);
     expect(out.prompt.length).toBe(PROMPT_MAX);
+  });
+
+  it("defaults steering fields to empty strings when unset", () => {
+    const out = sanitizeLaunch({ name: "X", ticker: "OSCUR", prompt: "" });
+    expect(out.guardrails).toBe("");
+    expect(out.contentPolicy).toBe("");
+  });
+
+  it("trims, normalises newlines, and caps the steering fields", () => {
+    const out = sanitizeLaunch({
+      name: "X",
+      ticker: "OSCUR",
+      prompt: "",
+      guardrails: "  no paid ads\r\nkeep spend low  ",
+      contentPolicy: "c".repeat(5000),
+    });
+    expect(out.guardrails).toBe("no paid ads\nkeep spend low");
+    expect(out.guardrails).not.toContain("\r");
+    expect(out.contentPolicy.length).toBe(CONTENT_POLICY_MAX);
+    expect(GUARDRAILS_MAX).toBeGreaterThan(0);
   });
 });

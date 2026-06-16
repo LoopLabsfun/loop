@@ -47,6 +47,25 @@ describe("defaultMandate", () => {
       "Demo"
     );
   });
+  it("always carries the base guardrails", () => {
+    const g = defaultMandate(base).guardrails;
+    expect(g).toContain("No treasury withdrawals");
+    expect(g.length).toBeGreaterThanOrEqual(3);
+  });
+  it("folds the founder's stored guardrails (one per line, bullets stripped)", () => {
+    const g = defaultMandate({
+      ...base,
+      guardrails: "- No paid ads\n• Keep spend under 2 SOL\n",
+    }).guardrails;
+    expect(g).toContain("No paid ads");
+    expect(g).toContain("Keep spend under 2 SOL");
+  });
+  it("carries the content policy when set, undefined otherwise", () => {
+    expect(defaultMandate(base).contentPolicy).toBeUndefined();
+    expect(
+      defaultMandate({ ...base, contentPolicy: "  No hype.  " }).contentPolicy
+    ).toBe("No hype.");
+  });
 });
 
 describe("seedFeed", () => {

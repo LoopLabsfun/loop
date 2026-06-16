@@ -125,6 +125,9 @@ export async function launchProjectAction(
     creator_wallet: creatorWallet,
     // Founder's creator-fee share (agent gets the rest after the 5% platform cut).
     fee_founder_pct: clean.feeFounderPct,
+    // Deep steering: guardrails + content policy the agent rereads each cycle.
+    guardrails: clean.guardrails || null,
+    content_policy: clean.contentPolicy || null,
   });
 
   return result;

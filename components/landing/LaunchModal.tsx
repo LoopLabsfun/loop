@@ -50,6 +50,8 @@ export function LaunchModal({
   const [ticker, setTicker] = useState("");
   const [prompt, setPrompt] = useState("");
   const [repo, setRepo] = useState("");
+  const [guardrails, setGuardrails] = useState("");
+  const [contentPolicy, setContentPolicy] = useState("");
   const [feeFounderPct, setFeeFounderPct] = useState(DEFAULT_SPLIT.founderPct);
   const [error, setError] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
@@ -65,6 +67,8 @@ export function LaunchModal({
       setResult(null);
       setLaunchError(null);
       setFeeFounderPct(DEFAULT_SPLIT.founderPct);
+      setGuardrails("");
+      setContentPolicy("");
     }
   }, [open]);
 
@@ -78,12 +82,14 @@ export function LaunchModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, step, onClose]);
 
-  if (!open) return null;
-
+  // All hooks must run on every render — keep useMemo above the early return,
+  // or toggling `open` changes the hook count ("rendered more hooks…").
   const summaryName = name.trim() || "Open Source Cursor";
   const summaryTicker = "$" + (ticker.trim() || "OSCUR");
   const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
   const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
+
+  if (!open) return null;
 
   const goStake = () => {
     if (!name.trim() || !ticker.trim()) {
@@ -125,6 +131,8 @@ export function LaunchModal({
         repo,
         network,
         feeFounderPct,
+        guardrails,
+        contentPolicy,
         proof: proof ?? undefined,
       });
       setResult(res);
@@ -198,6 +206,24 @@ export function LaunchModal({
                 onChange={(e) => setRepo(e.target.value)}
                 placeholder="github.com/you/project"
                 className="loop-input font-mono"
+              />
+            </Field>
+            <Field label={<>Guardrails <span className="text-ghost">(optional · one per line, reread every cycle)</span></>}>
+              <textarea
+                value={guardrails}
+                onChange={(e) => setGuardrails(e.target.value)}
+                placeholder={"No paid ads without approval\nDon't ship breaking API changes\nKeep weekly spend under 2 SOL"}
+                rows={3}
+                className="loop-input resize-y"
+              />
+            </Field>
+            <Field label={<>Content &amp; brand policy <span className="text-ghost">(optional · tone for posts, emails, copy)</span></>}>
+              <textarea
+                value={contentPolicy}
+                onChange={(e) => setContentPolicy(e.target.value)}
+                placeholder="Friendly but technical. No hype or price talk. Always link the repo."
+                rows={2}
+                className="loop-input resize-y"
               />
             </Field>
             <Field
