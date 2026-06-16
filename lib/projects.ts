@@ -16,7 +16,7 @@ export const PROJECTS: Record<ProjectKey, Project> = {
       "The project that builds Loop — the platform funds its own development.",
     official: true,
     launchpad: "Pump.fun",
-    repo: "github.com/godisrupt/loop-fun",
+    repo: "github.com/LoopLabsfun/loop",
     cover: "loop",
     // Pre-launch: no market yet. The UI shows "no market yet" empty states
     // until LOOP is minted and trading begins.
