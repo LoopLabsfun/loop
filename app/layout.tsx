@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
+import { PrivyAuthProvider } from "@/lib/privy";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -49,7 +50,9 @@ export default function RootLayout({
     <html lang="en" className={`${display.variable} ${mono.variable}`}>
       <body className="font-sans text-ink bg-canvas min-h-screen">
         <NetworkProvider>
-          <WalletProvider>{children}</WalletProvider>
+          <PrivyAuthProvider>
+            <WalletProvider>{children}</WalletProvider>
+          </PrivyAuthProvider>
         </NetworkProvider>
       </body>
     </html>
