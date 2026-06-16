@@ -12,6 +12,13 @@ import {
   DEFAULT_SPLIT,
   MAX_FOUNDER_PCT,
 } from "@/lib/fees";
+import {
+  SolanaIcon,
+  GoogleIcon,
+  XIcon,
+  GitHubIcon,
+  TelegramIcon,
+} from "../AuthIcons";
 import type { LaunchResult } from "@/lib/api";
 
 const READINESS_STYLE: Record<ReadinessLevel, { dot: string; text: string }> = {
@@ -310,12 +317,22 @@ export function LaunchModal({
               </p>
             </div>
             {!wallet.connected ? (
-              <button
-                onClick={wallet.connect}
-                className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
-              >
-                Connect Wallet first
-              </button>
+              <div className="flex flex-col gap-[10px]">
+                <button
+                  onClick={wallet.connect}
+                  className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[12px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+                >
+                  Connect Wallet first
+                </button>
+                <div className="flex items-center justify-center gap-3 text-faint">
+                  <span className="text-[11px]">Sign in with</span>
+                  <SolanaIcon size={15} />
+                  <GoogleIcon size={15} />
+                  <XIcon size={13} />
+                  <GitHubIcon size={15} />
+                  <TelegramIcon size={15} />
+                </div>
+              </div>
             ) : (
               <button
                 onClick={startDeploy}

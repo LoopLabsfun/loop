@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { NetworkToggle } from "../NetworkToggle";
+import { WalletIcon } from "../AuthIcons";
 import { useWallet } from "@/lib/wallet";
 
 const SECTIONS: { id: string; label: string }[] = [
@@ -93,8 +94,10 @@ export function Nav({
           onClick={wallet.toggle}
           className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
         >
-          {wallet.connected && (
+          {wallet.connected ? (
             <span className="inline-block w-[7px] h-[7px] rounded-full bg-pos-bright" />
+          ) : (
+            <WalletIcon size={14} className="text-muted" />
           )}
           {wallet.connected ? (
             wallet.label
