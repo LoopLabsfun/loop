@@ -6,6 +6,12 @@ import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
 import { scoreReadiness, type ReadinessLevel } from "@/lib/agent-readiness";
 import { explorerUrl, shortAddr } from "@/lib/format";
+import {
+  makeSplit,
+  splitLabel,
+  DEFAULT_SPLIT,
+  MAX_FOUNDER_PCT,
+} from "@/lib/fees";
 import type { LaunchResult } from "@/lib/api";
 
 const READINESS_STYLE: Record<ReadinessLevel, { dot: string; text: string }> = {
@@ -37,6 +43,7 @@ export function LaunchModal({
   const [ticker, setTicker] = useState("");
   const [prompt, setPrompt] = useState("");
   const [repo, setRepo] = useState("");
+  const [feeFounderPct, setFeeFounderPct] = useState(DEFAULT_SPLIT.founderPct);
   const [error, setError] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [result, setResult] = useState<LaunchResult | null>(null);
@@ -50,6 +57,7 @@ export function LaunchModal({
       setDeployLog([]);
       setResult(null);
       setLaunchError(null);
+      setFeeFounderPct(DEFAULT_SPLIT.founderPct);
     }
   }, [open]);
 
@@ -68,6 +76,7 @@ export function LaunchModal({
   const summaryName = name.trim() || "Open Source Cursor";
   const summaryTicker = "$" + (ticker.trim() || "OSCUR");
   const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
+  const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
 
   const goStake = () => {
     if (!name.trim() || !ticker.trim()) {
@@ -108,6 +117,7 @@ export function LaunchModal({
         prompt,
         repo,
         network,
+        feeFounderPct,
         proof: proof ?? undefined,
       });
       setResult(res);
@@ -183,6 +193,37 @@ export function LaunchModal({
                 className="loop-input font-mono"
               />
             </Field>
+            <Field
+              label={
+                <span className="flex items-center justify-between">
+                  <span>Fee split — founder ↔ agent</span>
+                  <span className="font-mono text-ghost">
+                    platform {split.platformPct}% fixed
+                  </span>
+                </span>
+              }
+            >
+              <input
+                type="range"
+                min={0}
+                max={MAX_FOUNDER_PCT}
+                step={1}
+                value={feeFounderPct}
+                onChange={(e) => setFeeFounderPct(Number(e.target.value))}
+                className="w-full accent-[var(--accent)] cursor-pointer"
+                aria-label="Founder fee share percentage"
+              />
+              <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-[12px]">
+                <SplitStat label="Founder" pct={split.founderPct} tone="ink" />
+                <SplitStat label="Agent" pct={split.agentPct} tone="accent" />
+                <SplitStat label="Platform" pct={split.platformPct} tone="faint" />
+              </div>
+              <p className="mt-[6px] text-[11.5px] text-faint leading-[1.45]">
+                The agent&apos;s share funds its own wallet (compute + buyback /
+                burn / bounties) so it self-funds. Default {DEFAULT_SPLIT.founderPct}/
+                {DEFAULT_SPLIT.agentPct}/{DEFAULT_SPLIT.platformPct} is agent-favoured.
+              </p>
+            </Field>
             {error && (
               <div className="text-[12.5px] text-warn">
                 Project name and ticker are required.
@@ -245,6 +286,11 @@ export function LaunchModal({
                   className={`font-mono ${network === "devnet" ? "text-warn" : "text-pos"}`}
                 >
                   {network}
+                </span>
+              </Row>
+              <Row label="Fee split">
+                <span className="font-mono" title="founder / agent / platform">
+                  {splitLabel(split)}
                 </span>
               </Row>
             </div>
@@ -381,6 +427,25 @@ function Field({
     <div>
       <label className="block text-[12.5px] text-muted mb-[6px]">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function SplitStat({
+  label,
+  pct,
+  tone,
+}: {
+  label: string;
+  pct: number;
+  tone: "ink" | "accent" | "faint";
+}) {
+  const color =
+    tone === "accent" ? "text-accent-text" : tone === "faint" ? "text-faint" : "text-ink";
+  return (
+    <div className="bg-surface-2 rounded-[9px] px-2 py-[7px] text-center">
+      <div className={`font-semibold ${color}`}>{pct}%</div>
+      <div className="text-[10.5px] text-faint mt-[1px]">{label}</div>
     </div>
   );
 }

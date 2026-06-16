@@ -143,6 +143,8 @@ export interface LaunchInput {
   repo?: string;
   /** Cluster to launch on; defaults to the server's LAUNCH_CLUSTER env. */
   network?: Network;
+  /** Founder's creator-fee share (0..95); agent gets the rest after platform. */
+  feeFounderPct?: number;
   /** Wallet ownership proof (signed launch message); verified server-side. */
   proof?: import("./signature").LaunchProof;
 }

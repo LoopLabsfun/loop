@@ -1,4 +1,5 @@
 import type { LaunchInput } from "./api";
+import { makeSplit, DEFAULT_SPLIT } from "./fees";
 
 // Pure launch-input validation + slug logic, kept free of "use server" and the
 // Supabase client so it can be unit-tested in isolation. `lib/actions.ts`
@@ -18,6 +19,8 @@ export interface CleanLaunch {
   ticker: string; // bare, uppercase, no leading "$"
   prompt: string;
   repo: string;
+  /** Founder fee share, clamped to a valid integer 0..95 (platform fixed 5%). */
+  feeFounderPct: number;
 }
 
 /** Derive a URL-safe project key from the ticker (fallback: name). */
@@ -51,5 +54,11 @@ export function sanitizeLaunch(input: LaunchInput): CleanLaunch {
   if (!TICKER_RE.test(ticker)) {
     throw new Error("Ticker must be 2–10 letters or digits.");
   }
-  return { name, ticker, prompt, repo };
+  // Clamp the founder fee share through makeSplit (handles range + rounding);
+  // an unset value keeps the agent-favoured default so the agent self-funds.
+  const feeFounderPct =
+    input.feeFounderPct == null
+      ? DEFAULT_SPLIT.founderPct
+      : makeSplit(input.feeFounderPct).founderPct;
+  return { name, ticker, prompt, repo, feeFounderPct };
 }

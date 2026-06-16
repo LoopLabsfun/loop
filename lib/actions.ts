@@ -123,6 +123,8 @@ export async function launchProjectAction(
     treasury_wallet: token.treasuryWallet,
     network: token.cluster,
     creator_wallet: creatorWallet,
+    // Founder's creator-fee share (agent gets the rest after the 5% platform cut).
+    fee_founder_pct: clean.feeFounderPct,
   });
 
   return result;
