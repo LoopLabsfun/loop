@@ -56,23 +56,47 @@ async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
     .eq("used", false);
   if (!count) throw new Error("no unused …Loop vanity keys in the pool.");
 
-  // optional real logo
+  // Logo: an explicit path arg wins; otherwise use the real violet Loop token
+  // logo from /token-logo (so the launch isn't a blank placeholder).
+  const site = process.env.NEXT_PUBLIC_SITE_URL || "https://loop-fun-nine.vercel.app";
   const logoPath = process.argv[2];
-  const logo = logoPath
-    ? {
-        bytes: new Uint8Array(fs.readFileSync(logoPath)),
-        filename: logoPath.split("/").pop() || "logo.png",
-        contentType: logoPath.endsWith(".jpg") || logoPath.endsWith(".jpeg")
-          ? "image/jpeg"
-          : "image/png",
+  let logo:
+    | { bytes: Uint8Array; filename: string; contentType: string }
+    | undefined;
+  if (logoPath) {
+    logo = {
+      bytes: new Uint8Array(fs.readFileSync(logoPath)),
+      filename: logoPath.split("/").pop() || "logo.png",
+      contentType: /\.jpe?g$/i.test(logoPath) ? "image/jpeg" : "image/png",
+    };
+  } else {
+    try {
+      const r = await fetch(`${site}/token-logo`);
+      if (r.ok) {
+        logo = {
+          bytes: new Uint8Array(await r.arrayBuffer()),
+          filename: "loop.png",
+          contentType: "image/png",
+        };
       }
-    : undefined;
+    } catch {
+      /* fall back to pump.fun placeholder */
+    }
+  }
+
+  // Links filled at launch (twitter/telegram only when the accounts exist).
+  const links = {
+    website: process.env.LOOP_WEBSITE || site,
+    twitter: process.env.LOOP_TWITTER || undefined,
+    telegram: process.env.LOOP_TELEGRAM || undefined,
+  };
 
   console.log(`Launching $${SYMBOL} on pump.fun (mainnet) · creator ${signer} · ${bal} SOL`);
-  console.log(logo ? `logo: ${logoPath}` : "logo: placeholder (set one later)");
+  console.log(logo ? `logo: ${logoPath || site + "/token-logo"}` : "logo: placeholder");
+  console.log(`links: ${JSON.stringify(links)}`);
 
   const res = await createOnPumpPortal(
-    { name: NAME, symbol: SYMBOL, description: DESCRIPTION, logo },
+    { name: NAME, symbol: SYMBOL, description: DESCRIPTION, logo, links },
     "mainnet"
   );
 

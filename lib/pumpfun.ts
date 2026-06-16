@@ -36,6 +36,8 @@ export interface PumpfunCreateInput {
   suffix?: string; // vanity suffix; defaults to MINT_VANITY_SUFFIX
   /** Optional real logo; falls back to a transparent placeholder. */
   logo?: { bytes: Uint8Array; filename: string; contentType: string };
+  /** Social/site links shown on pump.fun + carried into DexScreener token info. */
+  links?: { website?: string; twitter?: string; telegram?: string };
 }
 
 export interface PumpfunCreateResult {
@@ -75,6 +77,9 @@ async function uploadMetadata(input: PumpfunCreateInput): Promise<string> {
   form.append("name", input.name);
   form.append("symbol", input.symbol);
   form.append("description", input.description);
+  if (input.links?.twitter) form.append("twitter", input.links.twitter);
+  if (input.links?.telegram) form.append("telegram", input.links.telegram);
+  if (input.links?.website) form.append("website", input.links.website);
   form.append("showName", "true");
   const res = await fetch(IPFS_URL, { method: "POST", body: form });
   if (!res.ok) throw new Error(`pump.fun IPFS upload failed (${res.status}).`);
