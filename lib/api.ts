@@ -145,6 +145,10 @@ export interface LaunchInput {
   network?: Network;
   /** Founder's creator-fee share (0..95); agent gets the rest after platform. */
   feeFounderPct?: number;
+  /** Editable guardrails (free text, one per line) the agent rereads each cycle. */
+  guardrails?: string;
+  /** Content & brand policy the agent applies to everything it publishes. */
+  contentPolicy?: string;
   /** Wallet ownership proof (signed launch message); verified server-side. */
   proof?: import("./signature").LaunchProof;
 }

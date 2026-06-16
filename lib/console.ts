@@ -28,21 +28,36 @@ export interface AgentMandate {
   model: "Haiku" | "Sonnet" | "Opus";
   budget: string; // e.g. "0.42 SOL/day"
   guardrails: string[];
+  /** Founder/DAO content & brand policy applied to everything the agent ships. */
+  contentPolicy?: string;
 }
 
-/** Default mandate derived from the project (stand-in for stored config). */
+/** The non-negotiable guardrails every agent carries, before founder additions. */
+export const BASE_GUARDRAILS = [
+  "Spend ≤ daily budget",
+  "No treasury withdrawals",
+  "Escalate anything irreversible",
+];
+
+/**
+ * Mandate derived from the project. The founder's stored guardrails (free text,
+ * one per line) extend the base set, and their content policy is carried
+ * through — both are reread by the runtime every cycle (A4 anti-drift).
+ */
 export function defaultMandate(p: Project): AgentMandate {
+  const founderRails = (p.guardrails ?? "")
+    .split("\n")
+    .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
   return {
     mission:
       p.description?.trim() ||
       `Build and grow ${p.name} autonomously, funded by its market.`,
     model: p.official ? "Opus" : "Sonnet",
     budget: p.burnPerDay || "0.40 SOL/day",
-    guardrails: [
-      "Spend ≤ daily budget",
-      "No treasury withdrawals",
-      "Escalate anything irreversible",
-    ],
+    guardrails: [...BASE_GUARDRAILS, ...founderRails],
+    contentPolicy: p.contentPolicy?.trim() || undefined,
   };
 }
 

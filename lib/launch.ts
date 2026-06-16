@@ -13,6 +13,8 @@ export const NAME_MAX = 60;
 export const PROMPT_MAX = 2000;
 export const DESCRIPTION_MAX = 200;
 export const REPO_MAX = 200;
+export const GUARDRAILS_MAX = 1000;
+export const CONTENT_POLICY_MAX = 1000;
 
 export interface CleanLaunch {
   name: string;
@@ -21,6 +23,10 @@ export interface CleanLaunch {
   repo: string;
   /** Founder fee share, clamped to a valid integer 0..95 (platform fixed 5%). */
   feeFounderPct: number;
+  /** Editable guardrails (free text, one per line); "" when unset. */
+  guardrails: string;
+  /** Content & brand policy (free text); "" when unset. */
+  contentPolicy: string;
 }
 
 /** Derive a URL-safe project key from the ticker (fallback: name). */
@@ -60,5 +66,15 @@ export function sanitizeLaunch(input: LaunchInput): CleanLaunch {
     input.feeFounderPct == null
       ? DEFAULT_SPLIT.founderPct
       : makeSplit(input.feeFounderPct).founderPct;
-  return { name, ticker, prompt, repo, feeFounderPct };
+  // Steering text — free-form but length-capped. Normalise newlines so the
+  // mandate parses guardrails one-per-line consistently.
+  const guardrails = (input.guardrails ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+    .slice(0, GUARDRAILS_MAX);
+  const contentPolicy = (input.contentPolicy ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+    .slice(0, CONTENT_POLICY_MAX);
+  return { name, ticker, prompt, repo, feeFounderPct, guardrails, contentPolicy };
 }

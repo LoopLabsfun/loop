@@ -143,6 +143,12 @@ export function AgentConsole({
             </span>
           ))}
         </span>
+        {mandate.contentPolicy && (
+          <span className="w-full text-[11.5px] text-muted">
+            <span className="text-faint">Content policy · </span>
+            {mandate.contentPolicy}
+          </span>
+        )}
       </div>
 
       {/* Open escalation */}
