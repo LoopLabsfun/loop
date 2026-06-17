@@ -19,12 +19,28 @@ export function sandboxConfigured(): boolean {
   return Boolean(process.env.E2B_API_KEY);
 }
 
+/**
+ * Strip terminal noise so summaries read clean when broadcast (Telegram, posts):
+ * ANSI/CSI escape sequences (colors, cursor moves like `ESC[1G`), progress-spinner
+ * braille glyphs, and other C0 control chars.
+ */
+export function stripTerminalNoise(s: string): string {
+  return (
+    s
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+      .replace(/[⠀-⣿]/g, "")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+  );
+}
+
 /** Pure: collapse a sandbox result into a short line for the build log. */
 export function summarizeSandbox(r: SandboxResult, max = 280): string {
   const body = r.ok
     ? r.stdout.trim() || "(no output)"
     : `error: ${r.error || r.stderr.trim() || "failed"}`;
-  const oneLine = body.replace(/\s+/g, " ").trim();
+  const oneLine = stripTerminalNoise(body).replace(/\s+/g, " ").trim();
   return oneLine.length > max ? oneLine.slice(0, max - 1) + "…" : oneLine;
 }
 
