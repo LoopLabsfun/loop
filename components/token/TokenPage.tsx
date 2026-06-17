@@ -1,19 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { LoopMark } from "../LoopMark";
 import { NetworkToggle } from "../NetworkToggle";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
-import { useTokenMarket, type Timeframe } from "@/lib/useTokenMarket";
+import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
+import { buildSwapTx } from "@/lib/pump";
 import { AgentConsole } from "./AgentConsole";
 import { AgentOperator } from "./AgentOperator";
 import { ProjectWallet } from "./ProjectWallet";
 import type { AgentState } from "@/lib/agent-data";
-import type { Project } from "@/lib/types";
+import type { Candle, Holder, MarketStats, Project, Trade } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
 import { infraBreakdown, type CostKey } from "@/lib/economics";
 import { agentRunState, canAffordTick } from "@/lib/budget";
@@ -21,21 +22,22 @@ import { splitForProject } from "@/lib/fees";
 import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
 import { TREASURY_EXITS } from "@/lib/governance";
 
-const TOP_HOLDERS = [
-  { addr: "7xKq…g4fR", pct: "20.0%", tag: "treasury" },
-  { addr: "3mQz…r8Lk", pct: "6.2%", tag: "curve" },
-  { addr: "Hv9c…2dWp", pct: "4.8%", tag: "whale" },
-  { addr: "Bn4t…9xQa", pct: "3.1%", tag: "whale" },
-  { addr: "Kp2w…5mRv", pct: "2.4%", tag: "early" },
-];
+export interface LiveMarket {
+  stats: MarketStats | null;
+  candles: Candle[];
+  trades: Trade[];
+  holders: Holder[];
+}
 
 export function TokenPage({
   project: p,
+  market,
   solUsd,
   commits,
   agentState,
 }: {
   project: Project;
+  market: LiveMarket;
   solUsd: number;
   commits: { hash: string; msg: string }[];
   agentState?: AgentState;
@@ -43,15 +45,18 @@ export function TokenPage({
   // Real commits from the repo only — no static sample (empty state otherwise).
   const commitFeed = commits;
   const wallet = useWallet();
-  const { tf, mode, candles, trades, agentLog, changeTf, setMode, preLaunch } =
-    useTokenMarket(p);
+  const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch } =
+    useLiveMarket(p.mint, {
+      stats: market.stats,
+      candles: market.candles,
+      trades: market.trades,
+    });
 
-  // Pre-launch (no mint) ⇒ no market: guard the candle math and render honest
-  // "no market yet" empty states instead of any simulated price/chart/trades.
-  const hasMarket = !preLaunch && candles.length > 0;
-  const last = hasMarket ? candles[candles.length - 1].c : 0;
-  const first = hasMarket ? candles[0].o : 0;
-  const change = hasMarket ? (last / first - 1) * 100 : 0;
+  // Pre-launch (no mint) ⇒ no market: render honest "no market yet" states.
+  // Live price + 24h change come straight from the market stats; the candle
+  // series drives only the chart.
+  const last = stats?.priceUsd ?? 0;
+  const change = stats?.priceChange24h ?? 0;
 
   return (
     <>
@@ -127,14 +132,15 @@ export function TokenPage({
           <ProjectWallet project={p} actions={agentState?.actions} />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
-            {preLaunch ? (
+            {preLaunch || candles.length === 0 ? (
               <div className="text-center py-12">
                 <div className="font-display font-semibold text-[15px] text-ink mb-1">
                   No market yet
                 </div>
                 <div className="text-[12.5px] text-muted max-w-[380px] mx-auto">
-                  {p.ticker} isn&apos;t minted yet. The price chart appears once
-                  the token launches on-chain and trading begins.
+                  {preLaunch
+                    ? `${p.ticker} isn't minted yet. The price chart appears once the token launches on-chain and trading begins.`
+                    : `No candle data for ${p.ticker} yet — the chart fills in as ${p.ticker} trades.`}
                 </div>
               </div>
             ) : (
@@ -155,11 +161,11 @@ export function TokenPage({
                 <Chart candles={candles} mode={mode} />
                 <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
                   <span>
-                    {tf === "1H" ? "last 48 min" : tf === "4H" ? "last 3.2 hours" : "last 48 hours"}
+                    {tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : "4h candles"}
                   </span>
                   <span className="inline-flex items-center gap-[6px]">
                     <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
-                    live · updates every 2s
+                    live · updates every 20s
                   </span>
                 </div>
               </>
@@ -170,15 +176,18 @@ export function TokenPage({
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             <div className="flex items-center justify-between mb-3">
               <span className="font-display font-semibold text-[15px]">Recent Trades</span>
-              {!preLaunch && (
-                <span className="font-mono text-[11px] text-faint">
-                  {trades.length.toLocaleString("en-US")} trades · 24h
+              {!preLaunch && trades.length > 0 && (
+                <span className="inline-flex items-center gap-[6px] font-mono text-[11px] text-faint">
+                  <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+                  live
                 </span>
               )}
             </div>
-            {preLaunch ? (
+            {preLaunch || trades.length === 0 ? (
               <div className="text-[12.5px] text-faint text-center py-8">
-                No trades yet — trading opens when {p.ticker} launches on-chain.
+                {preLaunch
+                  ? `No trades yet — trading opens when ${p.ticker} launches on-chain.`
+                  : `No recent trades for ${p.ticker}.`}
               </div>
             ) : (
               <>
@@ -233,22 +242,9 @@ export function TokenPage({
               </div>
               <div className="flex flex-col gap-[7px]">
                 <div className="text-[11px] text-muted mb-[2px]">LIVE LOG</div>
-                {agentLog.length === 0 ? (
-                  <div className="text-[12.5px] text-muted">
-                    Agent starts logging once it runs.
-                  </div>
-                ) : (
-                  <>
-                    {agentLog.map((l, i) => (
-                      <div key={i} className="text-[12.5px] text-[#B7B2BE] animate-fadeInFast">
-                        <span className="text-accent-400">{l.t}</span> {l.msg}
-                      </div>
-                    ))}
-                    <div className="text-[12.5px] text-muted">
-                      <span className="animate-pulseTick">▮</span>
-                    </div>
-                  </>
-                )}
+                <div className="text-[12.5px] text-muted">
+                  Agent starts logging once it runs.
+                </div>
               </div>
             </div>
           </div>
@@ -261,7 +257,7 @@ export function TokenPage({
           <TreasuryStats project={p} solUsd={solUsd} />
           <FeesCustodyCard project={p} preLaunch={preLaunch} />
           <FundCard project={p} />
-          <TopHolders preLaunch={preLaunch} />
+          <TopHolders holders={market.holders} network={p.network ?? "mainnet"} preLaunch={preLaunch} />
 
         </div>
       </section>
@@ -436,15 +432,19 @@ function SwapCard({
   preLaunch?: boolean;
 }) {
   const wallet = useWallet();
+  const { network, setNetwork } = useNetwork();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amt, setAmt] = useState("1.0");
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
+    "idle"
+  );
+  const [sig, setSig] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const sym = p.ticker.slice(1);
   const buy = side === "buy";
   const amtN = parseFloat(amt) || 0;
-
-  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  const projectNet = p.network ?? "mainnet";
+  const wrongNet = network !== projectNet;
 
   // Pre-launch: no token to trade yet. Show an honest disabled state instead of
   // a simulated swap. To donate to the treasury, the Fund card is used instead.
@@ -476,17 +476,30 @@ function SwapCard({
     ? [["0.1", "0.1"], ["0.5", "0.5"], ["1", "1"], ["5", "5"]]
     : [["1000", "1K"], ["10000", "10K"], ["100000", "100K"], ["500000", "500K"]];
 
-  const doSwap = () => {
-    if (!wallet.connected) {
+  const doSwap = async () => {
+    if (!wallet.connected || !wallet.address) {
       wallet.connect();
       return;
     }
-    setToast(
-      "tx confirmed · " +
-        (buy ? `${amt} SOL → ${est}` : `${amt} ${sym} → ${est}`)
-    );
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3500);
+    if (wrongNet || !p.mint || amtN <= 0 || status === "sending") return;
+    setStatus("sending");
+    setErr(null);
+    setSig(null);
+    try {
+      const txBytes = await buildSwapTx({
+        publicKey: wallet.address,
+        action: side,
+        mint: p.mint,
+        amount: amtN,
+      });
+      const s = await wallet.sendSwapTx(txBytes);
+      setSig(s);
+      setStatus("done");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Swap failed";
+      setErr(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
+      setStatus("error");
+    }
   };
 
   return (
@@ -547,27 +560,53 @@ function SwapCard({
         <span className="font-mono text-ink">{est}</span>
       </div>
 
-      <button
-        onClick={doSwap}
-        className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] text-white"
-        style={{
-          background: wallet.connected
-            ? buy
-              ? "oklch(0.55 0.15 150)"
-              : "oklch(0.55 0.17 25)"
-            : "#16131A",
-        }}
-      >
-        {wallet.connected ? (buy ? `Buy ${p.ticker}` : `Sell ${p.ticker}`) : "Connect Wallet"}
-      </button>
+      {wrongNet ? (
+        <button
+          onClick={() => setNetwork(projectNet)}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] border border-warn text-warn"
+        >
+          Switch to {projectNet} to trade
+        </button>
+      ) : (
+        <button
+          onClick={doSwap}
+          disabled={status === "sending" || (wallet.connected && amtN <= 0)}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] text-white transition-opacity disabled:opacity-60"
+          style={{
+            background: wallet.connected
+              ? buy
+                ? "oklch(0.55 0.15 150)"
+                : "oklch(0.55 0.17 25)"
+              : "#16131A",
+          }}
+        >
+          {!wallet.connected
+            ? "Connect Wallet"
+            : status === "sending"
+            ? "Confirm in wallet…"
+            : buy
+            ? `Buy ${p.ticker}`
+            : `Sell ${p.ticker}`}
+        </button>
+      )}
 
-      {toast && (
-        <div className="mt-[10px] font-mono text-[11.5px] text-pos bg-[oklch(0.97_0.03_150)] border border-[oklch(0.9_0.06_150)] rounded-[8px] px-3 py-[9px] animate-fadeIn">
-          {toast}
+      {status === "done" && sig && (
+        <a
+          href={explorerTx(sig, projectNet)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-[10px] block font-mono text-[11.5px] text-pos bg-[oklch(0.97_0.03_150)] border border-[oklch(0.9_0.06_150)] rounded-[8px] px-3 py-[9px] animate-fadeIn"
+        >
+          ✓ Swap sent · {shortAddr(sig)} ↗
+        </a>
+      )}
+      {status === "error" && err && (
+        <div className="mt-[10px] font-mono text-[11.5px] text-neg bg-[oklch(0.97_0.03_25)] border border-[oklch(0.9_0.06_25)] rounded-[8px] px-3 py-[9px] animate-fadeIn">
+          {err}
         </div>
       )}
       <div className="mt-[10px] text-[11px] text-faint text-center">
-        1% of every trade funds the project treasury
+        Swaps route through pump.fun · 1% of every trade funds the treasury
       </div>
     </div>
   );
@@ -1024,32 +1063,43 @@ function InfraCosts({ project: p, solUsd }: { project: Project; solUsd: number }
   );
 }
 
-function TopHolders({ preLaunch }: { preLaunch?: boolean }) {
+function TopHolders({
+  holders,
+  network,
+  preLaunch,
+}: {
+  holders: Holder[];
+  network: "mainnet" | "devnet";
+  preLaunch?: boolean;
+}) {
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="font-display font-semibold text-[14.5px] mb-3">Top Holders</div>
-      {preLaunch ? (
+      {preLaunch || holders.length === 0 ? (
         <div className="text-[12.5px] text-faint py-2">
-          No holders yet — the holder list appears once the token is minted and
-          trading begins.
+          {preLaunch
+            ? "No holders yet — the holder list appears once the token is minted and trading begins."
+            : "Holder data is loading…"}
         </div>
       ) : (
-      <div className="flex flex-col gap-[10px]">
-        {TOP_HOLDERS.map((h) => (
-          <div
-            key={h.addr}
-            className="flex items-center justify-between font-mono text-[12.5px]"
-          >
-            <span className="text-muted">{h.addr}</span>
-            <span className="inline-flex items-center gap-2">
-              <span className="text-[10.5px] text-accent-text bg-accent-tint px-[7px] py-[2px] rounded-[5px]">
-                {h.tag}
-              </span>
-              {h.pct}
-            </span>
-          </div>
-        ))}
-      </div>
+        <div className="flex flex-col gap-[10px]">
+          {holders.map((h) => (
+            <div
+              key={h.address}
+              className="flex items-center justify-between font-mono text-[12.5px]"
+            >
+              <a
+                href={explorerUrl(h.address, network)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted hover:text-accent-text transition-colors"
+              >
+                {shortAddr(h.address)}
+              </a>
+              <span className="tabular-nums">{(h.share * 100).toFixed(2)}%</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
