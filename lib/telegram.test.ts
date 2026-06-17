@@ -66,7 +66,7 @@ describe("buildUpdateMessage", () => {
   it("renders a header + watch link for an empty update", () => {
     const msg = buildUpdateMessage(base, {});
     expect(msg).toContain("🤖 *Demo Co* build update");
-    expect(msg).toContain("Watch it build → demo\\.looplabs\\.fun");
+    expect(msg).toContain("Watch it build → www\\.looplabs\\.fun");
     expect(msg).not.toContain("Shipped");
     expect(msg).not.toContain("Treasury");
   });

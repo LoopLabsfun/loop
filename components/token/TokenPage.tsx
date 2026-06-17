@@ -605,7 +605,17 @@ function FeesCustodyCard({
   project: Project;
   preLaunch: boolean;
 }) {
+  const wallet = useWallet();
   const split = splitForProject(p);
+  // The dev-fees claim is founder-only: visible just to the connected wallet
+  // that matches the project's verified creator. Everyone else sees the split +
+  // agent wallet (public) and a neutral note — no personal "Your dev-fees".
+  const isCreator = !!(
+    wallet.connected &&
+    wallet.address &&
+    p.creatorWallet &&
+    wallet.address === p.creatorWallet
+  );
   // No fees can have accrued before launch; once the ledger table is live this
   // reads the project's real swept-and-unclaimed founder balance. Honest 0 now.
   const founderClaimable = claimable(ZERO_TOTALS, ZERO_TOTALS).founderSol;
@@ -647,26 +657,37 @@ function FeesCustodyCard({
           )}
         </div>
 
-        {/* Claimable dev-fees */}
-        <div className="flex justify-between">
-          <span className="text-muted">Your dev-fees</span>
-          <span className="font-mono">{founderClaimable.toFixed(4)} SOL</span>
-        </div>
-        <button
-          disabled
-          title={
-            preLaunch
-              ? "Dev-fees accrue from trading once the token is live."
-              : "Nothing to claim yet — fees accrue as the token trades."
-          }
-          className="mt-1 w-full font-display font-semibold text-[13.5px] py-[10px] rounded-[10px] border border-line-3 bg-surface-2 text-faint cursor-not-allowed"
-        >
-          Claim dev-fees
-        </button>
-        <p className="text-[11.5px] text-faint leading-[1.45]">
-          The agent auto-claims creator fees on pump.fun; Loop custodies them and
-          your share becomes claimable here. {preLaunch ? "0 before launch." : ""}
-        </p>
+        {/* Dev-fees claim — founder-only */}
+        {isCreator ? (
+          <>
+            <div className="flex justify-between border-t border-line-4 pt-[10px]">
+              <span className="text-muted">Your dev-fees</span>
+              <span className="font-mono">{founderClaimable.toFixed(4)} SOL</span>
+            </div>
+            <button
+              disabled
+              title={
+                preLaunch
+                  ? "Dev-fees accrue from trading once the token is live."
+                  : "Nothing to claim yet — fees accrue as the token trades."
+              }
+              className="mt-1 w-full font-display font-semibold text-[13.5px] py-[10px] rounded-[10px] border border-line-3 bg-surface-2 text-faint cursor-not-allowed"
+            >
+              Claim dev-fees
+            </button>
+            <p className="text-[11.5px] text-faint leading-[1.45]">
+              The agent auto-claims creator fees on pump.fun; Loop custodies them
+              and your founder share becomes claimable here.
+              {preLaunch ? " 0 before launch." : ""}
+            </p>
+          </>
+        ) : (
+          <p className="text-[11.5px] text-faint leading-[1.45] border-t border-line-4 pt-[10px]">
+            Creator fees route automatically per the split above. The founder
+            share is claimable by the project&apos;s creator wallet; the agent
+            share funds this project&apos;s own operations.
+          </p>
+        )}
       </div>
     </div>
   );

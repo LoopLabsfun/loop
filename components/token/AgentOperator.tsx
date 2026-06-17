@@ -3,8 +3,6 @@
 import { useState } from "react";
 import {
   agentEmail,
-  agentSite,
-  agentTwitter,
   CATEGORY_LABEL,
   STATUS_LABEL,
   type AgentTask,
@@ -13,8 +11,13 @@ import {
   type DailySummary,
   type TaskStatus,
 } from "@/lib/agent";
-import { telegramBotHandle, telegramBotUrl } from "@/lib/telegram";
 import type { Project } from "@/lib/types";
+
+// Real social identities only when actually configured (platform-level for now,
+// Phase A / LOOP). Otherwise the UI shows an honest "soon" — never a fake handle
+// or a t.me link that 404s. These auto-go-live the moment the founder sets them.
+const X_HANDLE = process.env.NEXT_PUBLIC_X_HANDLE || "";
+const TELEGRAM_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
 
 type Tab = "tasks" | "inbox" | "social" | "summary";
 const TABS: { id: Tab; label: string }[] = [
@@ -52,17 +55,16 @@ export function AgentOperator({
   summaries?: DailySummary[];
 }) {
   const [tab, setTab] = useState<Tab>("tasks");
-  // Real rows from the runtime, or honestly empty — no simulated seeds. Agent
-  // identity (email/site/socials) is real (derived from the project slug);
-  // visitor/signup/revenue metrics are 0 until real analytics are wired.
+  // Real rows from the runtime, or honestly empty — no simulated seeds. The
+  // email is real (Resend-verified); X/Telegram/site show "soon" unless really
+  // configured (see identity row). Visitor/signup metrics are 0 until real
+  // analytics are wired.
   const tasks = tasksProp ?? [];
   const inbox = inboxProp ?? [];
   const social = socialProp ?? [];
   const summaries = summariesProp ?? [];
   const stats = {
     email: agentEmail(p),
-    site: agentSite(p),
-    twitter: agentTwitter(p),
     visitors: 0,
     signups: 0,
   };
@@ -81,21 +83,45 @@ export function AgentOperator({
             </span>
           </div>
           <div className="flex items-center gap-x-3 gap-y-1 flex-wrap font-mono text-[11.5px] text-muted">
-            <span className="text-accent-text">{stats.email}</span>
-            <span className="text-faint">·</span>
-            <span>{stats.twitter}</span>
-            <span className="text-faint">·</span>
+            {/* Email — real (Resend-verified, live). */}
             <a
-              href={telegramBotUrl(p)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Follow this project's read-only build-update bot on Telegram"
-              className="hover:text-accent-text transition-colors"
+              href={`mailto:${stats.email}`}
+              className="text-accent-text hover:text-accent-d transition-colors"
             >
-              {telegramBotHandle(p)}
+              {stats.email}
             </a>
+            {/* X — live link only when a real handle is configured. */}
             <span className="text-faint">·</span>
-            <span>{stats.site}</span>
+            {X_HANDLE ? (
+              <a
+                href={`https://x.com/${X_HANDLE}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-accent-text transition-colors"
+              >
+                @{X_HANDLE}
+              </a>
+            ) : (
+              <span className="text-faint">X soon</span>
+            )}
+            {/* Telegram — live link only when a real bot username is configured. */}
+            <span className="text-faint">·</span>
+            {TELEGRAM_USERNAME ? (
+              <a
+                href={`https://t.me/${TELEGRAM_USERNAME}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Follow this project's read-only build-update bot on Telegram"
+                className="hover:text-accent-text transition-colors"
+              >
+                @{TELEGRAM_USERNAME}
+              </a>
+            ) : (
+              <span className="text-faint">Telegram soon</span>
+            )}
+            {/* Site — not live yet (no per-project site domain provisioned). */}
+            <span className="text-faint">·</span>
+            <span className="text-faint">site soon</span>
           </div>
         </div>
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
