@@ -37,7 +37,12 @@ export function Landing({
 
   return (
     <>
-      <Nav onLaunch={openModal} onScroll={scrollTo} />
+      <Nav
+        onLaunch={openModal}
+        onScroll={scrollTo}
+        loopMint={loop?.mint}
+        loopNetwork={loop?.network}
+      />
       <main>
         <Hero
           engine={engine}
