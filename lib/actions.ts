@@ -159,7 +159,7 @@ export interface DirectiveResult {
  * a runtime/service_role action.
  *
  * Still TODO (mirrors the launch flow): verify the author wallet (signature) and
- * gate holder directives on a project-token stake before accepting.
+ * weight holder directives by their token balance before accepting.
  */
 export async function submitDirectiveAction(
   input: DirectiveInput
