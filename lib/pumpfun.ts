@@ -38,6 +38,8 @@ export interface PumpfunCreateInput {
   logo?: { bytes: Uint8Array; filename: string; contentType: string };
   /** Social/site links shown on pump.fun + carried into DexScreener token info. */
   links?: { website?: string; twitter?: string; telegram?: string };
+  /** Dev-buy in SOL, executed atomically with create (0 = create only, no buy). */
+  devBuySol?: number;
 }
 
 export interface PumpfunCreateResult {
@@ -53,6 +55,8 @@ export function buildCreatePayload(args: {
   metadataUri: string;
   name: string;
   symbol: string;
+  /** Dev-buy in SOL at creation (0 = create only). Clamped non-negative. */
+  amountSol?: number;
 }) {
   return {
     publicKey: args.publicKey,
@@ -60,7 +64,7 @@ export function buildCreatePayload(args: {
     tokenMetadata: { name: args.name, symbol: args.symbol, uri: args.metadataUri },
     mint: args.mint,
     denominatedInSol: "true" as const,
-    amount: 0, // no dev-buy
+    amount: Math.max(0, args.amountSol ?? 0), // dev-buy in SOL (0 = none)
     slippage: 10,
     priorityFee: 0.0005,
     pool: "pump" as const,
@@ -132,6 +136,7 @@ export async function createOnPumpPortal(
     metadataUri,
     name: input.name,
     symbol: input.symbol,
+    amountSol: input.devBuySol,
   });
   const res = await fetch(PUMPPORTAL_LOCAL, {
     method: "POST",

@@ -18,7 +18,10 @@ const SYMBOL = process.env.LOOP_SYMBOL || "LOOP";
 const DESCRIPTION =
   process.env.LOOP_DESCRIPTION ||
   "Loop — the autonomous software factory. Markets fund the code; an AI agent builds it.";
-const MIN_SOL = 0.03;
+// Optional dev-buy (SOL) executed atomically with create. Needs the buy amount
+// PLUS ~0.03 for create + fees in the creator wallet.
+const DEV_BUY = Math.max(0, Number(process.env.LOOP_DEV_BUY_SOL) || 0);
+const MIN_SOL = 0.03 + DEV_BUY;
 
 async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
   const key = process.env.HELIUS_API_KEY;
@@ -95,8 +98,10 @@ async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
   console.log(logo ? `logo: ${logoPath || site + "/token-logo"}` : "logo: placeholder");
   console.log(`links: ${JSON.stringify(links)}`);
 
+  console.log(DEV_BUY > 0 ? `dev-buy: ${DEV_BUY} SOL at creation` : "dev-buy: none");
+
   const res = await createOnPumpPortal(
-    { name: NAME, symbol: SYMBOL, description: DESCRIPTION, logo, links },
+    { name: NAME, symbol: SYMBOL, description: DESCRIPTION, logo, links, devBuySol: DEV_BUY },
     "mainnet"
   );
 
