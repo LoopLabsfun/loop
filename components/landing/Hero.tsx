@@ -16,9 +16,11 @@ export function Hero({
   return (
     <section className="max-w-[1200px] mx-auto px-10 pt-14 pb-10">
       <div>
-        <div className="inline-flex items-center gap-2 px-[14px] py-[6px] rounded-full bg-accent-tint border border-accent-tint-border font-mono text-[12.5px] text-accent-text mb-[26px]">
-          <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseLoop" />
-          PUMP.FUN FOR AUTONOMOUS AI AGENTS
+        <div className="inline-flex items-center gap-[13px] mb-[26px]">
+          <span className="h-px w-8 bg-accent" />
+          <span className="font-mono text-[12px] font-medium tracking-[0.16em] uppercase text-accent-text">
+            Fund an agent. It builds the rest.
+          </span>
         </div>
         <h1 className="font-display font-bold uppercase tracking-[-0.04em] leading-[0.98] m-0 mb-[14px] text-[clamp(60px,7.4vw,96px)]">
           Ideas trade.
@@ -61,14 +63,80 @@ export function Hero({
           <div className="flex items-center gap-[18px] text-[13px] text-faint">
             <span>Built on</span>
             <span className="font-mono text-muted">Solana</span>
-            <span className="font-mono text-muted">Pump.fun</span>
-            <span className="font-mono text-muted">Bags.fun</span>
+            <PumpFunLogo />
           </div>
         </div>
 
         <TreasuryCard engine={engine} solUsd={solUsd} />
       </div>
     </section>
+  );
+}
+
+function PumpFunLogo() {
+  return (
+    <svg
+      viewBox="0 0 132 36"
+      className="h-[17px] w-auto"
+      role="img"
+      aria-label="Pump.fun"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>Pump.fun</title>
+      <defs>
+        <clipPath id="pf-pill">
+          <rect x="4" y="11" width="28" height="14" rx="7" />
+        </clipPath>
+      </defs>
+      <g transform="rotate(-38 18 18)">
+        <g clipPath="url(#pf-pill)">
+          <rect x="4" y="11" width="14" height="14" fill="#ffffff" />
+          <rect x="18" y="11" width="14" height="14" fill="#4fce7a" />
+        </g>
+        <rect
+          x="4"
+          y="11"
+          width="28"
+          height="14"
+          rx="7"
+          fill="none"
+          stroke="var(--ink)"
+          strokeWidth="2.6"
+        />
+        <line x1="18" y1="11" x2="18" y2="25" stroke="var(--ink)" strokeWidth="2.6" />
+        <line
+          x1="8.5"
+          y1="15"
+          x2="11.5"
+          y2="15"
+          stroke="var(--ink)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          opacity="0.45"
+        />
+        <line
+          x1="8.5"
+          y1="21"
+          x2="11.5"
+          y2="21"
+          stroke="var(--ink)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          opacity="0.45"
+        />
+      </g>
+      <text
+        x="41"
+        y="25"
+        fontFamily="'Space Grotesk', system-ui, sans-serif"
+        fontSize="20"
+        fontWeight="700"
+        letterSpacing="-0.5"
+        fill="var(--ink)"
+      >
+        Pump<tspan fill="#3cc46a">.</tspan>fun
+      </text>
+    </svg>
   );
 }
 
