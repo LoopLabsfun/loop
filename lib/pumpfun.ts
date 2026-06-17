@@ -22,6 +22,8 @@ import { parseSecretKeyJson } from "./vanity";
 
 const IPFS_URL = "https://pump.fun/api/ipfs";
 const PUMPPORTAL_LOCAL = "https://pumpportal.fun/api/trade-local";
+// Jito block engine — atomic create+dev-buy bundle (first candle, anti-snipe).
+const JITO_BUNDLE_URL = "https://mainnet.block-engine.jito.wtf/api/v1/bundles";
 // 1×1 transparent PNG — a valid placeholder logo until the agent sets a real one.
 const PLACEHOLDER_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAYAAACd / vDIAAAAASUVORK5CYII=".replace(
@@ -129,37 +131,102 @@ export async function createOnPumpPortal(
   // 2) metadata → URI
   const metadataUri = await uploadMetadata(input);
 
-  // 3) build the create tx via PumpPortal (non-custodial)
-  const payload = buildCreatePayload({
-    publicKey: signer.publicKey.toBase58(),
-    mint: mintKeypair.publicKey.toBase58(),
-    metadataUri,
-    name: input.name,
-    symbol: input.symbol,
-    amountSol: input.devBuySol,
-  });
-  const res = await fetch(PUMPPORTAL_LOCAL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`PumpPortal create failed (${res.status}).`);
-  const txBytes = new Uint8Array(await res.arrayBuffer());
-
-  // 4) sign with [signer, mint] and submit to mainnet
-  const tx = VersionedTransaction.deserialize(txBytes);
-  tx.sign([signer, mintKeypair]);
   const endpoint = process.env.HELIUS_API_KEY
     ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
     : "https://api.mainnet-beta.solana.com";
   const conn = new Connection(endpoint, "confirmed");
-  const sig = await conn.sendTransaction(tx);
-  const bh = await conn.getLatestBlockhash();
-  await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+  const creator = signer.publicKey.toBase58();
+  const mint = mintKeypair.publicKey.toBase58();
+  const devBuy = Math.max(0, input.devBuySol ?? 0);
 
-  return {
-    mint: mintKeypair.publicKey.toBase58(),
-    treasuryWallet: signer.publicKey.toBase58(),
-    txSig: sig,
-  };
+  let sig: string;
+  if (devBuy > 0) {
+    // 3b) Atomic create + dev-buy via a Jito bundle. PumpPortal's non-custodial
+    // create rejects amount > 0, so the buy is a *second* tx bundled with the
+    // create — both land in the same block (first candle, anti-snipe) or neither.
+    const bundleReq = [
+      buildCreatePayload({ publicKey: creator, mint, metadataUri, name: input.name, symbol: input.symbol }),
+      {
+        publicKey: creator,
+        action: "buy" as const,
+        mint,
+        denominatedInSol: "true" as const,
+        amount: devBuy,
+        slippage: 10,
+        priorityFee: 0.0005, // PumpPortal uses this as the Jito tip
+        pool: "pump" as const,
+      },
+    ];
+    const res = await fetch(PUMPPORTAL_LOCAL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bundleReq),
+    });
+    if (!res.ok) {
+      throw new Error(`PumpPortal bundle build failed (${res.status}): ${await res.text()}`);
+    }
+    const encoded = (await res.json()) as string[];
+    if (!Array.isArray(encoded) || encoded.length !== 2) {
+      throw new Error("PumpPortal bundle returned an unexpected shape.");
+    }
+    const bs58mod = await import("bs58");
+    const bs58 = ((bs58mod as { default?: unknown }).default ?? bs58mod) as {
+      encode(b: Uint8Array): string;
+      decode(s: string): Uint8Array;
+    };
+
+    // tx[0] = create (sign signer + mint), tx[1] = buy (sign signer).
+    const signed = encoded.map((t, i) => {
+      const tx = VersionedTransaction.deserialize(bs58.decode(t));
+      tx.sign(i === 0 ? [signer, mintKeypair] : [signer]);
+      return tx;
+    });
+    sig = bs58.encode(signed[0].signatures[0]); // create tx signature (for the explorer)
+    const params = signed.map((tx) => bs58.encode(tx.serialize()));
+
+    const jres = await fetch(JITO_BUNDLE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "sendBundle", params: [params] }),
+    });
+    const jjson = (await jres.json().catch(() => null)) as { error?: unknown } | null;
+    if (!jres.ok || jjson?.error) {
+      throw new Error(`Jito bundle rejected: ${JSON.stringify(jjson?.error ?? `HTTP ${jres.status}`)}`);
+    }
+
+    // Confirm by polling the mint account. The bundle is atomic, so a present
+    // mint means create + dev-buy both landed. On timeout we DO NOT retry (a
+    // blind retry would double-spend / mint a second token).
+    const start = Date.now();
+    let landed = false;
+    while (Date.now() - start < 60_000) {
+      await new Promise((r) => setTimeout(r, 2500));
+      if (await conn.getAccountInfo(mintKeypair.publicKey, "confirmed")) {
+        landed = true;
+        break;
+      }
+    }
+    if (!landed) {
+      throw new Error(
+        `Bundle submitted but mint ${mint} not seen on-chain after 60s. DO NOT re-run blindly — check https://pump.fun/coin/${mint} and the creator wallet first; the bundle may still land.`
+      );
+    }
+  } else {
+    // 3a) Plain create (no dev-buy): single tx, sign [signer, mint], submit.
+    const res = await fetch(PUMPPORTAL_LOCAL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        buildCreatePayload({ publicKey: creator, mint, metadataUri, name: input.name, symbol: input.symbol })
+      ),
+    });
+    if (!res.ok) throw new Error(`PumpPortal create failed (${res.status}): ${await res.text()}`);
+    const tx = VersionedTransaction.deserialize(new Uint8Array(await res.arrayBuffer()));
+    tx.sign([signer, mintKeypair]);
+    sig = await conn.sendTransaction(tx);
+    const bh = await conn.getLatestBlockhash();
+    await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+  }
+
+  return { mint, treasuryWallet: creator, txSig: sig };
 }
