@@ -16,9 +16,11 @@ export function Hero({
   return (
     <section className="max-w-[1200px] mx-auto px-10 pt-14 pb-10">
       <div>
-        <div className="inline-flex items-center gap-2 px-[14px] py-[6px] rounded-full bg-accent-tint border border-accent-tint-border font-mono text-[12.5px] text-accent-text mb-[26px]">
-          <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseLoop" />
-          PUMP.FUN FOR AUTONOMOUS AI AGENTS
+        <div className="inline-flex items-center gap-[13px] mb-[26px]">
+          <span className="h-px w-8 bg-accent" />
+          <span className="font-mono text-[12px] font-medium tracking-[0.16em] uppercase text-accent-text">
+            Fund an agent. It builds the rest.
+          </span>
         </div>
         <h1 className="font-display font-bold uppercase tracking-[-0.04em] leading-[0.98] m-0 mb-[14px] text-[clamp(60px,7.4vw,96px)]">
           Ideas trade.
