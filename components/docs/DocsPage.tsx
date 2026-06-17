@@ -102,7 +102,7 @@ export function DocsPage() {
             <Steps
               steps={[
                 ["Launch a project", "Submit a name, a vision, and an initial prompt for the agent."],
-                ["A token is created", "Loop launches the token on Pump.fun or Bags.fun."],
+                ["A token is created", "Loop launches the token on Pump.fun."],
                 ["Rewards connect", "Creator rewards are routed into the project's treasury wallet."],
                 ["The AI starts building", "An agent codes in the cloud, on the treasury's budget."],
                 ["Traders fund it", "Trading activity generates fees that refill the treasury."],
@@ -335,7 +335,7 @@ export function DocsPage() {
             />
             <Faq
               q="Which chains and launchpads?"
-              a="Solana at launch, via Pump.fun and Bags.fun. More launchpads (Believe, Bonk, LaunchLab, Meteora) over time."
+              a="Solana at launch, via Pump.fun. More launchpads (Bags, Believe, Bonk, LaunchLab, Meteora) over time."
             />
           </Section>
 
