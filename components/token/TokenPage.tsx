@@ -16,7 +16,7 @@ import { ProjectWallet } from "./ProjectWallet";
 import type { AgentState } from "@/lib/agent-data";
 import type { Candle, Holder, MarketStats, Project, Trade } from "@/lib/types";
 import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
-import { infraBreakdown, type CostKey } from "@/lib/economics";
+import { infraBreakdown, parseSolPerDay, type CostKey } from "@/lib/economics";
 import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
 import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
@@ -754,6 +754,16 @@ function SplitChip({
 function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: number }) {
   // Poll the live on-chain balance (real when the project has a treasury_wallet).
   const { balance, live } = useLiveTreasury(p.key, p.treasurySol);
+  // Honest runway derived from the live balance + metered burn. Pre-launch shows
+  // "pre-launch"; once launched, runway = balance / daily burn (days), or "—"
+  // while burn isn't metered yet (burn 0 ⇒ no real spend to divide by). Never
+  // the stale DB string on a live token.
+  const burnPerDay = parseSolPerDay(p.burnPerDay);
+  const runwayLabel = !p.mint
+    ? "pre-launch"
+    : burnPerDay > 0
+    ? `${Math.floor(balance / burnPerDay)}d`
+    : "—";
   const rows: [string, React.ReactNode, boolean?][] = [
     [
       "Balance",
@@ -766,7 +776,7 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
     ],
     ["Total earned", `${p.earnedSol.toFixed(2)} SOL`],
     ["Burn rate", p.burnPerDay],
-    ["Runway", p.runway, true],
+    ["Runway", runwayLabel, true],
   ];
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
