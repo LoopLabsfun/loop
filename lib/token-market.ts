@@ -55,6 +55,22 @@ export async function getTokenView(project: Project, tf = "1D"): Promise<TokenVi
   };
 }
 
+/**
+ * Enrich a project list with live market stats (price/mcap/liquidity/volume/
+ * curve) for any project that has a mint. Light — DexScreener only, one fetch
+ * per launched project, in parallel; no on-chain holder/supply reads. Used by
+ * the landing so cards show real numbers. Best-effort: a failure keeps the row.
+ */
+export async function withLiveMarket(projects: Project[]): Promise<Project[]> {
+  return Promise.all(
+    projects.map(async (p) => {
+      if (!p.mint) return p;
+      const stats = await getMarketStats(p.mint);
+      return stats ? applyLiveMarket(p, stats, null, null) : p;
+    })
+  );
+}
+
 /** Fold live numbers onto the Project; missing pieces keep the snapshot. */
 function applyLiveMarket(
   p: Project,

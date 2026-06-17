@@ -1,15 +1,20 @@
 import { LoopMarkAnimated } from "../LoopMark";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
+import type { Network } from "@/lib/types";
 import { countdown, sol, usd } from "@/lib/format";
 
 export function Hero({
   engine,
   solUsd,
+  launched,
+  network,
   onLaunch,
   onScroll,
 }: {
   engine: LoopEngineState;
   solUsd: number;
+  launched: boolean;
+  network?: Network;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -67,7 +72,12 @@ export function Hero({
           </div>
         </div>
 
-        <TreasuryCard engine={engine} solUsd={solUsd} />
+        <TreasuryCard
+          engine={engine}
+          solUsd={solUsd}
+          launched={launched}
+          network={network}
+        />
       </div>
     </section>
   );
@@ -177,20 +187,31 @@ function PumpFunLogo() {
   );
 }
 
-function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: number }) {
+function TreasuryCard({
+  engine,
+  solUsd,
+  launched,
+  network,
+}: {
+  engine: LoopEngineState;
+  solUsd: number;
+  launched: boolean;
+  network?: Network;
+}) {
+  const net = (network ?? "mainnet").toUpperCase();
   return (
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
         <span className="font-display font-semibold text-[15px]">LOOP Treasury</span>
-        {engine.live ? (
+        {launched ? (
           <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-accent-text">
             <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseFast" />
-            LIVE
+            LIVE · {net}
           </span>
         ) : (
           <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-faint">
             <span className="w-[6px] h-[6px] rounded-full bg-faint" />
-            PRE-LAUNCH · DEVNET
+            PRE-LAUNCH
           </span>
         )}
       </div>

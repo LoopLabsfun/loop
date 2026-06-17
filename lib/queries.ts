@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getSolBalance } from "./solana";
+import { withLiveMarket } from "./token-market";
 import { PROJECT_LIST, PROJECTS } from "./projects";
 import type { Launchpad, Project, ProjectKey } from "./types";
 
@@ -96,7 +97,7 @@ export async function getProjects(): Promise<Project[]> {
     .order("official", { ascending: false })
     .order("created_at", { ascending: false });
   if (error || !data?.length) return PROJECT_LIST;
-  return withLiveBalances(data.map(rowToProject));
+  return withLiveMarket(await withLiveBalances(data.map(rowToProject)));
 }
 
 /** A single project by key, with the same fallback behaviour. */
