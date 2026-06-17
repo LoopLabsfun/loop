@@ -12,6 +12,8 @@ import { Keypair } from "@solana/web3.js";
 import { parseSecretKeyJson } from "../lib/vanity";
 import { createOnPumpPortal } from "../lib/pumpfun";
 import { supabaseAdmin } from "../lib/supabase";
+import { isXConfigured, sendTweet } from "../lib/x-send";
+import { buildSelfLaunchTweet } from "../lib/x-recap";
 
 const NAME = process.env.LOOP_NAME || "LOOP";
 const SYMBOL = process.env.LOOP_SYMBOL || "LOOP";
@@ -122,6 +124,25 @@ async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
     })
     .eq("key", "loop");
   console.log("\n✅ persisted mint to the LOOP project row.");
+
+  // Announce on @looplabsfun (no-op if X isn't configured; never fails the launch).
+  if (isXConfigured()) {
+    const tweet = buildSelfLaunchTweet({
+      name: NAME,
+      symbol: SYMBOL,
+      mint: res.mint,
+      url: `https://pump.fun/coin/${res.mint}`,
+      description: DESCRIPTION,
+    });
+    const posted = await sendTweet(tweet);
+    console.log(
+      posted.ok
+        ? `✅ tweeted from @looplabsfun: https://x.com/i/web/status/${posted.id}`
+        : `⚠️  launch tweet not posted (${posted.error ?? "skipped"}) — token is live regardless.`
+    );
+  } else {
+    console.log("ℹ️  X not configured — skipped the launch tweet.");
+  }
 })().catch((e) => {
   console.error("LAUNCH ABORTED:", e.message);
   process.exit(1);

@@ -48,3 +48,37 @@ export function buildLaunchTweet(p: Project, opts: LaunchTweetOptions = {}): str
 
   return clamp(body, TWEET_MAX);
 }
+
+export interface SelfLaunchTweetOptions {
+  name: string;
+  symbol: string;
+  /** On-chain mint address (the CA). Never dropped to fit the cap. */
+  mint: string;
+  /** Trade/coin link, e.g. https://pump.fun/coin/<mint>. Never dropped. */
+  url: string;
+  description?: string;
+}
+
+/**
+ * Compose the launch announcement posted FROM a project's own account (e.g.
+ * @looplabsfun announcing $LOOP itself) — distinct from buildLaunchTweet, which
+ * is the shared @loop account attributing OTHER projects. Always fits in
+ * TWEET_MAX: the CA and link are guaranteed; the description is trimmed (or
+ * dropped) first.
+ */
+export function buildSelfLaunchTweet(opts: SelfLaunchTweetOptions): string {
+  const header = `🚀 $${opts.symbol} is live on pump.fun.`;
+  const ca = `CA: ${opts.mint}`;
+
+  // header \n\n {desc} \n\n ca \n url  → 5 newline chars of framing.
+  const framing = header.length + ca.length + opts.url.length + 5;
+  const room = TWEET_MAX - framing;
+
+  const vision = (opts.description ?? "").trim();
+  const body =
+    vision && room > 12
+      ? `${header}\n\n${clamp(vision, room)}\n\n${ca}\n${opts.url}`
+      : `${header}\n\n${ca}\n${opts.url}`;
+
+  return clamp(body, TWEET_MAX);
+}

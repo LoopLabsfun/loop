@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLaunchTweet, TWEET_MAX } from "./x-recap";
+import { buildLaunchTweet, buildSelfLaunchTweet, TWEET_MAX } from "./x-recap";
 import type { Project } from "./types";
 
 const base: Project = {
@@ -51,6 +51,46 @@ describe("buildLaunchTweet", () => {
     const t = buildLaunchTweet({ ...base, description: "" });
     expect(t).toContain("Demo Co ($DEMO)");
     expect(t).toContain("funded by its market");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+});
+
+describe("buildSelfLaunchTweet", () => {
+  const mint = "AbCdEfGhiJkLmNoPqRsTuVwXyZ1234567890abcdLoop";
+  const url = `https://pump.fun/coin/${mint}`;
+
+  it("includes the symbol, CA and trade link", () => {
+    const t = buildSelfLaunchTweet({
+      name: "LOOP",
+      symbol: "LOOP",
+      mint,
+      url,
+      description: "The autonomous software factory.",
+    });
+    expect(t).toContain("$LOOP is live on pump.fun");
+    expect(t).toContain(`CA: ${mint}`);
+    expect(t).toContain(url);
+    expect(t).toContain("autonomous software factory");
+  });
+
+  it("never exceeds 280 chars and always keeps the CA + link", () => {
+    const t = buildSelfLaunchTweet({
+      name: "LOOP",
+      symbol: "LOOP",
+      mint,
+      url,
+      description: "x".repeat(600),
+    });
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+    expect(t).toContain(`CA: ${mint}`);
+    expect(t).toContain(url);
+  });
+
+  it("drops the description cleanly when absent", () => {
+    const t = buildSelfLaunchTweet({ name: "LOOP", symbol: "LOOP", mint, url });
+    expect(t).toContain("$LOOP is live on pump.fun");
+    expect(t).toContain(`CA: ${mint}`);
+    expect(t).toContain(url);
     expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
   });
 });
