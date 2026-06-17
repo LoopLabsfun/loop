@@ -26,4 +26,17 @@ describe("buildCreatePayload", () => {
     });
     expect(p.publicKey).toContain("Signer");
   });
+
+  it("sets the dev-buy amount (SOL) when given, clamped non-negative", () => {
+    const base = {
+      publicKey: "S",
+      mint: "MLoop",
+      metadataUri: "u",
+      name: "n",
+      symbol: "s",
+    };
+    expect(buildCreatePayload({ ...base, amountSol: 0.2 }).amount).toBe(0.2);
+    expect(buildCreatePayload({ ...base, amountSol: -5 }).amount).toBe(0);
+    expect(buildCreatePayload(base).amount).toBe(0); // default: no dev-buy
+  });
 });

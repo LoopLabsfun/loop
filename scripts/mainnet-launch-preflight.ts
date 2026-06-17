@@ -10,8 +10,10 @@ import { Keypair } from "@solana/web3.js";
 import { parseSecretKeyJson } from "../lib/vanity";
 import { supabaseAdmin } from "../lib/supabase";
 
-// pump.fun create ≈ rent + priority fee, no dev-buy (amount: 0 in buildCreatePayload).
-const MIN_SOL_NEEDED = 0.03;
+// pump.fun create ≈ rent + priority fee (~0.03), plus the optional dev-buy
+// (LOOP_DEV_BUY_SOL) which is spent on-chain at creation.
+const DEV_BUY = Math.max(0, Number(process.env.LOOP_DEV_BUY_SOL) || 0);
+const MIN_SOL_NEEDED = 0.03 + DEV_BUY;
 
 async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
   const key = process.env.HELIUS_API_KEY;
@@ -87,7 +89,7 @@ async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
   );
   if (!ready && signerAddr !== "(unset)" && (bal == null || bal < MIN_SOL_NEEDED)) {
     console.log(
-      `\n→ Fund the creator wallet with real SOL on mainnet:\n   ${signerAddr}\n   (~${MIN_SOL_NEEDED} SOL covers create + fees; no dev-buy.)`
+      `\n→ Fund the creator wallet with real SOL on mainnet:\n   ${signerAddr}\n   (~${MIN_SOL_NEEDED} SOL = create + fees${DEV_BUY > 0 ? ` + ${DEV_BUY} dev-buy` : ", no dev-buy"}.)`
     );
   }
   console.log(
