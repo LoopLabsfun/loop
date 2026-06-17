@@ -14,10 +14,10 @@ export type Network = "mainnet" | "devnet";
 const KEY = process.env.HELIUS_API_KEY;
 export const heliusConfigured = Boolean(KEY);
 
-// Devnet-first phase: server reads default to devnet unless SOLANA_NETWORK is
-// explicitly "mainnet". Per-project `network` columns still override per project.
+// Live phase: server reads default to mainnet unless SOLANA_NETWORK is explicitly
+// "devnet". Per-project `network` columns still override per project.
 export const DEFAULT_NETWORK: Network =
-  process.env.SOLANA_NETWORK === "mainnet" ? "mainnet" : "devnet";
+  process.env.SOLANA_NETWORK === "devnet" ? "devnet" : "mainnet";
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
 // Base58 pubkey shape (no 0, O, I, l), 32–44 chars.

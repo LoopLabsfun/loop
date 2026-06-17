@@ -8,8 +8,8 @@ export type Launchpad = "Pump.fun" | "Bags.fun";
 /** Solana cluster a project / the session targets. */
 export type Network = "mainnet" | "devnet";
 
-// Devnet-first phase: LOOP is the only static (fallback) project. Launched
-// projects carry arbitrary slug keys in the DB; lib/queries.ts casts those.
+// LOOP is the only static (fallback) project. Launched projects carry arbitrary
+// slug keys in the DB; lib/queries.ts casts those.
 export type ProjectKey = "loop";
 
 /** Static + slow-moving metadata for a project. */

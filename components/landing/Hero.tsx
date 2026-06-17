@@ -190,7 +190,7 @@ function TreasuryCard({ engine, solUsd }: { engine: LoopEngineState; solUsd: num
         ) : (
           <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-faint">
             <span className="w-[6px] h-[6px] rounded-full bg-faint" />
-            PRE-LAUNCH · DEVNET
+            PRE-LAUNCH
           </span>
         )}
       </div>

@@ -120,12 +120,14 @@ and the mint resolves on Solana Explorer (`?cluster=devnet`). `e2e-launch.ts`
 self-cleans the test row. Then do **one keeper** launch of the real LOOP project
 row (not auto-deleted) to dogfood the live agent against it.
 
-### Step 2 — Remove "devnet-first"
-Once Step 1 is green, flip the platform to mainnet-ready:
-- Default `SOLANA_NETWORK` / `NEXT_PUBLIC_SOLANA_NETWORK` back to `mainnet`
-  (reverse of #46), keep the in-app toggle for testing.
-- Audit any devnet-only copy/badges; keep devnet reachable but not the default.
-- 🟢 I can do this PR-only once Step 1 is validated.
+### Step 2 — Remove "devnet-first" — ✅ shipped
+Step 1 is green, so the platform is flipped to mainnet-ready:
+- Default `SOLANA_NETWORK` (`lib/solana.ts`) / `NEXT_PUBLIC_SOLANA_NETWORK`
+  (`lib/network.tsx`) now fall back to `mainnet` (reverse of #46); set either to
+  `devnet` for the test cluster. The in-app toggle is unchanged.
+- Devnet-only copy/badges audited: the hero eyebrow drops `· DEVNET`, the treasury
+  status drops `devnet · no wallet yet`, and the static LOOP fallback row is now
+  `network: "mainnet"`. Per-cluster logic stays — devnet remains reachable.
 
 ### Step 3 — Mainnet launch on pump.fun with a `…Loop` CA ⚠️ irreversible, real SOL
 The flagship LOOP token, live, with a vanity address ending in `Loop`.

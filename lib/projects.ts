@@ -4,9 +4,9 @@ import type { Project, ProjectKey } from "./types";
 // unconfigured or a read fails (the UI never breaks on a cold backend). In
 // production the live list comes from the `projects` table (lib/queries.ts).
 //
-// Devnet-first phase: the only project is LOOP itself, on devnet, pre-launch
-// (no mint / no treasury / no market yet). Real numbers appear once LOOP is
-// minted on devnet and the agent runs against it — nothing here is simulated.
+// LOOP itself is the only project, pre-launch (no mint / no treasury / no market
+// yet). Real numbers appear once LOOP is minted on mainnet and the agent runs
+// against it — nothing here is simulated.
 export const PROJECTS: Record<ProjectKey, Project> = {
   loop: {
     key: "loop",
@@ -31,7 +31,7 @@ export const PROJECTS: Record<ProjectKey, Project> = {
     earnedSol: 0,
     burnPerDay: "0.00 SOL/day",
     runway: "pre-launch",
-    network: "devnet",
+    network: "mainnet",
     mint: null,
     treasuryWallet: null,
   },
