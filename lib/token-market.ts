@@ -7,7 +7,7 @@ import {
   getRecentTrades,
   type MarketStats,
 } from "./market";
-import { getTopHolders, getHolderCount, getTokenSupplyUi } from "./solana";
+import { getTopHolders, getHolderCount, getTokenSupplyUi, getSolBalance } from "./solana";
 import { compactUsd, compactNum } from "./format";
 
 // Server-side aggregator for a launched token's live market. Combines the
@@ -27,23 +27,26 @@ export interface TokenView {
   candles: Candle[];
   trades: Trade[];
   holders: Holder[];
+  /** Live on-chain SOL balance of the agent wallet, or null if unknown. */
+  agentSol: number | null;
 }
 
 /** Everything the token page needs for a launched mint, at timeframe `tf`. */
-export async function getTokenView(project: Project, tf = "1D"): Promise<TokenView> {
+export async function getTokenView(project: Project, tf = "1H"): Promise<TokenView> {
   const mint = project.mint;
   const net = project.network ?? "mainnet";
   if (!mint) {
-    return { project, stats: null, candles: [], trades: [], holders: [] };
+    return { project, stats: null, candles: [], trades: [], holders: [], agentSol: null };
   }
 
   const stats = await getMarketStats(mint);
-  const [candles, trades, holders, holderCount, supply] = await Promise.all([
+  const [candles, trades, holders, holderCount, supply, agentSol] = await Promise.all([
     stats ? getCandles(stats.pairAddress, tf) : Promise.resolve<Candle[]>([]),
     stats ? getRecentTrades(stats.pairAddress) : Promise.resolve<Trade[]>([]),
     getTopHolders(mint, net),
     getHolderCount(mint, net),
     getTokenSupplyUi(mint, net),
+    project.agentWallet ? getSolBalance(project.agentWallet, net) : Promise.resolve(null),
   ]);
 
   return {
@@ -52,6 +55,7 @@ export async function getTokenView(project: Project, tf = "1D"): Promise<TokenVi
     candles,
     trades,
     holders,
+    agentSol,
   };
 }
 

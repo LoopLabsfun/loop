@@ -22,7 +22,7 @@ const POLL_MS = 20_000;
  */
 export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketSeed) {
   const preLaunch = !mint;
-  const [tf, setTf] = useState<Timeframe>("1D");
+  const [tf, setTf] = useState<Timeframe>("1H");
   const [mode, setMode] = useState<ChartMode>("candles");
   const [stats, setStats] = useState<MarketStats | null>(seed.stats);
   const [candles, setCandles] = useState<Candle[]>(seed.candles);

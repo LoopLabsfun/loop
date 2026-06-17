@@ -57,6 +57,7 @@ export default async function TokenRoute({
         trades: view.trades,
         holders: view.holders,
       }}
+      agentSol={view.agentSol}
       solUsd={solUsd}
       commits={commits}
       agentState={agentState}

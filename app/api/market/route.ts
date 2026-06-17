@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mint = searchParams.get("mint");
-  const tf = searchParams.get("tf") ?? "1D";
+  const tf = searchParams.get("tf") ?? "1H";
   if (!mint) {
     return NextResponse.json({ error: "mint required" }, { status: 400 });
   }
