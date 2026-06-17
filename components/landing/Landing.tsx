@@ -47,6 +47,8 @@ export function Landing({
         <Hero
           engine={engine}
           solUsd={solUsd}
+          launched={!!loop?.mint}
+          network={loop?.network}
           onLaunch={openModal}
           onScroll={scrollTo}
         />
