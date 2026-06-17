@@ -82,21 +82,14 @@ export function LegalLayout({
         {/* Content */}
         <article className="max-w-[720px]">
           <div className="inline-flex items-center gap-2 px-[14px] py-[6px] rounded-full bg-surface-2 border border-line-3 font-mono text-[12px] text-muted mb-6">
-            LEGAL · DRAFT
+            LEGAL
           </div>
           <h1 className="font-display font-bold text-[36px] leading-[1.1] tracking-[-0.03em] m-0 mb-3">
             {title}
           </h1>
           <p className="text-[16px] leading-[1.6] text-muted m-0 mb-4">{intro}</p>
-          <div className="font-mono text-[12.5px] text-faint mb-2">
+          <div className="font-mono text-[12.5px] text-faint mb-10">
             Last updated: {lastUpdated}
-          </div>
-          <div className="rounded-[12px] border border-warn bg-surface-2 px-4 py-3 text-[13px] text-body mb-10">
-            <span className="font-medium text-ink">Draft — not yet legal advice.</span>{" "}
-            This document is a working draft pending review by qualified counsel
-            and the registration of the operating entity. Sections marked{" "}
-            <ToComplete>like this</ToComplete> must be finalized before Loop opens
-            to the public.
           </div>
 
           {children}
