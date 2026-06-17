@@ -1,7 +1,12 @@
 import "server-only";
 
 import type { Project } from "./types";
-import { buildUpdateMessage, type BuildUpdate } from "./telegram";
+import {
+  buildUpdateMessage,
+  buildLaunchMessage,
+  type BuildUpdate,
+  type LaunchAnnouncement,
+} from "./telegram";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TELEGRAM SEND PATH — the thin delivery wrapper around the pure formatter in
@@ -84,4 +89,15 @@ export async function sendBuildUpdate(
   update: BuildUpdate
 ): Promise<SendResult> {
   return sendTelegramMessage(chatId, buildUpdateMessage(project, update));
+}
+
+/**
+ * Format a launch announcement (pure formatter) and post it to the project's
+ * Telegram chat. Thin glue around buildLaunchMessage — used once, at launch.
+ */
+export async function sendLaunchAnnouncement(
+  chatId: string | number,
+  announcement: LaunchAnnouncement
+): Promise<SendResult> {
+  return sendTelegramMessage(chatId, buildLaunchMessage(announcement));
 }
