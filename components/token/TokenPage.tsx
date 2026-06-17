@@ -268,7 +268,7 @@ export function TokenPage({
       </main>
 
       <footer className="border-t border-line py-[22px] px-8 max-w-[1280px] mx-auto flex items-center justify-between">
-        <span className="text-[12.5px] text-faint">© 2026 Loop · devnet</span>
+        <span className="text-[12.5px] text-faint">© 2026 Loop · {p.network ?? "mainnet"}</span>
         <span className="font-mono text-[12px] text-pos">● All systems operational</span>
       </footer>
     </>
