@@ -4,6 +4,7 @@ import {
   telegramBotUrl,
   escapeMarkdownV2,
   buildUpdateMessage,
+  buildLaunchMessage,
 } from "./telegram";
 import type { AgentTask } from "./agent";
 import type { Project, Commit } from "./types";
@@ -106,5 +107,28 @@ describe("buildUpdateMessage", () => {
     });
     expect(msg).toContain("• Fix curve \\(off\\-by\\-one\\)");
     expect(msg).toContain("• feat: add v1\\.0 page");
+  });
+});
+
+describe("buildLaunchMessage", () => {
+  it("announces with an escaped header, code-span CA, and trade link", () => {
+    const msg = buildLaunchMessage({
+      name: "LOOP",
+      symbol: "LOOP",
+      mint: "AbcLoop",
+      url: "https://pump.fun/coin/AbcLoop",
+      description: "The autonomous software factory.",
+    });
+    expect(msg).toContain("🚀 *$LOOP is live on pump\\.fun*");
+    expect(msg).toContain("The autonomous software factory\\.");
+    expect(msg).toContain("CA: `AbcLoop`"); // raw CA in a code span (copy-paste)
+    expect(msg).toContain("Trade → https://pump\\.fun/coin/AbcLoop");
+  });
+
+  it("omits the description block when absent (header, CA, trade only)", () => {
+    const msg = buildLaunchMessage({ name: "X", symbol: "X", mint: "M", url: "u" });
+    expect(msg).toContain("🚀 *$X is live on pump\\.fun*");
+    expect(msg).toContain("CA: `M`");
+    expect(msg.split("\n").length).toBe(5); // header, "", CA, "", trade
   });
 });

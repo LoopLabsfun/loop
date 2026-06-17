@@ -1,5 +1,5 @@
 import type { Candle } from "@/lib/types";
-import type { ChartMode } from "@/lib/useTokenMarket";
+import type { ChartMode } from "@/lib/useLiveMarket";
 import { fmtPrice } from "@/lib/format";
 
 // Re-implements the design's hand-rolled SVG candlestick/line chart.

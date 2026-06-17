@@ -100,6 +100,20 @@ export interface Candle {
   c: number;
 }
 
+/** Live market stats for a launched token (USD throughout). */
+export interface MarketStats {
+  priceUsd: number;
+  /** Price in SOL (the native/quote price). */
+  priceNative: number;
+  marketCap: number;
+  liquidityUsd: number;
+  volume24hUsd: number;
+  /** 24h price change in percent (may be negative). */
+  priceChange24h: number;
+  /** The pump.fun pair/pool address — used to fetch candles + trades. */
+  pairAddress: string;
+}
+
 /** A token holder's share of supply (0..1), for governance + wind-down math. */
 export interface Holder {
   address: string;

@@ -1,0 +1,135 @@
+import "server-only";
+
+import type { Candle, MarketStats, Trade } from "./types";
+
+// Live on-chain MARKET data for a launched token, behind the same data seam as
+// solana.ts (treasury) and price.ts (SOL/USD). Two free, no-key sources:
+//   • DexScreener  — current price / market cap / liquidity / 24h volume + the
+//     pump.fun pair address. One call per token.
+//   • GeckoTerminal — OHLCV candles + recent trades for that pair (pool).
+//
+// Everything is best-effort: any failure returns null / [] and the caller keeps
+// the static snapshot (home) or shows an honest empty state (chart/trades). USD
+// is the unit throughout, matching the USD market-cap the UI already shows.
+// Server-only so these run during SSR (force-dynamic routes) and never ship keys.
+
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+const DEXSCREENER = "https://api.dexscreener.com/latest/dex/tokens";
+const GECKO = "https://api.geckoterminal.com/api/v2/networks/solana";
+
+export type { MarketStats } from "./types";
+
+/** Current market stats for a mint via DexScreener, or null on failure. */
+export async function getMarketStats(mint: string): Promise<MarketStats | null> {
+  try {
+    const res = await fetch(`${DEXSCREENER}/${mint}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { pairs?: DexPair[] };
+    const pairs = json.pairs ?? [];
+    if (!pairs.length) return null;
+    // Prefer the deepest-liquidity SOL pair (the canonical pump.fun curve).
+    const pair =
+      pairs
+        .filter((p) => p.quoteToken?.address === SOL_MINT)
+        .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] ??
+      pairs[0];
+    return {
+      priceUsd: num(pair.priceUsd),
+      priceNative: num(pair.priceNative),
+      marketCap: num(pair.marketCap ?? pair.fdv),
+      liquidityUsd: num(pair.liquidity?.usd),
+      volume24hUsd: num(pair.volume?.h24),
+      priceChange24h: num(pair.priceChange?.h24),
+      pairAddress: pair.pairAddress,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// GeckoTerminal OHLCV timeframes per the app's chart toggle.
+const TF: Record<string, { resolution: "minute" | "hour" | "day"; aggregate: number }> = {
+  "1H": { resolution: "minute", aggregate: 15 }, // 15-min candles across ~12h
+  "4H": { resolution: "hour", aggregate: 1 },
+  "1D": { resolution: "hour", aggregate: 4 },
+};
+
+/**
+ * OHLCV candles for a pool, oldest→newest, mapped to the chart's Candle shape.
+ * `tf` is the app timeframe ("1H" | "4H" | "1D"); USD prices. Empty on failure.
+ */
+export async function getCandles(pair: string, tf: string, limit = 60): Promise<Candle[]> {
+  const t = TF[tf] ?? TF["1D"];
+  try {
+    const url = `${GECKO}/pools/${pair}/ohlcv/${t.resolution}?aggregate=${t.aggregate}&limit=${limit}&currency=usd`;
+    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      data?: { attributes?: { ohlcv_list?: number[][] } };
+    };
+    const list = json.data?.attributes?.ohlcv_list ?? [];
+    // GeckoTerminal returns newest-first; the chart wants chronological order.
+    return list
+      .slice()
+      .reverse()
+      .map(([, o, h, l, c]) => ({ o, h, l, c }));
+  } catch {
+    return [];
+  }
+}
+
+/** Recent trades for a pool, newest-first, mapped to the chart's Trade shape. */
+export async function getRecentTrades(pair: string, n = 10): Promise<Trade[]> {
+  try {
+    const url = `${GECKO}/pools/${pair}/trades?trade_volume_in_usd_greater_than=0`;
+    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { data?: { attributes: GeckoTrade }[] };
+    const now = Date.now();
+    return (json.data ?? []).slice(0, n).map(({ attributes: a }) => {
+      const fromSol = a.from_token_address === SOL_MINT;
+      const sol = num(fromSol ? a.from_token_amount : a.to_token_amount);
+      const tokens = num(fromSol ? a.to_token_amount : a.from_token_amount);
+      return {
+        addr: shortAddr(a.tx_from_address),
+        side: a.kind === "buy" ? "BUY" : "SELL",
+        sol: sol.toFixed(2),
+        tokens: Math.round(tokens).toLocaleString("en-US"),
+        ageSeconds: Math.max(0, Math.round((now - Date.parse(a.block_timestamp)) / 1000)),
+      } satisfies Trade;
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function num(v: unknown): number {
+  const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function shortAddr(a: string): string {
+  return a.length > 9 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+}
+
+interface DexPair {
+  pairAddress: string;
+  priceUsd?: string;
+  priceNative?: string;
+  marketCap?: number;
+  fdv?: number;
+  quoteToken?: { address?: string };
+  liquidity?: { usd?: number };
+  volume?: { h24?: number };
+  priceChange?: { h24?: number };
+}
+
+interface GeckoTrade {
+  tx_from_address: string;
+  kind: "buy" | "sell";
+  from_token_amount: string;
+  to_token_amount: string;
+  from_token_address: string;
+  block_timestamp: string;
+}

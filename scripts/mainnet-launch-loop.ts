@@ -14,6 +14,7 @@ import { createOnPumpPortal } from "../lib/pumpfun";
 import { supabaseAdmin } from "../lib/supabase";
 import { isXConfigured, sendTweet } from "../lib/x-send";
 import { buildSelfLaunchTweet } from "../lib/x-recap";
+import { sendLaunchAnnouncement } from "../lib/telegram-send";
 
 const NAME = process.env.LOOP_NAME || "LOOP";
 const SYMBOL = process.env.LOOP_SYMBOL || "LOOP";
@@ -125,15 +126,47 @@ async function mainnetBalanceSol(pubkey: string): Promise<number | null> {
     .eq("key", "loop");
   console.log("\n✅ persisted mint to the LOOP project row.");
 
-  // Announce on @looplabsfun (no-op if X isn't configured; never fails the launch).
-  if (isXConfigured()) {
-    const tweet = buildSelfLaunchTweet({
-      name: NAME,
-      symbol: SYMBOL,
-      mint: res.mint,
-      url: `https://pump.fun/coin/${res.mint}`,
-      description: DESCRIPTION,
-    });
+  // Announce on Telegram — the bot posts the launch (CA + trade link) to the
+  // project channel. No-op unless TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set,
+  // and a send failure never fails the launch (the token is live regardless).
+  const tgChat = process.env.TELEGRAM_CHAT_ID;
+  if (tgChat && process.env.TELEGRAM_BOT_TOKEN) {
+    try {
+      const posted = await sendLaunchAnnouncement(tgChat, {
+        name: NAME,
+        symbol: SYMBOL,
+        mint: res.mint,
+        url: `https://pump.fun/coin/${res.mint}`,
+        description: DESCRIPTION,
+      });
+      console.log(
+        posted.ok
+          ? "✅ announced on Telegram."
+          : `⚠️  Telegram announce not posted (${posted.error ?? "skipped"}) — token is live regardless.`
+      );
+    } catch {
+      console.log("⚠️  Telegram announce failed — token is live regardless.");
+    }
+  } else {
+    console.log("ℹ️  Telegram not configured — skipped the launch announcement.");
+  }
+
+  // Announce on @looplabsfun. The bot announces its own launch by default; set
+  // LOOP_LAUNCH_TWEET=false to skip the auto-post and tweet the draft manually.
+  // Either way the composed tweet is printed first, so it's never a surprise.
+  const tweet = buildSelfLaunchTweet({
+    name: NAME,
+    symbol: SYMBOL,
+    mint: res.mint,
+    url: `https://pump.fun/coin/${res.mint}`,
+    description: DESCRIPTION,
+  });
+  console.log("\n── launch tweet ──\n" + tweet + "\n──────────────────");
+  if (process.env.LOOP_LAUNCH_TWEET === "false") {
+    console.log(
+      "ℹ️  LOOP_LAUNCH_TWEET=false — auto-tweet skipped; copy the draft above to post manually."
+    );
+  } else if (isXConfigured()) {
     const posted = await sendTweet(tweet);
     console.log(
       posted.ok

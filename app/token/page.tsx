@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TokenPage } from "@/components/token/TokenPage";
 import { getProject } from "@/lib/queries";
+import { getTokenView } from "@/lib/token-market";
 import { getSolUsd } from "@/lib/price";
 import { getRecentCommits } from "@/lib/commits";
 import { getAgentState } from "@/lib/agent-data";
@@ -38,17 +39,24 @@ export default async function TokenRoute({
 }: {
   searchParams: { p?: string };
 }) {
-  const project =
+  const base =
     (await getProject(searchParams.p ?? "loop")) ?? (await getProject("loop"));
-  if (!project) notFound();
-  const [solUsd, commits, agentState] = await Promise.all([
+  if (!base) notFound();
+  const [view, solUsd, commits, agentState] = await Promise.all([
+    getTokenView(base),
     getSolUsd(),
-    getRecentCommits(project.repo),
-    getAgentState(project),
+    getRecentCommits(base.repo),
+    getAgentState(base),
   ]);
   return (
     <TokenPage
-      project={project}
+      project={view.project}
+      market={{
+        stats: view.stats,
+        candles: view.candles,
+        trades: view.trades,
+        holders: view.holders,
+      }}
       solUsd={solUsd}
       commits={commits}
       agentState={agentState}

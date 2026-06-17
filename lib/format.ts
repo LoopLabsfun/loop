@@ -18,6 +18,36 @@ export function fmtPrice(p: number): string {
   return "$" + (p >= 0.01 ? p.toFixed(4) : p.toFixed(6));
 }
 
+/** Compact USD, e.g. 1234 → "$1.2K", 6_900_000 → "$6.9M". "—" for 0/invalid. */
+export function compactUsd(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  if (n < 1000) return "$" + n.toFixed(0);
+  const units: [number, string][] = [
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ];
+  for (const [v, suffix] of units) {
+    if (n >= v) return "$" + (n / v).toFixed(n / v >= 100 ? 0 : 1) + suffix;
+  }
+  return "$" + n.toFixed(0);
+}
+
+/** Compact integer count, e.g. 1234 → "1.2K", 1_000_000 → "1M". */
+export function compactNum(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n < 1000) return String(Math.round(n));
+  const units: [number, string][] = [
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ];
+  for (const [v, suffix] of units) {
+    if (n >= v) return (n / v).toFixed(n / v >= 100 ? 0 : 1) + suffix;
+  }
+  return String(Math.round(n));
+}
+
 export function countdown(totalSeconds: number): string {
   const mm = Math.floor(totalSeconds / 60);
   const ss = String(totalSeconds % 60).padStart(2, "0");

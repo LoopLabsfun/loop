@@ -11,6 +11,7 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import {
   ConnectionProvider,
@@ -103,6 +104,12 @@ export interface WalletState {
    * responsible for ensuring the active cluster matches the recipient.
    */
   sendSol: (to: string, sol: number) => Promise<string>;
+  /**
+   * Sign and send a pre-built serialized transaction (e.g. a pump.fun swap
+   * built server-side / by PumpPortal). Resolves with the signature; throws if
+   * no wallet is connected. The caller ensures the active cluster is correct.
+   */
+  sendSwapTx: (txBytes: Uint8Array) => Promise<string>;
 }
 
 export function useWallet(): WalletState {
@@ -141,6 +148,21 @@ export function useWallet(): WalletState {
     return signature;
   };
 
+  const sendSwapTx = async (txBytes: Uint8Array): Promise<string> => {
+    if (!publicKey || !sendTransaction) {
+      throw new Error("Connect a wallet first");
+    }
+    const tx = VersionedTransaction.deserialize(txBytes);
+    const signature = await sendTransaction(tx, connection);
+    try {
+      const latest = await connection.getLatestBlockhash();
+      await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+    } catch {
+      /* confirmation polling failed — the signature is still valid */
+    }
+    return signature;
+  };
+
   const signLaunchProof = async (
     ticker: string
   ): Promise<LaunchProof | null> => {
@@ -164,5 +186,6 @@ export function useWallet(): WalletState {
     toggle: connected ? () => void disconnect() : openModal,
     signLaunchProof,
     sendSol,
+    sendSwapTx,
   };
 }

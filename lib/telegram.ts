@@ -83,3 +83,37 @@ export function buildUpdateMessage(p: Project, u: BuildUpdate): string {
   out.push("", `Watch it build → ${E(agentSite(p))}`);
   return out.join("\n");
 }
+
+/** A one-shot launch announcement, posted when a project's token goes live. */
+export interface LaunchAnnouncement {
+  /** Project display name. */
+  name: string;
+  /** Bare ticker, no leading "$". */
+  symbol: string;
+  /** On-chain mint address (the CA). */
+  mint: string;
+  /** Trade/coin link, e.g. https://pump.fun/coin/<mint>. */
+  url: string;
+  /** Optional one-line vision/description. */
+  description?: string;
+}
+
+/**
+ * Format a launch announcement for a project's Telegram channel, as MarkdownV2 —
+ * the Telegram counterpart of buildSelfLaunchTweet (x-recap.ts). The CA (in a
+ * copy-paste code span) and the trade link are always included; the description
+ * is optional. Caller pairs it with `parse_mode: "MarkdownV2"`.
+ */
+export function buildLaunchMessage(a: LaunchAnnouncement): string {
+  const E = escapeMarkdownV2;
+  // Escape the inner text but keep the surrounding * as bold formatting.
+  const out: string[] = [`🚀 *${E("$" + a.symbol + " is live on pump.fun")}*`];
+
+  const desc = (a.description ?? "").trim();
+  if (desc) out.push("", E(desc));
+
+  // Base58 mints contain no ` or \, so the CA is safe inside a code span.
+  out.push("", `CA: \`${a.mint}\``);
+  out.push("", `Trade → ${E(a.url)}`);
+  return out.join("\n");
+}
