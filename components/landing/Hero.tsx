@@ -62,7 +62,7 @@ export function Hero({
           </div>
           <div className="flex items-center gap-[18px] text-[13px] text-faint">
             <span>Built on</span>
-            <span className="font-mono text-muted">Solana</span>
+            <SolanaLogo />
             <PumpFunLogo />
           </div>
         </div>
@@ -70,6 +70,43 @@ export function Hero({
         <TreasuryCard engine={engine} solUsd={solUsd} />
       </div>
     </section>
+  );
+}
+
+function SolanaLogo() {
+  // Three slanted bars + wordmark. Gradient is Solana's purple→green brand ramp.
+  return (
+    <svg
+      viewBox="0 0 118 36"
+      className="h-[15px] w-auto"
+      role="img"
+      aria-label="Solana"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>Solana</title>
+      <defs>
+        <linearGradient id="sol-grad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#9945FF" />
+          <stop offset="1" stopColor="#14F195" />
+        </linearGradient>
+      </defs>
+      <g fill="url(#sol-grad)">
+        <path d="M8 9 H33 L27 14 H2 Z" />
+        <path d="M8 16 H33 L27 21 H2 Z" />
+        <path d="M8 23 H33 L27 28 H2 Z" />
+      </g>
+      <text
+        x="42"
+        y="25"
+        fontFamily="'Space Grotesk', system-ui, sans-serif"
+        fontSize="20"
+        fontWeight="700"
+        letterSpacing="-0.5"
+        fill="var(--ink)"
+      >
+        Solana
+      </text>
+    </svg>
   );
 }
 
@@ -90,8 +127,8 @@ function PumpFunLogo() {
       </defs>
       <g transform="rotate(-38 18 18)">
         <g clipPath="url(#pf-pill)">
-          <rect x="4" y="11" width="14" height="14" fill="#ffffff" />
-          <rect x="18" y="11" width="14" height="14" fill="#4fce7a" />
+          <rect x="4" y="11" width="14" height="14" fill="#bdecca" />
+          <rect x="18" y="11" width="14" height="14" fill="#3fbf6e" />
         </g>
         <rect
           x="4"
