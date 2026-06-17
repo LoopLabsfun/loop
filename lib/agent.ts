@@ -83,8 +83,10 @@ export function agentTwitter(p: Pick<Project, "key" | "ticker">): string {
   return `@${agentSlug(p)}_agent`;
 }
 
+// A project's public page on Loop — its real "site" until it ships its own.
+// (Was a fictional <slug>.looplabs.fun subdomain that doesn't resolve.)
 export function agentSite(p: Pick<Project, "key" | "ticker">): string {
-  return `${agentSlug(p)}.looplabs.fun`;
+  return `www.looplabs.fun/token?p=${agentSlug(p)}`;
 }
 
 // --- Seeds (stand-ins for a real runtime stream) ----------------------------
