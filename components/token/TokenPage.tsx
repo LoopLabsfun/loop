@@ -32,12 +32,14 @@ export interface LiveMarket {
 export function TokenPage({
   project: p,
   market,
+  agentSol,
   solUsd,
   commits,
   agentState,
 }: {
   project: Project;
   market: LiveMarket;
+  agentSol?: number | null;
   solUsd: number;
   commits: { hash: string; msg: string }[];
   agentState?: AgentState;
@@ -129,7 +131,7 @@ export function TokenPage({
             social={agentState?.social}
           />
           {/* Project Wallet — the agent's on-chain positions (buyback/burn/airdrop) */}
-          <ProjectWallet project={p} actions={agentState?.actions} />
+          <ProjectWallet project={p} actions={agentState?.actions} agentSol={agentSol} />
           {/* Chart */}
           <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
             {preLaunch || candles.length === 0 ? (
@@ -608,6 +610,16 @@ function SwapCard({
       <div className="mt-[10px] text-[11px] text-faint text-center">
         Swaps route through pump.fun · 1% of every trade funds the treasury
       </div>
+      {p.mint && (
+        <a
+          href={`https://pump.fun/coin/${p.mint}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-[6px] block text-center font-mono text-[11px] text-accent-text hover:text-accent-d transition-colors"
+        >
+          or trade on pump.fun ↗
+        </a>
+      )}
     </div>
   );
 }

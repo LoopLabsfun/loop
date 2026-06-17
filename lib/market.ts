@@ -60,8 +60,26 @@ const TF: Record<string, { resolution: "minute" | "hour" | "day"; aggregate: num
  */
 export async function getCandles(pair: string, tf: string, limit = 60): Promise<Candle[]> {
   const t = TF[tf] ?? TF["1D"];
+  const candles = await fetchOhlcv(pair, t.resolution, t.aggregate, limit);
+  // A freshly-launched pool often has no hour/day aggregates yet (only minute
+  // data exists), which would leave 4H/1D blank. Fall back to the finest grain
+  // (15-min) so every timeframe shows real price action from launch — never an
+  // empty chart while trades exist.
+  if (candles.length === 0 && !(t.resolution === "minute" && t.aggregate === 15)) {
+    return fetchOhlcv(pair, "minute", 15, limit);
+  }
+  return candles;
+}
+
+/** One GeckoTerminal OHLCV fetch → chronological Candle[], or [] on failure. */
+async function fetchOhlcv(
+  pair: string,
+  resolution: "minute" | "hour" | "day",
+  aggregate: number,
+  limit: number
+): Promise<Candle[]> {
   try {
-    const url = `${GECKO}/pools/${pair}/ohlcv/${t.resolution}?aggregate=${t.aggregate}&limit=${limit}&currency=usd`;
+    const url = `${GECKO}/pools/${pair}/ohlcv/${resolution}?aggregate=${aggregate}&limit=${limit}&currency=usd`;
     const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!res.ok) return [];
     const json = (await res.json()) as {

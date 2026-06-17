@@ -36,9 +36,12 @@ const DISP_LABEL: Record<WalletAction["disposition"], string> = {
 export function ProjectWallet({
   project: p,
   actions = [],
+  agentSol,
 }: {
   project: Project;
   actions?: WalletAction[];
+  /** Live on-chain SOL balance of the agent wallet, or null/undefined if unknown. */
+  agentSol?: number | null;
 }) {
   const wallet = p.agentWallet ?? null;
   const net = p.network ?? "mainnet";
@@ -60,14 +63,24 @@ export function ProjectWallet({
           </span>
         </div>
         {wallet ? (
-          <a
-            href={explorerUrl(wallet, net)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-[12px] text-accent-text hover:text-accent-d transition-colors"
-          >
-            {shortAddr(wallet)} ↗
-          </a>
+          <div className="flex items-center gap-2">
+            {typeof agentSol === "number" && (
+              <span
+                className="font-mono text-[12px] text-ink"
+                title="Live on-chain balance of the agent wallet"
+              >
+                {agentSol.toFixed(2)} SOL
+              </span>
+            )}
+            <a
+              href={explorerUrl(wallet, net)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[12px] text-accent-text hover:text-accent-d transition-colors"
+            >
+              {shortAddr(wallet)} ↗
+            </a>
+          </div>
         ) : (
           <span className="font-mono text-[11.5px] text-faint">
             not provisioned yet
