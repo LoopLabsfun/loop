@@ -15,14 +15,6 @@ export function Footer() {
         <Link href="/legal/terms" className="cursor-pointer hover:text-ink transition-colors">Terms</Link>
         <Link href="/legal/privacy" className="cursor-pointer hover:text-ink transition-colors">Privacy</Link>
         <Link href="/legal/disclaimer" className="cursor-pointer hover:text-ink transition-colors">Risk</Link>
-        <a
-          href="https://github.com/LoopLabsfun/loop"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="cursor-pointer hover:text-ink transition-colors"
-        >
-          GitHub ↗
-        </a>
         <span className="font-mono text-[12px] text-pos">
           ● All systems operational
         </span>
