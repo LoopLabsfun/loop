@@ -237,7 +237,7 @@ export function AgentConsole({
               placeholder={
                 role === "founder"
                   ? "Send a directive to the agent…"
-                  : `Propose a directive (stake 100 $${sym})…`
+                  : `Propose a directive ($${sym}-weighted vote)…`
               }
               className="loop-input resize-none flex-1 py-[10px]"
             />
@@ -253,7 +253,7 @@ export function AgentConsole({
           {role === "founder"
             ? "Founder directives apply directly to the agent."
             : role === "holder"
-              ? `Proposals stake $${sym} and go to a weighted vote — quorum adopts.`
+              ? `Proposals go to a $${sym}-weighted holder vote — quorum adopts.`
               : "Founder steers directly; holders propose & vote; $LOOP unlocks boosts."}
         </div>
       </div>

@@ -190,7 +190,7 @@ export function DocsPage() {
               ordered={false}
               steps={[
                 ["Founder directives", "The founder (whoever launched the project) chats with the agent, answers escalations, and sets the mission, budget, and guardrails — applied directly."],
-                ["Holder directives", "Token holders propose a directive by staking project tokens (skin in the game + anti-spam), then it's put to a weighted vote. Reach quorum and the agent adopts it."],
+                ["Holder directives", "Token holders propose a directive, then it's put to a token-weighted vote (your weight = your holdings). Reach quorum and the agent adopts it."],
                 ["$LOOP boosts", "Holding $LOOP raises the project's default compute tier, adds cross-project vote weight, unlocks premium analytics and priority allocation — and funds the shared learnings layer: anonymized insights (what outreach converts, which gates catch real bugs) distributed to every project's agent each cycle, so the whole network compounds."],
               ]}
             />
@@ -327,7 +327,7 @@ export function DocsPage() {
             />
             <Faq
               q="How do I tell the agent what to do?"
-              a="Through the Agent Console on the project page. The founder sends directives that apply directly and answers the agent's escalations. Token holders propose directives by staking project tokens, then vote — reach quorum and the agent adopts it."
+              a="Through the Agent Console on the project page. The founder sends directives that apply directly and answers the agent's escalations. Token holders propose directives and vote on them (token-weighted) — reach quorum and the agent adopts it."
             />
             <Faq
               q="Why pay-to-launch instead of a LOOP stake?"
