@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { NetworkToggle } from "../NetworkToggle";
+import { LoopContract } from "../LoopContract";
 import { WalletIcon } from "../AuthIcons";
 import { useWallet } from "@/lib/wallet";
+import type { Network } from "@/lib/types";
 
 const SECTIONS: { id: string; label: string }[] = [
   { id: "loop-projects", label: "Projects" },
@@ -17,47 +19,61 @@ const SECTIONS: { id: string; label: string }[] = [
 export function Nav({
   onLaunch,
   onScroll,
+  loopMint,
+  loopNetwork,
 }: {
   onLaunch: () => void;
   onScroll: (id: string) => void;
+  /** Official $LOOP mint (CA) once live on mainnet; null pre-launch. */
+  loopMint?: string | null;
+  loopNetwork?: Network;
 }) {
   const wallet = useWallet();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <nav className="sticky top-0 z-50 flex items-center justify-between gap-3 px-4 sm:px-10 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        className="flex items-center gap-[10px] cursor-pointer bg-transparent border-0 p-0"
-      >
-        <LoopMark width={34} height={20} />
-        <span className="font-display font-bold text-[20px] tracking-[-0.02em] text-ink">
-          Loop
-        </span>
-      </button>
-
-      <div className="hidden md:flex items-center gap-7 text-[14px] text-body">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => onScroll(s.id)}
-            className="hover:text-ink transition-colors"
-          >
-            {s.label}
-          </button>
-        ))}
-        <Link href="/docs" className="hover:text-ink transition-colors">
-          Docs
-        </Link>
-        <Link
-          href="/token?p=loop"
-          className="font-mono text-[13px] text-accent-text hover:text-accent-d transition-colors"
+      {/* Left group: logo + menu (left-aligned) */}
+      <div className="flex items-center gap-7 lg:gap-9 min-w-0">
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="flex items-center gap-[10px] cursor-pointer bg-transparent border-0 p-0 flex-none"
         >
-          $LOOP
-        </Link>
+          <LoopMark width={34} height={20} />
+          <span className="font-display font-bold text-[20px] tracking-[-0.02em] text-ink">
+            Loop
+          </span>
+        </button>
+
+        <div className="hidden md:flex items-center gap-7 text-[14px] text-body">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onScroll(s.id)}
+              className="hover:text-ink transition-colors"
+            >
+              {s.label}
+            </button>
+          ))}
+          <Link href="/docs" className="hover:text-ink transition-colors">
+            Docs
+          </Link>
+          <Link
+            href="/token?p=loop"
+            className="font-mono text-[13px] text-accent-text hover:text-accent-d transition-colors"
+          >
+            $LOOP
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-[10px] flex-none">
+        {/* Official $LOOP CA — auto-appears at mainnet, reserved spot before */}
+        <LoopContract
+          mint={loopMint}
+          network={loopNetwork}
+          className="hidden lg:inline-flex"
+        />
         <NetworkToggle className="hidden sm:flex" />
         <button
           onClick={() => setMenuOpen((o) => !o)}
@@ -138,6 +154,10 @@ export function Nav({
           >
             $LOOP
           </Link>
+          <div className="flex items-center justify-between py-[11px]">
+            <span className="text-[15px] text-body">$LOOP contract</span>
+            <LoopContract mint={loopMint} network={loopNetwork} />
+          </div>
           <div className="flex items-center justify-between py-[11px]">
             <span className="text-[15px] text-body">Network</span>
             <NetworkToggle />
