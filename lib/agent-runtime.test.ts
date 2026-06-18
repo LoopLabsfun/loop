@@ -183,6 +183,33 @@ describe("coerceDecision", () => {
     expect(emptyCode?.command).toBeUndefined();
   });
 
+  it("parses an optional self-generated learning (enum + sanitize guarded)", () => {
+    const withLearning = coerceDecision({
+      ...good,
+      learning: { category: "gate", insight: "  Typecheck   caught a   real null bug  " },
+    });
+    expect(withLearning?.learning).toEqual({
+      category: "gate",
+      insight: "Typecheck caught a real null bug",
+    });
+
+    // bad category → dropped entirely
+    const badCat = coerceDecision({
+      ...good,
+      learning: { category: "philosophy", insight: "deep thoughts" },
+    });
+    expect(badCat?.learning).toBeUndefined();
+
+    // empty insight → dropped
+    const emptyInsight = coerceDecision({
+      ...good,
+      learning: { category: "ops", insight: "   " },
+    });
+    expect(emptyInsight?.learning).toBeUndefined();
+
+    expect(coerceDecision(good).learning).toBeUndefined();
+  });
+
   it("clamps lengths", () => {
     const d = coerceDecision({
       summary: "x".repeat(500),

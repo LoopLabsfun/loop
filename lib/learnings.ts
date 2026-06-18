@@ -10,12 +10,15 @@
 // Pure + dependency-free so it's unit-testable; the live rows come from the
 // `learnings` table (written by the runtime, read by every tick + the UI).
 
-export type LearningCategory =
-  | "outreach"
-  | "build"
-  | "growth"
-  | "gate"
-  | "ops";
+export const LEARNING_CATEGORIES = [
+  "outreach",
+  "build",
+  "growth",
+  "gate",
+  "ops",
+] as const;
+
+export type LearningCategory = (typeof LEARNING_CATEGORIES)[number];
 
 export interface Learning {
   id: string;
@@ -34,8 +37,21 @@ export function sanitizeLearning(text: string): string {
 }
 
 /** Stable key for dedupe: lowercased, punctuation-insensitive insight. */
-function dedupeKey(insight: string): string {
+export function dedupeKey(insight: string): string {
   return insight.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * True if `insight` is effectively already in `existing` (same dedupe key) — so
+ * the write-back path (C) doesn't insert near-identical rows every cycle.
+ */
+export function isDuplicateLearning(
+  insight: string,
+  existing: Pick<Learning, "insight">[]
+): boolean {
+  const key = dedupeKey(sanitizeLearning(insight));
+  if (!key) return true; // empty insight: never persist
+  return existing.some((l) => dedupeKey(sanitizeLearning(l.insight)) === key);
 }
 
 /**
