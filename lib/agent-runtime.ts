@@ -76,6 +76,12 @@ export interface AgentDecision {
    * when AGENT_REPO_HANDS=1; ignored otherwise.
    */
   edits?: { path: string; contents: string }[];
+  /**
+   * Files the agent wants to READ before finalising (A2 — code-aware context).
+   * When present, the runtime fetches their real contents and re-asks the agent
+   * for a final decision grounded in them, instead of letting it edit/claim blind.
+   */
+  readFiles?: string[];
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -134,6 +140,10 @@ export const DECISION_SCHEMA = {
         required: ["path", "contents"],
       },
     },
+    readFiles: {
+      type: "array",
+      items: { type: "string" },
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -173,6 +183,7 @@ export function buildSystemPrompt(
           `REPO-HANDS — you can ship REAL code: return "edits", an array of {path, contents} FULL-FILE writes (not diffs), at most 12 files. The runtime clones the repo, applies them, runs install → typecheck → tests, and pushes to main ONLY if every check passes — so "edits" IS the verifying check (no separate "command" needed for a code change), and the task ships exactly when your edits land green. You may NEVER edit your own safety rails, secrets, CI, or infra (.env, .github/, supabase/, lib/agent-runtime, lib/verifier, lib/budget, lib/agent-actions, lib/repo-hands, etc. are blocked — they reject the whole commit). Make the SMALLEST real change that compiles and passes the existing tests; omit "edits" on a tick with no code change.`,
         ]
       : []),
+    `READ BEFORE YOU ACT — you can see the REAL code, not just guess: return "readFiles", up to 6 paths FROM THE FILE TREE you were shown, to get their actual current contents. Use it whenever your task touches an existing file — to confirm what's already there (so you don't "add" something that exists), and ALWAYS before writing "edits" to a file. When you return readFiles, OMIT "edits" this turn: you'll be handed the contents and then produce your final decision. Only a brand-new file may be written without reading it first. Never invent a file's contents.`,
     `ANTI-FIXATION — do not loop on one task: if you have already been "building" the SAME task across multiple cycles and you cannot verifiably ship it now, STOP re-submitting the same "still working on X". Either (a) ship it this cycle with a passing command, or (b) move on to a genuinely DIFFERENT next increment. Re-posting near-identical progress on the same task over and over is a failure.`,
     `Never invent fake metrics or claim work you didn't do.`,
     // Build-in-public voice: the agent WRITES its own posts. X is the broad,
@@ -313,6 +324,30 @@ export function buildUserPrompt(
   ].join("\n");
 }
 
+/**
+ * Pure: the follow-up turn (A2 pass 2) — the real contents of the files the agent
+ * asked to read, plus the instruction to produce its FINAL decision grounded in
+ * them. Each file is fenced with its path so the agent can't confuse them.
+ */
+export function buildReadFilesPrompt(
+  files: { path: string; contents: string }[]
+): string {
+  const blocks = files
+    .map((f) => `===== ${f.path} =====\n${f.contents}`)
+    .join("\n\n");
+  return [
+    "Here are the CURRENT contents of the files you asked to read:",
+    "",
+    blocks,
+    "",
+    "Now return your FINAL decision (same JSON schema), grounded in the ACTUAL",
+    "contents above. If you write `edits`, they are FULL-FILE writes: preserve",
+    "everything you are not deliberately changing, and never re-add something that",
+    "already exists. If reading shows the change is unnecessary, pick a different",
+    "increment and say so honestly. Do NOT return `readFiles` again this time.",
+  ].join("\n");
+}
+
 /** Pure: clamp + normalise a parsed decision into the typed shape. */
 export function coerceDecision(raw: unknown): AgentDecision | null {
   if (!raw || typeof raw !== "object") return null;
@@ -387,6 +422,19 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     if (parsed.length) edits = parsed;
   }
 
+  // readFiles: paths the agent wants to read (A2). Strings only, trimmed, deduped,
+  // capped to 6; path-safety (traversal etc.) is enforced server-side in getRepoFiles.
+  let readFiles: AgentDecision["readFiles"];
+  if (Array.isArray(r.readFiles)) {
+    const seen = new Set<string>();
+    const paths = r.readFiles
+      .filter((x): x is string => typeof x === "string")
+      .map((x) => x.trim())
+      .filter((x) => x && !seen.has(x) && (seen.add(x), true))
+      .slice(0, 6);
+    if (paths.length) readFiles = paths;
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -399,6 +447,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     ...(action ? { action } : {}),
     ...(posts ? { posts } : {}),
     ...(edits ? { edits } : {}),
+    ...(readFiles ? { readFiles } : {}),
   };
 }
 
@@ -469,6 +518,13 @@ export async function decideNextAction(
   }
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
+  const userContent = buildUserPrompt(
+    state.tasks,
+    state.directives,
+    learnings,
+    commits,
+    tree
+  );
   // `output_config` (structured outputs) may be ahead of the installed SDK
   // types; call loosely and read the content blocks off the result.
   const params = {
@@ -479,15 +535,11 @@ export async function decideNextAction(
     system: buildSystemPrompt(p, mandate, {
       canCommit: process.env.AGENT_REPO_HANDS === "1",
     }),
-    messages: [
-      {
-        role: "user",
-        content: buildUserPrompt(state.tasks, state.directives, learnings, commits, tree),
-      },
-    ],
+    messages: [{ role: "user", content: userContent }],
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const res = (await (client.messages.create as any)(params)) as {
+  const create = client.messages.create as any;
+  const res = (await create(params)) as {
     content: Array<{ type: string; text?: string }>;
   };
 
@@ -503,6 +555,41 @@ export async function decideNextAction(
   }
   const decision = coerceDecision(parsed);
   if (!decision) throw new Error("Agent decision failed validation.");
+
+  // A2 two-pass: if the agent asked to READ files before acting, fetch their real
+  // contents and re-ask for a FINAL decision grounded in them — so its edits and
+  // "shipped" claims are based on the actual code, not a guess. Any failure (no
+  // files, bad JSON, network) falls back to the pass-1 decision; the tick never breaks.
+  if (decision.readFiles?.length) {
+    try {
+      const { getRepoFiles } = await import("./commits");
+      const files = await getRepoFiles(p.repo, decision.readFiles);
+      if (files.length) {
+        const follow = (await create({
+          ...params,
+          messages: [
+            { role: "user", content: userContent },
+            { role: "assistant", content: text },
+            { role: "user", content: buildReadFilesPrompt(files) },
+          ],
+        })) as { content: Array<{ type: string; text?: string }> };
+        const ftext = follow.content
+          .filter((b) => b.type === "text")
+          .map((b) => b.text ?? "")
+          .join("");
+        let fparsed: unknown = null;
+        try {
+          fparsed = JSON.parse(ftext);
+        } catch {
+          /* keep pass-1 decision */
+        }
+        const grounded = fparsed ? coerceDecision(fparsed) : null;
+        if (grounded) return grounded;
+      }
+    } catch {
+      /* read/refine failed — fall back to the pass-1 decision below */
+    }
+  }
   return decision;
 }
 
