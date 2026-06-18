@@ -15,7 +15,7 @@ import { AgentOperator } from "./AgentOperator";
 import { ProjectWallet } from "./ProjectWallet";
 import type { AgentState } from "@/lib/agent-data";
 import type { Candle, Holder, MarketStats, Project, Trade } from "@/lib/types";
-import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr } from "@/lib/format";
+import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr, usd } from "@/lib/format";
 import { infraBreakdown, parseSolPerDay, type CostKey } from "@/lib/economics";
 import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
@@ -768,8 +768,12 @@ function SplitChip({
 }
 
 function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: number }) {
-  // Poll the live on-chain balance (real when the project has a treasury_wallet).
-  const { balance, live } = useLiveTreasury(p.key, p.treasurySol);
+  // Poll the live on-chain balance + total $ value (SOL + the project token the
+  // treasury holds — for LOOP that token value dwarfs the small SOL line).
+  const { balance, tokenUi, valueUsd, live } = useLiveTreasury(p.key, p.treasurySol);
+  const sym = p.ticker.replace(/^\$/, "");
+  // Fall back to SOL-only value before the live read lands.
+  const totalUsd = valueUsd || balance * solUsd;
   // Honest runway derived from the live balance + metered burn. Pre-launch shows
   // "pre-launch"; once launched, runway = balance / daily burn (days), or "—"
   // while burn isn't metered yet (burn 0 ⇒ no real spend to divide by). Never
@@ -782,7 +786,7 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
     : "—";
   const rows: [string, React.ReactNode, boolean?][] = [
     [
-      "Balance",
+      "SOL balance",
       <span key="bal" className="inline-flex items-center gap-[6px]">
         {live && (
           <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
@@ -790,6 +794,12 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
         {balance.toFixed(2)} SOL
       </span>,
     ],
+    ...(tokenUi && tokenUi > 0
+      ? ([[
+          `${sym} holdings`,
+          `${Math.round(tokenUi).toLocaleString("en-US")} ${sym}`,
+        ]] as [string, React.ReactNode][])
+      : []),
     ["Total earned", `${p.earnedSol.toFixed(2)} SOL`],
     ["Burn rate", p.burnPerDay],
     ["Runway", runwayLabel, true],
@@ -798,6 +808,23 @@ function TreasuryStats({ project: p, solUsd }: { project: Project; solUsd: numbe
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="font-display font-semibold text-[14.5px] mb-3">
         Project Treasury
+      </div>
+      {/* Total value headline — SOL + token holdings, in $, so the treasury
+          doesn't read as "tiny" from the SOL line alone. */}
+      <div className="mb-3 pb-3 border-b border-line-4">
+        <div className="text-[11px] text-faint">Total value</div>
+        <div className="font-display font-bold text-[24px] tracking-[-0.02em] tabular-nums inline-flex items-center gap-[7px]">
+          {live && (
+            <span className="w-[7px] h-[7px] rounded-full bg-pos-bright animate-pulseFast" />
+          )}
+          ${usd(totalUsd)}
+        </div>
+        <div className="text-[11.5px] text-faint mt-[1px]">
+          {balance.toFixed(2)} SOL
+          {tokenUi && tokenUi > 0
+            ? ` + ${Math.round(tokenUi).toLocaleString("en-US")} ${sym}`
+            : ""}
+        </div>
       </div>
       <div className="flex flex-col gap-[10px] text-[13px]">
         {rows.map(([label, value, pos]) => (

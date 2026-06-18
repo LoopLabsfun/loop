@@ -18,6 +18,7 @@ import type { Project } from "@/lib/types";
 // or a t.me link that 404s. These auto-go-live the moment the founder sets them.
 const X_HANDLE = process.env.NEXT_PUBLIC_X_HANDLE || "";
 const TELEGRAM_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
+const SITE_URL = process.env.NEXT_PUBLIC_AGENT_SITE_URL || "";
 
 type Tab = "tasks" | "inbox" | "social" | "summary";
 const TABS: { id: Tab; label: string }[] = [
@@ -111,7 +112,7 @@ export function AgentOperator({
                 href={`https://t.me/${TELEGRAM_USERNAME}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Follow this project's read-only build-update bot on Telegram"
+                title="Join the project's Telegram"
                 className="hover:text-accent-text transition-colors"
               >
                 @{TELEGRAM_USERNAME}
@@ -119,9 +120,20 @@ export function AgentOperator({
             ) : (
               <span className="text-faint">Telegram soon</span>
             )}
-            {/* Site — not live yet (no per-project site domain provisioned). */}
-            <span className="text-faint">·</span>
-            <span className="text-faint">site soon</span>
+            {/* Site — only shown when a real per-project site is provisioned. */}
+            {SITE_URL && (
+              <>
+                <span className="text-faint">·</span>
+                <a
+                  href={SITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-accent-text transition-colors"
+                >
+                  {SITE_URL.replace(/^https?:\/\//, "")}
+                </a>
+              </>
+            )}
           </div>
         </div>
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
