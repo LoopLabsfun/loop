@@ -45,12 +45,26 @@ export async function GET(req: Request) {
         directives: state.directives,
       });
       results.push({ key: p.key, ok: true, summary: decision.summary });
+      // Observability: a structured per-tick line so `vercel logs` shows WHAT the
+      // agent decided and why it did/didn't commit — not just a bare 200. The
+      // repo-hands push/gate note is already folded into decision.summary. No
+      // secrets: this is the same public build text + decision shape.
+      console.log(
+        `[agent-tick] ${JSON.stringify({
+          key: p.key,
+          status: decision.task.status,
+          task: decision.task.title,
+          edits: decision.edits?.length ?? 0,
+          readFiles: decision.readFiles?.length ?? 0,
+          hadCommand: Boolean(decision.command),
+          learning: decision.learning?.category ?? null,
+          summary: decision.summary,
+        })}`
+      );
     } catch (e) {
-      results.push({
-        key: p.key,
-        ok: false,
-        error: e instanceof Error ? e.message : "tick failed",
-      });
+      const error = e instanceof Error ? e.message : "tick failed";
+      results.push({ key: p.key, ok: false, error });
+      console.error(`[agent-tick] ${JSON.stringify({ key: p.key, error })}`);
     }
   }
 
