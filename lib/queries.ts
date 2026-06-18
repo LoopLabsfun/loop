@@ -124,6 +124,10 @@ export async function getProject(key: string): Promise<Project | null> {
     .eq("key", key)
     .maybeSingle();
   if (error || !data) return PROJECTS[key as ProjectKey] ?? null;
-  const [project] = await withLiveBalances([rowToProject(data)]);
+  // Mirror getProjects: overlay live on-chain balances AND live market stats
+  // (price/mcap). Without withLiveMarket the single-project path kept the stale
+  // stored price (often 0), so the token page valued the treasury's token
+  // holdings at $0. Both reads are best-effort + memoized.
+  const [project] = await withLiveMarket(await withLiveBalances([rowToProject(data)]));
   return project;
 }
