@@ -5,6 +5,7 @@ import {
   coerceDecision,
   routeAction,
   shouldPublishUpdate,
+  summarizeTickOutcome,
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
@@ -87,6 +88,40 @@ describe("buildUserPrompt", () => {
     const s = buildUserPrompt([], [], [], [], []);
     expect(s).toContain("file tree unavailable");
     expect(s).toContain("do NOT assume the repo is empty");
+  });
+
+  it("surfaces the last verifier outcome (episodic memory) on an unfinished task", () => {
+    const tasks = [
+      {
+        id: "1",
+        title: "Wire the tally endpoint",
+        detail: "",
+        category: "feature",
+        status: "building",
+        at: "",
+        lastOutcome: "last attempt FAILED tsc — error TS2345",
+      },
+    ] as AgentTask[];
+    const s = buildUserPrompt(tasks, []);
+    expect(s).toContain("Wire the tally endpoint");
+    expect(s).toContain("↳ last attempt FAILED tsc — error TS2345");
+    expect(s).toContain("fix THAT specific cause"); // the act-on-failure instruction
+  });
+
+  it("does not show an outcome line on a shipped task", () => {
+    const tasks = [
+      {
+        id: "1",
+        title: "Done thing",
+        detail: "",
+        category: "feature",
+        status: "shipped",
+        at: "",
+        lastOutcome: "last attempt passed vitest",
+      },
+    ] as AgentTask[];
+    const s = buildUserPrompt(tasks, []);
+    expect(s).not.toContain("last attempt passed vitest"); // outcome hidden for shipped
   });
 
   it("drops directives flagged as injection attempts", () => {
@@ -269,6 +304,43 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
         now: t0,
       })
     ).toBe(true);
+  });
+});
+
+describe("summarizeTickOutcome (episodic memory)", () => {
+  it("reports a failed check with its detail", () => {
+    const o = summarizeTickOutcome(
+      { status: "building", note: null },
+      { checks: [{ kind: "test", name: "tsc", passed: false, detail: "error TS2345" }] }
+    );
+    expect(o).toMatch(/FAILED tsc/);
+    expect(o).toContain("error TS2345");
+  });
+
+  it("reports passed checks", () => {
+    const o = summarizeTickOutcome(
+      { status: "shipped", note: null },
+      { checks: [{ kind: "test", name: "vitest", passed: true }] }
+    );
+    expect(o).toMatch(/passed vitest/);
+  });
+
+  it("surfaces the gate's hold reason when no check ran", () => {
+    const o = summarizeTickOutcome({
+      status: "building",
+      note: "held: no objective check ran this cycle",
+    });
+    expect(o).toContain("held: no objective check ran");
+  });
+
+  it("flags a shipped status with no verifying check as NOT a real ship", () => {
+    const o = summarizeTickOutcome({ status: "shipped", note: null });
+    expect(o).toMatch(/NO verifying check|not a real ship/i);
+  });
+
+  it("describes a plan-only building tick", () => {
+    const o = summarizeTickOutcome({ status: "building", note: null });
+    expect(o).toMatch(/planned only/i);
   });
 });
 

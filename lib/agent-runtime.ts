@@ -243,7 +243,13 @@ export function buildUserPrompt(
   const taskLines = tasks.length
     ? tasks
         .slice(0, 12)
-        .map((t) => `- [${t.status}] (${t.category}) ${t.title}`)
+        .map((t) => {
+          // Episodic memory (B): show the last verifier outcome on an unfinished
+          // task so the agent fixes the actual failure instead of re-planning it.
+          const oc =
+            t.lastOutcome && t.status !== "shipped" ? `\n    ↳ ${t.lastOutcome}` : "";
+          return `- [${t.status}] (${t.category}) ${t.title}${oc}`;
+        })
         .join("\n")
     : "(no tasks yet — you are just starting)";
   // The repo's REAL file tree (source paths) — so the agent targets files that
@@ -295,7 +301,10 @@ export function buildUserPrompt(
     "an 'initialize/scaffold the repo' step (the repo already exists). If a task in",
     "the 'Current tasks' list above has been 'building' for a while, do NOT re-pick",
     "it unchanged: either ship it now with a verifying command, or move to a",
-    "different increment — never loop on the same unfinished task. Return a",
+    "different increment — never loop on the same unfinished task. A '↳' line under",
+    "a task is the verifier outcome of your LAST attempt at it — if it shows a",
+    "failure, fix THAT specific cause or change approach; never resubmit the same",
+    "thing that just failed. Return a",
     "one-line internal build update (`summary`), the task you are advancing (`task`)",
     "with an honest status, and OPTIONALLY `posts`: include `posts.telegram` (a short",
     "dev-log) when there's something to share, and include `posts.x` ONLY for a",
@@ -538,6 +547,30 @@ export function shouldPublishUpdate(opts: {
 }
 
 /** Persist a decision: a public build update + the advanced task. */
+/**
+ * Pure: a one-line verifier outcome for THIS tick, persisted on the task as
+ * episodic memory (B). Surfaced back to the agent next cycle so it adapts to a
+ * real failure instead of re-planning the same increment. Honest about the
+ * common case: a "shipped" status with NO objective check is NOT a real ship.
+ */
+export function summarizeTickOutcome(
+  gated: { status: TaskStatus; note: string | null },
+  verify?: { checks: VerifyCheck[] }
+): string {
+  const checks = verify?.checks ?? [];
+  if (checks.length) {
+    const failed = checks.find((c) => !c.passed);
+    if (failed) {
+      return `last attempt FAILED ${failed.name}${failed.detail ? ` — ${failed.detail}` : ""}`.slice(0, 400);
+    }
+    return `last attempt passed ${checks.map((c) => c.name).join(", ")}`.slice(0, 400);
+  }
+  if (gated.note) return `last attempt ${gated.note}`.slice(0, 400);
+  return gated.status === "shipped"
+    ? "marked shipped but NO verifying check ran — not a real ship; verify it next time"
+    : "planned only — no verifying command/edits ran this tick";
+}
+
 export async function applyDecision(
   p: Project,
   d: AgentDecision,
@@ -559,6 +592,9 @@ export async function applyDecision(
     checks: verify?.checks ?? [],
   });
   const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
+  // Episodic memory (B): record this tick's verifier outcome on the task so the
+  // agent sees it next cycle and adapts instead of re-planning identically.
+  const lastOutcome = summarizeTickOutcome(gated, verify);
 
   // NOTE: a social post (agent_posts) is recorded ONLY when it was genuinely
   // published to a real channel (Telegram/X) further down — never on every tick.
@@ -583,6 +619,7 @@ export async function applyDecision(
         detail: d.task.detail,
         category: d.task.category,
         status: gated.status,
+        last_outcome: lastOutcome,
       })
       .eq("id", existing.id);
   } else {
@@ -592,6 +629,7 @@ export async function applyDecision(
       detail: d.task.detail,
       category: d.task.category,
       status: gated.status,
+      last_outcome: lastOutcome,
     });
   }
 
