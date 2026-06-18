@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { runAgentTick, agentRuntimeConfigured } from "@/lib/agent-runtime";
+import { isXConfigured } from "@/lib/x-send";
+import { isTelegramConfigured } from "@/lib/telegram-send";
+import { agentWalletConfigured } from "@/lib/agent-wallet";
 
 // Run one autonomous agent tick for a project: read its mandate + steering
 // directives + current tasks, ask Claude for the next action, persist it.
@@ -43,8 +46,15 @@ export async function POST(req: Request) {
       tasks: state.tasks,
       directives: state.directives,
     });
+    // Non-secret diagnostics: which delivery channels the prod runtime actually
+    // sees configured (booleans only — never the keys themselves).
+    const integrations = {
+      x: isXConfigured(),
+      telegram: isTelegramConfigured(),
+      agentWallet: agentWalletConfigured(),
+    };
     return NextResponse.json(
-      { key: project.key, decision },
+      { key: project.key, decision, integrations },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e) {
