@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
 import { PrivyAuthProvider } from "@/lib/privy";
@@ -54,6 +55,7 @@ export default function RootLayout({
             <WalletProvider>{children}</WalletProvider>
           </PrivyAuthProvider>
         </NetworkProvider>
+        <Analytics />
       </body>
     </html>
   );
