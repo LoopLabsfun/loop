@@ -355,7 +355,7 @@ describe("buildReadFilesPrompt (A2 pass 2)", () => {
     expect(s).toContain("===== lib/b.ts =====");
     expect(s).toContain("FINAL decision");
     expect(s).toContain("FULL-FILE writes");
-    expect(s).toContain("Do NOT return `readFiles` again");
+    expect(s).toContain("`readFiles` is IGNORED if you return it");
   });
 });
 

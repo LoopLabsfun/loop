@@ -364,10 +364,14 @@ export function buildReadFilesPrompt(
     blocks,
     "",
     "Now return your FINAL decision (same JSON schema), grounded in the ACTUAL",
-    "contents above. If you write `edits`, they are FULL-FILE writes: preserve",
-    "everything you are not deliberately changing, and never re-add something that",
-    "already exists. If reading shows the change is unnecessary, pick a different",
-    "increment and say so honestly. Do NOT return `readFiles` again this time.",
+    "contents above. This is your LAST turn — there is NO further reading round, so",
+    "`readFiles` is IGNORED if you return it. You have everything you need: ACT now.",
+    "For a code task you MUST return `edits` — FULL-FILE writes (preserve everything",
+    "you are not deliberately changing; never re-add something that already exists).",
+    "`edits` is the verifying check: the runtime applies them, runs the tests, and",
+    "ships the task only if green. Make the SMALLEST real change that compiles and",
+    "passes. If — and only if — reading proves the change is genuinely unnecessary or",
+    "already done, pick a DIFFERENT increment and say so honestly. Do not stall.",
   ].join("\n");
 }
 
@@ -606,6 +610,7 @@ export async function decideNextAction(
     try {
       const { getRepoFiles } = await import("./commits");
       const files = await getRepoFiles(p.repo, decision.readFiles);
+      const readable = files.filter((f) => !f.contents.startsWith("(")).length;
       if (files.length) {
         const follow = (await create({
           ...params,
@@ -626,10 +631,35 @@ export async function decideNextAction(
           /* keep pass-1 decision */
         }
         const grounded = fparsed ? coerceDecision(fparsed) : null;
-        if (grounded) return grounded;
+        // Diagnostic: surface what the read→act pass actually produced, so a
+        // "reads forever, never edits" loop is visible in `vercel logs`.
+        console.log(
+          `[agent-a2] ${JSON.stringify({
+            key: p.key,
+            requested: decision.readFiles.length,
+            readable,
+            groundedEdits: grounded?.edits?.length ?? 0,
+            groundedReread: grounded?.readFiles?.length ?? 0,
+          })}`
+        );
+        if (grounded) {
+          // This is the final turn — no second read round is supported, so never
+          // let a re-requested `readFiles` leak through (it would loop the agent
+          // on reading instead of acting). Strip it; keep the grounded edits/command.
+          delete grounded.readFiles;
+          return grounded;
+        }
+      } else {
+        console.log(
+          `[agent-a2] ${JSON.stringify({ key: p.key, requested: decision.readFiles.length, readable: 0, note: "no files fetched" })}`
+        );
       }
-    } catch {
-      /* read/refine failed — fall back to the pass-1 decision below */
+    } catch (e) {
+      // Don't swallow silently: a failing pass-2 is exactly why the agent would
+      // appear to "read forever". Log it; fall back to the pass-1 decision below.
+      console.error(
+        `[agent-a2] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : "read/refine failed" })}`
+      );
     }
   }
   return decision;
