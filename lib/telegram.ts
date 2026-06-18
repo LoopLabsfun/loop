@@ -50,6 +50,25 @@ export interface BuildUpdate {
 const MAX_LINES = 5;
 
 /**
+ * Format an honest BUILD-IN-PUBLIC progress note (what the agent is working on
+ * right now) for a project's Telegram bot, as MarkdownV2. Unlike
+ * buildUpdateMessage this does NOT claim "shipped" — it lets the agent post
+ * frequently while the timeline stays truthful. `detail` is optional.
+ */
+export function buildProgressMessage(
+  p: Project,
+  work: { title: string; detail?: string }
+): string {
+  const E = escapeMarkdownV2;
+  const out: string[] = [`🛠️ *${E(p.name)}* — building`];
+  out.push("", `• ${E(work.title.trim())}`);
+  const detail = (work.detail ?? "").trim();
+  if (detail) out.push(E(detail.length > 220 ? detail.slice(0, 219) + "…" : detail));
+  out.push("", `Watch it build → ${E(agentSite(p))}`);
+  return out.join("\n");
+}
+
+/**
  * Format a read-only build update for a project's Telegram bot, as MarkdownV2.
  * Returns the message text only (the caller pairs it with `parse_mode:
  * "MarkdownV2"`). Empty sections are omitted; an empty update still yields a

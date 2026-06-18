@@ -470,56 +470,77 @@ export async function applyDecision(
     });
   }
 
-  // Read-only Telegram build update — only when something actually shipped (so
-  // the bot reports news, not every tick). Phase 1: a single bot + chat via env
-  // (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID); per-project chats come with a
-  // telegram_chat_id column later. No-ops unless both are set, and a send
-  // failure must never abort the agent cycle.
+  // BUILD-IN-PUBLIC posting — the agent posts to Telegram + X on EVERY tick that
+  // carries a genuine update, not just the rare "shipped" event (so the feed is
+  // alive). Honesty is preserved two ways: (1) a non-shipped update says
+  // "building", never claims completion (buildProgress*), and (2) we dedupe
+  // against the last post per platform, so the agent repeating the same decision
+  // across ticks doesn't spam an identical message. A send is recorded in
+  // agent_posts only after it actually succeeds. Failures never abort the cycle.
+  const work = { title: d.task.title, detail: d.task.detail };
+
+  // The most recent body per platform, to skip duplicate consecutive posts.
+  const lastBody = async (platform: "telegram" | "x"): Promise<string | null> => {
+    const { data } = await supabaseAdmin!
+      .from("agent_posts")
+      .select("body")
+      .eq("project_key", p.key)
+      .eq("platform", platform)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return (data?.body as string | undefined) ?? null;
+  };
+
+  // Telegram (read-only build bot): one bot + chat via env for Phase 1.
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (gated.status === "shipped" && chatId && process.env.TELEGRAM_BOT_TOKEN) {
+  if (chatId && process.env.TELEGRAM_BOT_TOKEN) {
     try {
-      const { sendBuildUpdate } = await import("./telegram-send");
-      const shipped: AgentTask = {
-        id: "",
-        title: d.task.title,
-        detail: d.task.detail,
-        category: d.task.category,
-        status: "shipped",
-        at: "now",
-      };
-      await sendBuildUpdate(chatId, p, { shipped: [shipped] });
-      // Sent for real → now (and only now) record it in the Social feed.
-      await supabaseAdmin.from("agent_posts").insert({
-        project_key: p.key,
-        platform: "telegram",
-        body: summary,
-      });
+      const { sendTelegramMessage } = await import("./telegram-send");
+      const { buildUpdateMessage, buildProgressMessage } = await import("./telegram");
+      const text =
+        gated.status === "shipped"
+          ? buildUpdateMessage(p, {
+              shipped: [
+                { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
+              ],
+            })
+          : buildProgressMessage(p, work);
+      if (text !== (await lastBody("telegram"))) {
+        const res = await sendTelegramMessage(chatId, text);
+        if (res.ok) {
+          await supabaseAdmin.from("agent_posts").insert({
+            project_key: p.key,
+            platform: "telegram",
+            body: text,
+          });
+        }
+      }
     } catch {
       /* telegram unavailable/failed — never abort the cycle */
     }
   }
 
-  // Autonomous X post — the PUBLIC counterpart of the Telegram build update, on
-  // the same verifier-gated "shipped" signal: nothing shipped ⇒ no tweet, so the
-  // timeline never carries fake progress (the agent can't fake a green run, A1).
-  // Posts AS the project's own account (@looplabsfun for LOOP). No-ops unless the
-  // X keys are set, and a send failure must never abort the agent cycle.
-  if (gated.status === "shipped") {
-    try {
-      const { isXConfigured, sendTweet } = await import("./x-send");
-      if (isXConfigured()) {
-        const body = buildShipTweet(p, { title: d.task.title, detail: d.task.detail });
+  // X — posts AS the project's own account (@looplabsfun for LOOP).
+  try {
+    const { isXConfigured, sendTweet } = await import("./x-send");
+    if (isXConfigured()) {
+      const { buildProgressTweet } = await import("./x-recap");
+      const body =
+        gated.status === "shipped"
+          ? buildShipTweet(p, work)
+          : buildProgressTweet(p, work);
+      if (body !== (await lastBody("x"))) {
         await sendTweet(body);
-        // Tweeted for real → record it in the Social feed (honest, post-send).
         await supabaseAdmin.from("agent_posts").insert({
           project_key: p.key,
           platform: "x",
-          body: body.slice(0, 280),
+          body,
         });
       }
-    } catch {
-      /* X unavailable/failed — never abort the cycle */
     }
+  } catch {
+    /* X unavailable/failed — never abort the cycle */
   }
 }
 
