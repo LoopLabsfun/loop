@@ -46,15 +46,18 @@ export function summarizeSandbox(r: SandboxResult, max = 280): string {
 
 export async function runInSandbox(
   code: string,
-  language: SandboxLanguage = "python"
+  language: SandboxLanguage = "python",
+  /** Env vars injected into the sandbox (e.g. GITHUB_TOKEN for repo-hands). Kept
+   *  out of `code` so the script string stays safe to log/persist. */
+  envs?: Record<string, string>
 ): Promise<SandboxResult> {
   if (!sandboxConfigured()) {
     throw new Error("Sandbox requested but E2B_API_KEY is not set.");
   }
   const { Sandbox } = await import("@e2b/code-interpreter");
-  const sbx = await Sandbox.create();
+  const sbx = await Sandbox.create(envs ? { envs } : undefined);
   try {
-    const exec = await sbx.runCode(code, { language });
+    const exec = await sbx.runCode(code, { language, envs });
     return {
       ok: !exec.error,
       stdout: (exec.logs?.stdout ?? []).join("\n"),
