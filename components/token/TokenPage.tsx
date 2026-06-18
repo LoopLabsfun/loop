@@ -15,7 +15,7 @@ import { AgentOperator } from "./AgentOperator";
 import { ProjectWallet } from "./ProjectWallet";
 import type { AgentState } from "@/lib/agent-data";
 import type { Candle, Holder, MarketStats, Project, Trade } from "@/lib/types";
-import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr, usd } from "@/lib/format";
+import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr, usd, compactUsd } from "@/lib/format";
 import { infraBreakdown, parseSolPerDay, type CostKey } from "@/lib/economics";
 import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
@@ -109,10 +109,21 @@ export function TokenPage({
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pl-7 border-l border-line-2">
-            <HeaderStat label="Market Cap" value={p.marketCap} />
-            <HeaderStat label="Liquidity" value={p.liquidity} />
+            {/* Live market values (DexScreener) when launched; fall back to the
+                stored snapshot only pre-launch so nothing reads as stale/fake. */}
+            <HeaderStat
+              label="Market Cap"
+              value={stats ? compactUsd(stats.marketCap) : p.marketCap}
+            />
+            <HeaderStat
+              label="Liquidity"
+              value={stats ? compactUsd(stats.liquidityUsd) : p.liquidity}
+            />
             <HeaderStat label="Holders" value={p.holders} />
-            <HeaderStat label="24h Volume" value={p.volume24h} />
+            <HeaderStat
+              label="24h Volume"
+              value={stats ? compactUsd(stats.volume24hUsd) : p.volume24h}
+            />
           </div>
         </div>
       </section>
@@ -259,7 +270,7 @@ export function TokenPage({
         {/* Right column */}
         <div className="flex flex-col gap-4">
           <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
-          <BondingCurve curve={p.curve} />
+          <BondingCurve curve={p.curve} graduated={stats?.graduated} />
           <TreasuryStats project={p} solUsd={solUsd} />
           <FeesCustodyCard project={p} preLaunch={preLaunch} />
           <FundCard project={p} />
@@ -628,26 +639,37 @@ function SwapCard({
   );
 }
 
-function BondingCurve({ curve }: { curve: number }) {
-  const graduated = curve >= 1;
+function BondingCurve({
+  curve,
+  graduated: graduatedLive,
+}: {
+  curve: number;
+  /** Live graduation from DexScreener; overrides the stored curve snapshot. */
+  graduated?: boolean;
+}) {
+  // Trust the live on-chain signal first: a graduated token reads 100% regardless
+  // of the stale stored `curve`. Fall back to the snapshot only when there's no
+  // live market read yet.
+  const graduated = graduatedLive ?? curve >= 1;
+  const pct = graduated ? 100 : Math.min(100, Math.round(curve * 100));
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="flex justify-between items-baseline mb-[10px]">
         <span className="font-display font-semibold text-[14.5px]">Bonding Curve</span>
         <span className="font-mono text-[12.5px] text-accent-text">
-          {graduated ? "graduated" : `${Math.round(curve * 100)}%`}
+          {graduated ? "graduated" : `${pct}%`}
         </span>
       </div>
       <div className="h-[10px] rounded-full bg-[#F0EEF3] overflow-hidden mb-[10px]">
         <div
           className="h-full rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.15_285),oklch(0.47_0.21_285))]"
-          style={{ width: `${Math.min(100, Math.round(curve * 100))}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
       <div className="text-[12px] text-muted leading-[1.5]">
         {graduated
-          ? "Curve complete — liquidity migrated to Raydium. Trading is fully open."
-          : "Graduates to Raydium at $69K market cap. Every buy moves the curve forward."}
+          ? "Curve complete — liquidity migrated off the pump.fun curve. Trading is fully open."
+          : "Graduates once the bonding curve fills. Every buy moves the curve forward."}
       </div>
     </div>
   );
