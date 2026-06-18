@@ -31,26 +31,41 @@ import type { Project } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Has the project's agent ticked within `withinMs` (default 15 min)? The runtime
- * upserts an agent_tasks row every tick, so a recent `updated_at` is the honest
- * "Runtime active" signal — distinct from the simulated engine flag (always
- * false). Best-effort: false on no backend / no rows / error.
+ * Has the project's runtime been active within `withinMs` (default 15 min)? Real
+ * signal for the "Runtime active" status — the most recent of an agent_tasks tick
+ * OR an agent_posts publish (the runtime writes one or the other every cycle), vs
+ * the simulated engine flag (always false). Best-effort: false on no backend /
+ * no rows / error.
  */
 export async function isAgentActive(
   key: string,
   withinMs = 15 * 60 * 1000
 ): Promise<boolean> {
   if (!supabase) return false;
-  const { data, error } = await supabase
-    .from("agent_tasks")
-    .select("updated_at")
-    .eq("project_key", key)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const at = (data as { updated_at?: string } | null)?.updated_at;
-  if (error || !at) return false;
-  return Date.now() - new Date(at).getTime() < withinMs;
+  const [tasks, posts] = await Promise.all([
+    supabase
+      .from("agent_tasks")
+      .select("updated_at")
+      .eq("project_key", key)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("agent_posts")
+      .select("created_at")
+      .eq("project_key", key)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const stamps = [
+    (tasks.data as { updated_at?: string } | null)?.updated_at,
+    (posts.data as { created_at?: string } | null)?.created_at,
+  ]
+    .filter((s): s is string => Boolean(s))
+    .map((s) => new Date(s).getTime());
+  if (!stamps.length) return false;
+  return Date.now() - Math.max(...stamps) < withinMs;
 }
 
 export type WalletActionKind =

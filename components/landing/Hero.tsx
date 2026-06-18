@@ -233,6 +233,10 @@ function TreasuryCard({
   // moves to a sub-line. The curve is the real on-chain balance trajectory,
   // valued at the current SOL price — every level is a real on-chain balance.
   const spendableUsd = engine.balance * solUsd;
+  // Headline the REAL total the treasury controls: spendable SOL + the live value
+  // of the project tokens it holds. The SOL/token breakdown stays on the sub-lines.
+  const heldUsd = typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? treasuryTokenUsd : 0;
+  const totalUsd = spendableUsd + heldUsd;
   const series =
     treasuryHistory && treasuryHistory.length >= 2
       ? treasuryHistory.map((p) => p.sol * solUsd)
@@ -270,7 +274,7 @@ function TreasuryCard({
       </div>
       <div className="font-display font-bold text-[42px] tracking-[-0.02em] leading-none tabular-nums">
         <span className="text-[22px] text-faint font-medium align-top mr-[1px]">$</span>
-        {usd(spendableUsd)}
+        {usd(totalUsd)}
       </div>
       <div className="mt-[6px] mb-4">
         <div className="font-mono text-[13px] text-faint">

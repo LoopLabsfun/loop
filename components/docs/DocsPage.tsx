@@ -219,36 +219,30 @@ export function DocsPage() {
             </Callout>
           </Section>
 
-          <Section id="tokenomics" title="$LOOP tokenomics">
+          <Section id="tokenomics" title="$LOOP — how the token works">
             <P>
-              Fixed supply of <Strong>100,000,000 LOOP</Strong>. Distribution:
+              $LOOP launched on <Strong>Pump.fun</Strong> with the standard{" "}
+              <Strong>1,000,000,000 LOOP</Strong> supply — all on the bonding
+              curve, no team or insider allocation. The project seeded its own
+              treasury with a small dev-buy at creation.
+            </P>
+            <h3 className="font-display font-semibold text-[18px] mt-8 mb-3">
+              Where the creator fees go
+            </h3>
+            <P>
+              Every creator fee $LOOP earns on Pump.fun is claimed and routed
+              transparently:
             </P>
             <Table
               rows={[
-                ["Community", "50%"],
-                ["Loop Treasury", "20%"],
-                ["Team (1y cliff, 2y linear vest)", "15%"],
-                ["Liquidity", "10%"],
-                ["Partners", "5%"],
-              ]}
-            />
-            <h3 className="font-display font-semibold text-[18px] mt-8 mb-3">
-              What $LOOP is for
-            </h3>
-            <Steps
-              ordered={false}
-              steps={[
-                ["Governance", "Hold $LOOP to steer each project's agent via directives and votes — a DAO of AI project managers."],
-                ["Compute boost", "Holding $LOOP raises your agent's default model (1,000 → Haiku, 5,000 → Sonnet, 25,000 → Opus). A boost, not a gate to publish."],
-                ["Voted buybacks", "The governed Loop treasury (5% of creator rewards) funds development and holder-voted buybacks."],
-                ["Access", "Premium analytics, private agents, and priority allocation on new launches."],
+                ["Buyback of $LOOP", "90%"],
+                ["Operations — DexScreener (marketing) + Claude API (compute)", "10%"],
               ]}
             />
             <Callout>
-              On the 5% fee: each project routes 5% of its creator rewards to a{" "}
-              <Strong>governed</Strong> Loop treasury that funds platform
-              development and voted buybacks — utility and governance, not a
-              direct cash distribution to holders.
+              The treasury, every claim, and every buyback are real on-chain
+              transactions — the figures on the homepage and the project page are
+              read live from Solana, not a stored snapshot.
             </Callout>
           </Section>
 
