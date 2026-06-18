@@ -449,29 +449,28 @@ export const X_MIN_GAP_MS = 3 * 60 * 60 * 1000; // 3h
 
 /**
  * Pure anti-spam gate for build-in-public posts — DECOUPLES posting from the
- * (every ~2 min) tick cadence so social doesn't get a reworded "still building X"
- * every tick. Publish when: it's the first post on the platform; OR it's a real
- * "shipped" milestone; OR a "building" update and it has been at least `minGapMs`
- * since the last post on this platform. Never the exact same body twice.
+ * (every ~2 min) tick cadence. Publish when: it's the first post on the platform;
+ * OR it has been at least `minGapMs` since the last post on this platform. Never
+ * the exact same body twice.
  *
- * NOTE: the gap is a hard PER-PLATFORM floor — it is intentionally NOT bypassed by
- * "this is a new task". The agent re-words its task title almost every tick, so a
- * new-task bypass made the throttle a no-op and the feed posted on nearly every
- * 2-min cron tick. Building updates now respect the floor regardless; only a
- * genuine `shipped` milestone (gated upstream by the independent verifier) skips
- * it.
+ * The gap is a hard PER-PLATFORM floor applied to EVERY post, "shipped" included.
+ * The earlier design let a `shipped` milestone skip the floor on the assumption
+ * that shipping is rare — but the (now unblocked) agent marks nearly every 2-min
+ * tick "shipped", so that bypass spammed both channels (observed: 3 tweets in
+ * 6 min on X, a Telegram post every ~2 min). Whether an update is "building" or
+ * "shipped", it now waits out the floor; the on-site task feed still records
+ * every ship, only the SOCIAL post is throttled. A new/reworded task never
+ * bypasses it either.
  */
 export function shouldPublishUpdate(opts: {
   last: { body: string; at: number } | null;
   text: string;
-  shipped: boolean;
   now?: number;
   minGapMs?: number;
 }): boolean {
-  const { last, text, shipped } = opts;
+  const { last, text } = opts;
   if (!last) return true;
   if (text === last.body) return false;
-  if (shipped) return true;
   const now = opts.now ?? Date.now();
   const minGapMs = opts.minGapMs ?? MIN_BUILDING_GAP_MS;
   return now - last.at >= minGapMs;
@@ -659,7 +658,6 @@ export async function applyDecision(
         shouldPublishUpdate({
           last: await lastPost("telegram"),
           text,
-          shipped: gated.status === "shipped",
         })
       ) {
         const res = await sendTelegramMessage(chatId, text);
@@ -700,7 +698,6 @@ export async function applyDecision(
         shouldPublishUpdate({
           last: await lastPost("twitter"),
           text: body,
-          shipped: gated.status === "shipped",
           minGapMs: X_MIN_GAP_MS,
         })
       ) {

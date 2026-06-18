@@ -212,31 +212,25 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
   const last = (body: string, agoMs: number) => ({ body, at: t0 - agoMs });
 
   it("posts the first update on a platform", () => {
-    expect(
-      shouldPublishUpdate({ last: null, text: "hi", shipped: false, now: t0 })
-    ).toBe(true);
+    expect(shouldPublishUpdate({ last: null, text: "hi", now: t0 })).toBe(true);
   });
 
   it("never repeats the exact same body", () => {
     expect(
-      shouldPublishUpdate({
-        last: last("same", 5_000),
-        text: "same",
-        shipped: true, // even a milestone won't re-post an identical body
-        now: t0,
-      })
+      shouldPublishUpdate({ last: last("same", 5_000), text: "same", now: t0 })
     ).toBe(false);
   });
 
-  it("always posts a shipped milestone (different body)", () => {
+  it("throttles even a shipped-style update within the window", () => {
+    // The (unblocked) agent marks nearly every tick "shipped", so a shipped
+    // bypass spammed both channels. The floor now applies regardless of status.
     expect(
       shouldPublishUpdate({
         last: last("building X", 1_000), // just posted 1s ago
-        text: "✅ shipped X",
-        shipped: true,
+        text: "✅ shipped X", // different body, but within the floor
         now: t0,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("throttles a building update within the window — even for a brand-new task", () => {
@@ -246,18 +240,16 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
       shouldPublishUpdate({
         last: last("building A", 2 * 60 * 1000), // posted 2 min ago
         text: "building B", // different (new/reworded) task
-        shipped: false,
         now: t0,
       })
     ).toBe(false);
   });
 
-  it("lets a building update post again once past the throttle window", () => {
+  it("posts again once past the throttle window", () => {
     expect(
       shouldPublishUpdate({
         last: last("building A v1", MIN_BUILDING_GAP_MS + 1),
         text: "building A v2",
-        shipped: false,
         now: t0,
       })
     ).toBe(true);
