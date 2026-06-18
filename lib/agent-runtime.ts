@@ -223,7 +223,8 @@ export function buildUserPrompt(
   tasks: AgentTask[],
   directives: FeedItem[],
   learnings: Learning[] = [],
-  commits: { hash: string; msg: string }[] = []
+  commits: { hash: string; msg: string }[] = [],
+  tree: string[] = []
 ): string {
   // Ground truth FIRST: the real repo's recent commits. Without this the agent
   // has no idea what already exists and re-decides "initialize the repo" forever
@@ -245,6 +246,11 @@ export function buildUserPrompt(
         .map((t) => `- [${t.status}] (${t.category}) ${t.title}`)
         .join("\n")
     : "(no tasks yet — you are just starting)";
+  // The repo's REAL file tree (source paths) — so the agent targets files that
+  // actually exist instead of inventing paths or "initializing" a live repo.
+  const treeBlock = tree.length
+    ? tree.join("\n")
+    : "(repo file tree unavailable this tick — rely on the commits above; do NOT assume the repo is empty)";
   // Directives are UNTRUSTED community input. Drop anything flagged as an
   // injection attempt outright, and clearly mark which (if any) authors are
   // signature-verified. They are fenced as data below — never executed.
@@ -263,6 +269,10 @@ export function buildUserPrompt(
     "Recent commits ALREADY in the repo (most recent first) — the real, current",
     "state of the codebase. This work is DONE; never redo or re-initialize it:",
     commitLines,
+    "",
+    "The repository's REAL file tree (source paths that already exist). Target",
+    "these paths when you edit; never invent a path or re-create a file listed here:",
+    treeBlock,
     "",
     "Tasks you have already SHIPPED — do NOT pick any of these again:",
     shippedLines,
@@ -435,10 +445,16 @@ export async function decideNextAction(
   // Ground the agent in the REAL repo state so it stops re-deciding "initialize
   // the repo" — the live codebase already has full history. Best-effort: empty
   // on any failure (the prompt then tells it to assume a mature repo regardless).
+  // Also pull the REAL file tree so the agent edits/plans against files that
+  // exist (the "eyes on the repo" that stop it inventing paths). Both best-effort.
   let commits: { hash: string; msg: string }[] = [];
+  let tree: string[] = [];
   try {
-    const { getRecentCommits } = await import("./commits");
-    commits = await getRecentCommits(p.repo);
+    const { getRecentCommits, getRepoTree } = await import("./commits");
+    [commits, tree] = await Promise.all([
+      getRecentCommits(p.repo),
+      getRepoTree(p.repo),
+    ]);
   } catch {
     /* repo unreadable — buildUserPrompt handles the empty case */
   }
@@ -457,7 +473,7 @@ export async function decideNextAction(
     messages: [
       {
         role: "user",
-        content: buildUserPrompt(state.tasks, state.directives, learnings, commits),
+        content: buildUserPrompt(state.tasks, state.directives, learnings, commits, tree),
       },
     ],
   };

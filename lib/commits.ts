@@ -28,6 +28,71 @@ function parseGitHubRepo(repo: string): { owner: string; name: string } | null {
   return { owner: parts[0], name: parts[1] };
 }
 
+// Noise the agent never needs to see (and shouldn't edit): deps, build output,
+// lockfiles, binaries/assets. Keeping the tree to real source keeps the prompt
+// small and steers edits toward files that matter.
+const TREE_IGNORE =
+  /(^|\/)(node_modules|\.next|\.git|dist|build|coverage|out)\//i;
+const TREE_IGNORE_EXT =
+  /\.(png|jpe?g|gif|svg|ico|webp|woff2?|ttf|otf|eot|map|lock)$/i;
+const TREE_IGNORE_FILE = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
+
+/**
+ * Pure: prune a raw repo path list to the source files worth showing the agent,
+ * sorted, and hard-capped so the prompt stays bounded. Exported for testing.
+ */
+export function pruneRepoTree(paths: string[], max = 240): string[] {
+  return paths
+    .filter(
+      (p) =>
+        p &&
+        !TREE_IGNORE.test(p) &&
+        !TREE_IGNORE_EXT.test(p) &&
+        !TREE_IGNORE_FILE.test(p)
+    )
+    .sort()
+    .slice(0, max);
+}
+
+/**
+ * The repo's real file tree (source paths only) so the agent plans + edits
+ * against files that actually exist instead of inventing paths or "initializing"
+ * a repo that's already there. Server-only; returns [] on any failure (the
+ * decision still runs, just without the tree). Mirrors getRecentCommits.
+ */
+export async function getRepoTree(
+  repo: string,
+  branch = "main",
+  max = 240
+): Promise<string[]> {
+  const parsed = parseGitHubRepo(repo);
+  if (!parsed) return [];
+  const { owner, name } = parsed;
+  const token = process.env.GITHUB_TOKEN;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${name}/git/trees/${branch}?recursive=1`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        next: { revalidate: 300 },
+      }
+    );
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      tree?: Array<{ path?: string; type?: string }>;
+    };
+    const paths = (json.tree ?? [])
+      .filter((e) => e.type === "blob" && typeof e.path === "string")
+      .map((e) => e.path as string);
+    return pruneRepoTree(paths, max);
+  } catch {
+    return [];
+  }
+}
+
 export async function getRecentCommits(
   repo: string,
   n = 4
