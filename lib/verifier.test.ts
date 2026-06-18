@@ -5,6 +5,9 @@ import {
   isIndependentlyVerified,
   canShip,
   gateTaskStatus,
+  gateAgentShip,
+  checkFromSandbox,
+  classifyCheck,
   type VerifyCheck,
 } from "./verifier";
 
@@ -107,6 +110,83 @@ describe("gateTaskStatus", () => {
       makerId: "agent:loop",
       checkerId: "ci",
       checks: [chk("build", true), chk("typecheck", true)],
+    });
+    expect(r.status).toBe("shipped");
+    expect(r.note).toBeNull();
+  });
+});
+
+describe("classifyCheck", () => {
+  it("labels common runners by what they ran", () => {
+    expect(classifyCheck("pytest -q")).toBe("test");
+    expect(classifyCheck("npm test")).toBe("test");
+    expect(classifyCheck("npx vitest run")).toBe("test");
+    expect(classifyCheck("tsc --noEmit")).toBe("typecheck");
+    expect(classifyCheck("npm run build")).toBe("build");
+    expect(classifyCheck("next build")).toBe("build");
+    expect(classifyCheck("eslint .")).toBe("lint");
+    expect(classifyCheck("ruff check")).toBe("lint");
+    expect(classifyCheck("python data.py")).toBe("custom");
+  });
+});
+
+describe("checkFromSandbox", () => {
+  it("maps a green run to a passing, named check", () => {
+    const c = checkFromSandbox(
+      { language: "bash", code: "npm test" },
+      { ok: true, stderr: "" }
+    );
+    expect(c.passed).toBe(true);
+    expect(c.kind).toBe("test");
+    expect(c.name).toBe("e2b:bash");
+  });
+  it("maps a failing run to a failing check with the error detail", () => {
+    const c = checkFromSandbox(
+      { language: "python", code: "pytest" },
+      { ok: false, error: "1 failed", stderr: "AssertionError" }
+    );
+    expect(c.passed).toBe(false);
+    expect(c.detail).toContain("1 failed");
+  });
+});
+
+describe("gateAgentShip (runtime per-cycle gate)", () => {
+  it("passes non-shipped statuses through untouched", () => {
+    for (const s of ["todo", "building", "blocked"] as const) {
+      expect(
+        gateAgentShip({ status: s, makerId: "agent:loop", checks: [] })
+      ).toEqual({ status: s, note: null });
+    }
+  });
+  it("holds 'shipped' when no objective check ran (nothing could fail)", () => {
+    const r = gateAgentShip({ status: "shipped", makerId: "agent:loop", checks: [] });
+    expect(r.status).toBe("building");
+    expect(r.note).toMatch(/no objective check/);
+  });
+  it("holds 'shipped' when the checker is not independent of the maker", () => {
+    const r = gateAgentShip({
+      status: "shipped",
+      makerId: "agent:loop",
+      checkerId: "agent:loop",
+      checks: [chk("test", true)],
+    });
+    expect(r.status).toBe("building");
+  });
+  it("holds 'shipped' when a recorded check failed", () => {
+    const r = gateAgentShip({
+      status: "shipped",
+      makerId: "agent:loop",
+      checkerId: "verifier:e2b",
+      checks: [chk("test", false)],
+    });
+    expect(r.status).toBe("building");
+  });
+  it("ships when an independent checker ran ≥1 passing check (not the full 4-kind gate)", () => {
+    const r = gateAgentShip({
+      status: "shipped",
+      makerId: "agent:loop",
+      checkerId: "verifier:e2b",
+      checks: [chk("test", true)],
     });
     expect(r.status).toBe("shipped");
     expect(r.note).toBeNull();

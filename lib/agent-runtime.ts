@@ -4,10 +4,11 @@ import type { AgentTask, TaskCategory, TaskStatus } from "./agent";
 import { defaultMandate, type AgentMandate, type FeedItem } from "./console";
 import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
-import { gateTaskStatus } from "./verifier";
+import { gateAgentShip, checkFromSandbox, type VerifyCheck } from "./verifier";
 import type { SandboxLanguage } from "./sandbox";
 import { formatLearningsForPrompt, type Learning } from "./learnings";
 import { getTopLearnings } from "./agent-data";
+import { buildShipTweet } from "./x-recap";
 import {
   evaluateAction,
   walletFor,
@@ -335,20 +336,23 @@ export async function decideNextAction(
 /** Persist a decision: a public build update + the advanced task. */
 export async function applyDecision(
   p: Project,
-  d: AgentDecision
+  d: AgentDecision,
+  verify?: { checkerId: string; checks: VerifyCheck[] }
 ): Promise<void> {
   if (!supabaseAdmin) {
     throw new Error("Agent runtime requires SUPABASE_SERVICE_ROLE_KEY to persist.");
   }
 
-  // Verifier gate (A1): the maker can't ship its own work. Until an independent
-  // checker records a passing objective gate, a self-declared "shipped" is
-  // downgraded to "building" — the Ralph Wiggum guardrail. The block reason is
-  // surfaced in the public build update for transparency.
-  const gated = gateTaskStatus({
-    project: p,
+  // Verifier gate (A1): the maker can't ship its own work. A self-declared
+  // "shipped" only sticks when an INDEPENDENT checker (the E2B sandbox runner)
+  // actually ran an objective check this cycle and it passed — otherwise it's
+  // held at "building" (the Ralph Wiggum guardrail). The block reason is surfaced
+  // in the public build update for transparency.
+  const gated = gateAgentShip({
     status: d.task.status,
     makerId: `agent:${p.key}`,
+    checkerId: verify?.checkerId ?? null,
+    checks: verify?.checks ?? [],
   });
   const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
 
@@ -439,6 +443,24 @@ export async function applyDecision(
       /* telegram unavailable/failed — never abort the cycle */
     }
   }
+
+  // Autonomous X post — the PUBLIC counterpart of the Telegram build update, on
+  // the same verifier-gated "shipped" signal: nothing shipped ⇒ no tweet, so the
+  // timeline never carries fake progress (the agent can't fake a green run, A1).
+  // Posts AS the project's own account (@looplabsfun for LOOP). No-ops unless the
+  // X keys are set, and a send failure must never abort the agent cycle.
+  if (gated.status === "shipped") {
+    try {
+      const { isXConfigured, sendTweet } = await import("./x-send");
+      if (isXConfigured()) {
+        await sendTweet(
+          buildShipTweet(p, { title: d.task.title, detail: d.task.detail })
+        );
+      }
+    } catch {
+      /* X unavailable/failed — never abort the cycle */
+    }
+  }
 }
 
 /** One full agent tick for a project: decide → persist. Returns the decision. */
@@ -450,7 +472,11 @@ export async function runAgentTick(
 
   // Hands: if the agent asked to run code and the sandbox is configured, execute
   // it and fold the result into the build update. A sandbox failure must not
-  // abort the tick (the plan still stands).
+  // abort the tick (the plan still stands). The run also yields the objective
+  // verifier signal: the sandbox is a runner distinct from the maker agent, so
+  // its pass/fail is what lets honest work actually ship (A1) — the agent can't
+  // fake a green run.
+  let verify: { checkerId: string; checks: VerifyCheck[] } | undefined;
   if (decision.command && process.env.E2B_API_KEY) {
     try {
       const { runInSandbox, summarizeSandbox } = await import("./sandbox");
@@ -462,11 +488,15 @@ export async function runAgentTick(
         0,
         280
       );
+      verify = {
+        checkerId: "verifier:e2b",
+        checks: [checkFromSandbox(decision.command, result)],
+      };
     } catch {
-      /* sandbox unavailable/failed — keep the planned summary */
+      /* sandbox unavailable/failed — keep the planned summary, no ship signal */
     }
   }
 
-  await applyDecision(p, decision);
+  await applyDecision(p, decision, verify);
   return decision;
 }

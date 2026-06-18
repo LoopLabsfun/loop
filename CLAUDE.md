@@ -79,7 +79,11 @@ mainnet phases, and the founder-only blockers) is in
 
 ## Supabase
 
-- Project ref `tbxavergltotxehjabkt` (name "LOOP", eu-north-1). MCP configured in [.mcp.json](.mcp.json).
+- Project ref `aysetvbjlzhnswkznxjh` (LoopLabs account; migrated 2026-06-16 from the
+  old `tbxavergltotxehjabkt`). MCP configured in [.mcp.json](.mcp.json). The full
+  schema lives in [supabase/schema.sql](supabase/schema.sql) — replay it to stand
+  up a fresh project, then seed the LOOP row + learnings. The publishable key
+  (`sb_publishable_…`) is set as `NEXT_PUBLIC_SUPABASE_ANON_KEY` (its replacement).
 - Client created in [lib/supabase.ts](lib/supabase.ts) with `auth.persistSession: false`.
   **Gotcha:** it forces `cache: "no-store"` on the client's `fetch` because supabase-js uses
   `fetch` and Next caches GETs by default → stale reads otherwise. Don't remove this.

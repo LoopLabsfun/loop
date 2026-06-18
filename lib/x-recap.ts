@@ -18,6 +18,25 @@ function clamp(s: string, max: number): string {
   return t.length <= max ? t : t.slice(0, Math.max(0, max - 1)).trimEnd() + "…";
 }
 
+/** Hard-cap with an ellipsis WITHOUT collapsing whitespace (caller pre-cleans). */
+function cut(s: string, max: number): string {
+  return s.length <= max ? s : s.slice(0, Math.max(0, max - 1)).trimEnd() + "…";
+}
+
+/** Single-line a field: trim + collapse runs of whitespace to one space. */
+function oneLine(s: string): string {
+  return s.trim().replace(/\s+/g, " ");
+}
+
+// X treats "$WORD" as a cashtag and REJECTS any tweet carrying more than one
+// (HTTP 403: "Posts are limited to a maximum of one cashtag"). Our templates
+// always carry the project's own ($)ticker, so neutralize every other
+// cashtag-like token the agent may have written into the task text
+// ("$LOOP" → "LOOP") to guarantee the post is accepted.
+function stripCashtags(s: string): string {
+  return s.replace(/\$(?=[A-Za-z])/g, "");
+}
+
 export interface LaunchTweetOptions {
   /** Override the project URL (defaults to the agent site). */
   url?: string;
@@ -81,4 +100,44 @@ export function buildSelfLaunchTweet(opts: SelfLaunchTweetOptions): string {
       : `${header}\n\n${ca}\n${opts.url}`;
 
   return clamp(body, TWEET_MAX);
+}
+
+export interface ShipTweetOptions {
+  /** Override the watch link (defaults to the agent site). */
+  url?: string;
+}
+
+/**
+ * Compose a "just shipped" tweet from a project's REAL agent task — the X
+ * counterpart of the Telegram build update (buildUpdateMessage). The runtime
+ * posts it ONLY when work actually ships (the verifier-gated signal), so the
+ * timeline is honest by construction: nothing shipped ⇒ no tweet, never fake
+ * progress. Always fits TWEET_MAX, carries exactly ONE cashtag (X rejects >1),
+ * and never drops the watch link; the optional detail line is trimmed — or
+ * dropped — to fit first.
+ */
+export function buildShipTweet(
+  p: Project,
+  task: { title: string; detail?: string },
+  opts: ShipTweetOptions = {}
+): string {
+  const cashtag = "$" + p.ticker.replace(/^\$+/, "");
+  const url = opts.url ?? agentSite(p);
+  const closer = "Built by its agent, funded by its market.";
+
+  const title = stripCashtags(oneLine(task.title ?? ""));
+  const detail = stripCashtags(oneLine(task.detail ?? ""));
+
+  // header \n\n [detail \n\n] closer \n url. frame("", "") fixes the framing
+  // length, so the title (then the detail) gets exactly the room that's left.
+  const frame = (t: string, d: string) =>
+    d
+      ? `🛠️ ${cashtag} shipped: ${t}\n\n${d}\n\n${closer}\n${url}`
+      : `🛠️ ${cashtag} shipped: ${t}\n\n${closer}\n${url}`;
+
+  // Cap the title so the no-detail tweet always fits, then spend any remaining
+  // room on the detail line (the extra "\n\n" before it costs 2 chars).
+  const t = cut(title, Math.max(0, TWEET_MAX - frame("", "").length));
+  const detailRoom = TWEET_MAX - frame(t, "").length - 2;
+  return detail && detailRoom > 12 ? frame(t, cut(detail, detailRoom)) : frame(t, "");
 }

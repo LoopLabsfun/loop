@@ -1,13 +1,16 @@
 import { LoopMarkAnimated } from "../LoopMark";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import type { Network } from "@/lib/types";
-import { countdown, sol, usd } from "@/lib/format";
+import { compactNum, countdown, sol, usd } from "@/lib/format";
 
 export function Hero({
   engine,
   solUsd,
   launched,
   network,
+  ticker,
+  treasuryToken,
+  treasuryTokenUsd,
   onLaunch,
   onScroll,
 }: {
@@ -15,6 +18,9 @@ export function Hero({
   solUsd: number;
   launched: boolean;
   network?: Network;
+  ticker?: string;
+  treasuryToken?: number;
+  treasuryTokenUsd?: number;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -77,6 +83,9 @@ export function Hero({
           solUsd={solUsd}
           launched={launched}
           network={network}
+          ticker={ticker}
+          treasuryToken={treasuryToken}
+          treasuryTokenUsd={treasuryTokenUsd}
         />
       </div>
     </section>
@@ -192,13 +201,24 @@ function TreasuryCard({
   solUsd,
   launched,
   network,
+  ticker,
+  treasuryToken,
+  treasuryTokenUsd,
 }: {
   engine: LoopEngineState;
   solUsd: number;
   launched: boolean;
   network?: Network;
+  ticker?: string;
+  treasuryToken?: number;
+  treasuryTokenUsd?: number;
 }) {
   const net = (network ?? "mainnet").toUpperCase();
+  // The treasury also holds the project's OWN token. Shown as a separate line —
+  // its market value is illiquid/circular, so it sits ALONGSIDE the spendable
+  // SOL, never folded into it (honest by design).
+  const tokenSymbol = (ticker ?? "$LOOP").replace(/^\$/, "");
+  const hasToken = typeof treasuryToken === "number" && treasuryToken > 0;
   return (
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
@@ -219,8 +239,18 @@ function TreasuryCard({
         {sol(engine.balance)}{" "}
         <span className="text-[20px] text-faint font-medium">SOL</span>
       </div>
-      <div className="font-mono text-[13px] text-faint mt-[6px] mb-4">
-        ≈ {usd(engine.balance * solUsd)} USD
+      <div className="mt-[6px] mb-4">
+        <div className="font-mono text-[13px] text-faint">
+          ≈ {usd(engine.balance * solUsd)} USD spendable
+        </div>
+        {hasToken ? (
+          <div className="font-mono text-[12px] text-faint mt-[5px]">
+            + {compactNum(treasuryToken!)} {tokenSymbol}
+            {typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? (
+              <span className="text-faint/70"> ≈ {usd(treasuryTokenUsd)} held</span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <svg
         width="100%"

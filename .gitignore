@@ -23,3 +23,5 @@ scripts/.vanity/
 
 # local project-row backups (restore source, not committed)
 scripts/.backup-*.json
+
+.env.local.bak

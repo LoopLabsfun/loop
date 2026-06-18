@@ -126,6 +126,30 @@ export async function getTokenSupplyUi(
   return res?.value?.uiAmount ?? null;
 }
 
+/**
+ * SPL token balance (uiAmount) that `owner` holds of `mint`, summed across its
+ * token accounts — or null if unconfigured / invalid / failed (0 when it holds
+ * none). Lets the treasury be valued by the project's OWN token too, not just
+ * the SOL it holds.
+ */
+export async function getSplBalance(
+  owner: string,
+  mint: string,
+  net: Network = DEFAULT_NETWORK
+): Promise<number | null> {
+  if (!KEY || !BASE58.test(owner) || !BASE58.test(mint)) return null;
+  const res = await rpc<{
+    value: { account: { data: { parsed: { info: { tokenAmount: { uiAmount: number | null } } } } } }[];
+  }>(net, "getTokenAccountsByOwner", [owner, { mint }, { encoding: "jsonParsed" }]);
+  if (!res?.value) return null;
+  let total = 0;
+  for (const a of res.value) {
+    const ui = a?.account?.data?.parsed?.info?.tokenAmount?.uiAmount;
+    if (typeof ui === "number") total += ui;
+  }
+  return total;
+}
+
 /** SOL balance for an address, or null if unconfigured / invalid / failed. */
 export async function getSolBalance(
   address: string,

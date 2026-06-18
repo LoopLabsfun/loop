@@ -55,6 +55,13 @@ export interface Project {
   guardrails?: string | null;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
+  /**
+   * uiAmount of the project's OWN token (`mint`) held by `treasuryWallet`, from a
+   * live on-chain read — null/undefined until read. The treasury card surfaces it
+   * as a separate line (its market value is illiquid/circular, so it's shown
+   * alongside the spendable SOL, never folded into it).
+   */
+  treasuryTokenUi?: number | null;
 }
 
 /** A live treasury reading. Animated client-side in the simulation. */

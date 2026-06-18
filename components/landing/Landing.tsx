@@ -49,6 +49,9 @@ export function Landing({
           solUsd={solUsd}
           launched={!!loop?.mint}
           network={loop?.network}
+          ticker={loop?.ticker}
+          treasuryToken={loop?.treasuryTokenUi ?? 0}
+          treasuryTokenUsd={(loop?.treasuryTokenUi ?? 0) * (loop?.price ?? 0)}
           onLaunch={openModal}
           onScroll={scrollTo}
         />

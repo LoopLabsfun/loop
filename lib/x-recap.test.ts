@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildLaunchTweet, buildSelfLaunchTweet, TWEET_MAX } from "./x-recap";
+import {
+  buildLaunchTweet,
+  buildSelfLaunchTweet,
+  buildShipTweet,
+  TWEET_MAX,
+} from "./x-recap";
 import type { Project } from "./types";
 
 const base: Project = {
@@ -92,5 +97,57 @@ describe("buildSelfLaunchTweet", () => {
     expect(t).toContain(`CA: ${mint}`);
     expect(t).toContain(url);
     expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+});
+
+describe("buildShipTweet", () => {
+  // Count X cashtags: "$" immediately followed by a letter.
+  const cashtags = (s: string) => (s.match(/\$(?=[A-Za-z])/g) ?? []).length;
+
+  it("includes the ticker, the shipped title, the closer and the link", () => {
+    const t = buildShipTweet(base, {
+      title: "Live market data on every card",
+      detail: "Wired DexScreener into the landing cards.",
+    });
+    expect(t).toContain("$DEMO shipped:");
+    expect(t).toContain("Live market data on every card");
+    expect(t).toContain("Wired DexScreener");
+    expect(t).toContain("funded by its market");
+    expect(t).toContain("www.looplabs.fun/token?p=demo");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("carries exactly ONE cashtag even when the task text adds more", () => {
+    const t = buildShipTweet(base, {
+      title: "Bought back $DEMO with treasury SOL",
+      detail: "Swapped $SOL → $DEMO via Jupiter.",
+    });
+    expect(cashtags(t)).toBe(1);
+    // the extra cashtags are neutralized, not the words themselves
+    expect(t).toContain("DEMO with treasury");
+    expect(t).toContain("SOL");
+  });
+
+  it("never exceeds 280, keeps one cashtag, and preserves the link", () => {
+    const t = buildShipTweet(base, {
+      title: "x".repeat(400),
+      detail: "y".repeat(400),
+    });
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+    expect(cashtags(t)).toBe(1);
+    expect(t).toContain("www.looplabs.fun/token?p=demo");
+    expect(t).toContain("…"); // something got trimmed
+  });
+
+  it("drops the detail line cleanly when absent", () => {
+    const t = buildShipTweet(base, { title: "Shipped the runway badge" });
+    expect(t).toContain("$DEMO shipped: Shipped the runway badge");
+    expect(t).toContain("funded by its market");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("honors a custom url", () => {
+    const t = buildShipTweet(base, { title: "Did a thing" }, { url: "https://loop.fun/x" });
+    expect(t).toContain("https://loop.fun/x");
   });
 });

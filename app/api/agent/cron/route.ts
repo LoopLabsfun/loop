@@ -54,8 +54,27 @@ export async function GET(req: Request) {
     }
   }
 
+  // Economic loop: sweep accrued pump.fun creator fees into the treasury so the
+  // agent keeps funding itself ("buyers refill it ⇒ it wakes"). ONE claim sweeps
+  // all of the creator's tokens, so it runs once per cron, not per project. For
+  // LOOP the pump.fun creator IS the treasury wallet, so a claim lands directly
+  // in the balance the budget gate reads. This signs a REAL mainnet tx, so it's
+  // opt-in: it only fires when AGENT_CLAIM_FEES=1 (the founder's explicit go).
+  // A failed/empty claim is reported, never fatal.
+  let feeClaim:
+    | { ok: boolean; txSig?: string; skipped?: boolean; error?: string }
+    | undefined;
+  if (process.env.AGENT_CLAIM_FEES === "1") {
+    try {
+      const { collectCreatorFees } = await import("@/lib/creator-fees");
+      feeClaim = await collectCreatorFees("mainnet");
+    } catch (e) {
+      feeClaim = { ok: false, error: e instanceof Error ? e.message : "claim failed" };
+    }
+  }
+
   return NextResponse.json(
-    { ticked: results.length, asleep, results },
+    { ticked: results.length, asleep, results, ...(feeClaim ? { feeClaim } : {}) },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

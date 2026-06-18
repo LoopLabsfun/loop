@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { getSolBalance } from "./solana";
+import { getSolBalance, getSplBalance } from "./solana";
 import { withLiveMarket } from "./token-market";
 import { PROJECT_LIST, PROJECTS } from "./projects";
 import type { Launchpad, Project, ProjectKey } from "./types";
@@ -77,9 +77,19 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
   return Promise.all(
     projects.map(async (p) => {
       if (!p.treasuryWallet) return p;
-      const live = await getSolBalance(p.treasuryWallet, p.network);
-      if (live === null) return p;
-      return { ...p, treasurySol: live, treasuryLive: true };
+      // SOL (the spendable balance) and the treasury's own-token holding, in
+      // parallel. Either read failing leaves that piece on the snapshot.
+      const [live, tokenUi] = await Promise.all([
+        getSolBalance(p.treasuryWallet, p.network),
+        p.mint ? getSplBalance(p.treasuryWallet, p.mint, p.network) : Promise.resolve(null),
+      ]);
+      const next: Project = { ...p };
+      if (live !== null) {
+        next.treasurySol = live;
+        next.treasuryLive = true;
+      }
+      if (tokenUi !== null) next.treasuryTokenUi = tokenUi;
+      return next;
     })
   );
 }

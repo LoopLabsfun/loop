@@ -19,8 +19,37 @@ const GECKO = "https://api.geckoterminal.com/api/v2/networks/solana";
 
 export type { MarketStats } from "./types";
 
+// DexScreener and GeckoTerminal are free, key-less, and rate-limited (~30 req/min).
+// Every visitor + the chart's 20s poll would otherwise hit them fresh on each
+// request — quickly tripping the limit, which surfaces as empty candles (and the
+// 1D→15-min fallback failing too, since both calls get 429'd at once). We can't
+// rely on Next's fetch cache here: these routes are `force-dynamic`, whose
+// interaction with `next.revalidate` is version-dependent. So gate the calls
+// behind a tiny in-process TTL memo instead — deterministic, framework-agnostic,
+// and warm exactly when it matters (under load instances are reused). Identical
+// keys dedupe, so the 1D fallback reuses the 1H view's cached 15-min fetch.
+const TTL_MS = 15_000;
+const memo = new Map<string, { at: number; v: unknown }>();
+
+/**
+ * Run `produce` at most once per `TTL_MS` per `key`, sharing the result across
+ * concurrent requests on the same instance. Failures (per `keep`) are never
+ * cached, so a transient 429 retries next call instead of sticking for the TTL.
+ */
+async function memoized<T>(key: string, keep: (v: T) => boolean, produce: () => Promise<T>): Promise<T> {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.v as T;
+  const v = await produce();
+  if (keep(v)) memo.set(key, { at: Date.now(), v });
+  return v;
+}
+
 /** Current market stats for a mint via DexScreener, or null on failure. */
-export async function getMarketStats(mint: string): Promise<MarketStats | null> {
+export function getMarketStats(mint: string): Promise<MarketStats | null> {
+  return memoized(`stats:${mint}`, (v) => v !== null, () => fetchMarketStats(mint));
+}
+
+async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
   try {
     const res = await fetch(`${DEXSCREENER}/${mint}`, { cache: "no-store" });
     if (!res.ok) return null;
@@ -71,8 +100,21 @@ export async function getCandles(pair: string, tf: string, limit = 60): Promise<
   return candles;
 }
 
-/** One GeckoTerminal OHLCV fetch → chronological Candle[], or [] on failure. */
-async function fetchOhlcv(
+/** One GeckoTerminal OHLCV fetch → chronological Candle[], or [] on failure. Memoized. */
+function fetchOhlcv(
+  pair: string,
+  resolution: "minute" | "hour" | "day",
+  aggregate: number,
+  limit: number
+): Promise<Candle[]> {
+  return memoized(
+    `ohlcv:${pair}:${resolution}:${aggregate}:${limit}`,
+    (v) => v.length > 0,
+    () => fetchOhlcvUncached(pair, resolution, aggregate, limit)
+  );
+}
+
+async function fetchOhlcvUncached(
   pair: string,
   resolution: "minute" | "hour" | "day",
   aggregate: number,
@@ -96,8 +138,12 @@ async function fetchOhlcv(
   }
 }
 
-/** Recent trades for a pool, newest-first, mapped to the chart's Trade shape. */
-export async function getRecentTrades(pair: string, n = 10): Promise<Trade[]> {
+/** Recent trades for a pool, newest-first, mapped to the chart's Trade shape. Memoized. */
+export function getRecentTrades(pair: string, n = 10): Promise<Trade[]> {
+  return memoized(`trades:${pair}:${n}`, (v) => v.length > 0, () => fetchRecentTrades(pair, n));
+}
+
+async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {
   try {
     const url = `${GECKO}/pools/${pair}/trades?trade_volume_in_usd_greater_than=0`;
     const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
