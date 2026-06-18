@@ -11,6 +11,7 @@ export function Hero({
   ticker,
   treasuryToken,
   treasuryTokenUsd,
+  treasuryHistory,
   onLaunch,
   onScroll,
 }: {
@@ -21,6 +22,7 @@ export function Hero({
   ticker?: string;
   treasuryToken?: number;
   treasuryTokenUsd?: number;
+  treasuryHistory?: { t: number; sol: number }[];
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -86,6 +88,7 @@ export function Hero({
           ticker={ticker}
           treasuryToken={treasuryToken}
           treasuryTokenUsd={treasuryTokenUsd}
+          treasuryHistory={treasuryHistory}
         />
       </div>
     </section>
@@ -204,6 +207,7 @@ function TreasuryCard({
   ticker,
   treasuryToken,
   treasuryTokenUsd,
+  treasuryHistory,
 }: {
   engine: LoopEngineState;
   solUsd: number;
@@ -212,6 +216,7 @@ function TreasuryCard({
   ticker?: string;
   treasuryToken?: number;
   treasuryTokenUsd?: number;
+  treasuryHistory?: { t: number; sol: number }[];
 }) {
   const net = (network ?? "mainnet").toUpperCase();
   // The treasury also holds the project's OWN token. Shown as a separate line —
@@ -219,6 +224,14 @@ function TreasuryCard({
   // SOL, never folded into it (honest by design).
   const tokenSymbol = (ticker ?? "$LOOP").replace(/^\$/, "");
   const hasToken = typeof treasuryToken === "number" && treasuryToken > 0;
+  // Headline the spendable treasury in USD (SOL × live price); the SOL amount
+  // moves to a sub-line. The curve is the real on-chain balance trajectory,
+  // valued at the current SOL price — every level is a real on-chain balance.
+  const spendableUsd = engine.balance * solUsd;
+  const series =
+    treasuryHistory && treasuryHistory.length >= 2
+      ? treasuryHistory.map((p) => p.sol * solUsd)
+      : null;
   return (
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
@@ -236,39 +249,23 @@ function TreasuryCard({
         )}
       </div>
       <div className="font-display font-bold text-[42px] tracking-[-0.02em] leading-none tabular-nums">
-        {sol(engine.balance)}{" "}
-        <span className="text-[20px] text-faint font-medium">SOL</span>
+        <span className="text-[22px] text-faint font-medium align-top mr-[1px]">$</span>
+        {usd(spendableUsd)}
       </div>
       <div className="mt-[6px] mb-4">
         <div className="font-mono text-[13px] text-faint">
-          ≈ {usd(engine.balance * solUsd)} USD spendable
+          {sol(engine.balance)} SOL spendable
         </div>
         {hasToken ? (
           <div className="font-mono text-[12px] text-faint mt-[5px]">
             + {compactNum(treasuryToken!)} {tokenSymbol}
             {typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? (
-              <span className="text-faint/70"> ≈ {usd(treasuryTokenUsd)} held</span>
+              <span className="text-faint/70"> ≈ ${usd(treasuryTokenUsd)} held</span>
             ) : null}
           </div>
         ) : null}
       </div>
-      <svg
-        width="100%"
-        height={56}
-        viewBox="0 0 200 48"
-        preserveAspectRatio="none"
-        className="block mb-[18px]"
-      >
-        <line
-          x1="0"
-          y1="40"
-          x2="200"
-          y2="40"
-          stroke="var(--line-3)"
-          strokeWidth={2}
-          strokeDasharray="3 4"
-        />
-      </svg>
+      <TreasurySparkline values={series} />
       <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
         <Stat label="24h Income" value={`+${sol(engine.income)} SOL`} tone="pos" />
         <Stat label="24h Spend" value={`−${sol(engine.spend)} SOL`} />
@@ -283,6 +280,80 @@ function TreasuryCard({
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Treasury value sparkline from the REAL on-chain balance trajectory. Points are
+ * event-spaced (one per balance-changing tx), so the shape is honest. With fewer
+ * than two points there's nothing to draw → a neutral dashed baseline, never a
+ * fabricated curve.
+ */
+function TreasurySparkline({ values }: { values: number[] | null }) {
+  const W = 200;
+  const H = 48;
+  const PAD = 4;
+
+  if (!values || values.length < 2) {
+    return (
+      <svg
+        width="100%"
+        height={56}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="block mb-[18px]"
+      >
+        <line
+          x1="0"
+          y1="40"
+          x2={W}
+          y2="40"
+          stroke="var(--line-3)"
+          strokeWidth={2}
+          strokeDasharray="3 4"
+        />
+      </svg>
+    );
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const n = values.length;
+  const x = (i: number) => (i / (n - 1)) * W;
+  const y = (v: number) => H - PAD - ((v - min) / range) * (H - PAD * 2);
+  const line = values
+    .map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(2)}`)
+    .join(" ");
+  const area = `${line} L${W} ${H} L0 ${H} Z`;
+
+  return (
+    <svg
+      width="100%"
+      height={56}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="block mb-[18px]"
+      role="img"
+      aria-label="Treasury value over time"
+    >
+      <defs>
+        <linearGradient id="treasury-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--accent)" stopOpacity="0.18" />
+          <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#treasury-fill)" />
+      <path
+        d={line}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   );
 }
 

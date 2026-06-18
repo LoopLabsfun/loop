@@ -52,6 +52,7 @@ export function Landing({
           ticker={loop?.ticker}
           treasuryToken={loop?.treasuryTokenUi ?? 0}
           treasuryTokenUsd={(loop?.treasuryTokenUi ?? 0) * (loop?.price ?? 0)}
+          treasuryHistory={loop?.treasuryHistory ?? undefined}
           onLaunch={openModal}
           onScroll={scrollTo}
         />

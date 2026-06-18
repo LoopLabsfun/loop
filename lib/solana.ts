@@ -150,6 +150,100 @@ export async function getSplBalance(
   return total;
 }
 
+/** One point on the treasury balance trajectory: unix seconds + SOL balance. */
+export interface BalancePoint {
+  t: number;
+  sol: number;
+}
+
+// Bound the Helius enhanced-API usage on the force-dynamic landing: the history
+// barely moves between renders, so memoize per (net, owner) for a short TTL.
+const HISTORY_TTL_MS = 60_000;
+const historyMemo = new Map<string, { at: number; v: BalancePoint[] | null }>();
+
+/**
+ * Real on-chain SOL-balance trajectory of `owner`, oldest→newest, reconstructed
+ * from the live balance walked back through Helius's parsed transaction history
+ * (each tx's `nativeBalanceChange`). Every value is a real on-chain SOL amount;
+ * points are spaced by event, not by clock. null on unconfigured/invalid/failed.
+ * Powers the treasury sparkline without needing a stored history table.
+ */
+export async function getTreasuryHistory(
+  owner: string,
+  net: Network = DEFAULT_NETWORK,
+  opts: { limit?: number; knownLamports?: number } = {}
+): Promise<BalancePoint[] | null> {
+  if (!KEY || !BASE58.test(owner)) return null;
+  const limit = opts.limit ?? 50;
+  const memoKey = `${net}:${owner}:${limit}`;
+  const hit = historyMemo.get(memoKey);
+  if (hit && Date.now() - hit.at < HISTORY_TTL_MS) return hit.v;
+
+  const v = await fetchTreasuryHistory(owner, net, limit, opts.knownLamports);
+  // Cache only successful reads, so a transient failure retries next call.
+  if (v !== null) historyMemo.set(memoKey, { at: Date.now(), v });
+  return v;
+}
+
+async function fetchTreasuryHistory(
+  owner: string,
+  net: Network,
+  limit: number,
+  knownLamports?: number
+): Promise<BalancePoint[] | null> {
+  // Anchor: the current balance, walked backwards through the deltas. Reuse the
+  // caller's balance read when given (one fewer Helius call, and the curve ends
+  // on exactly the SOL the headline shows); otherwise fetch it.
+  let current = knownLamports;
+  if (typeof current !== "number") {
+    const balRes = await rpc<{ value: number }>(net, "getBalance", [owner]);
+    current = balRes?.value;
+  }
+  if (typeof current !== "number") return null;
+
+  const host = net === "devnet" ? "api-devnet.helius.xyz" : "api.helius.xyz";
+  let txs: {
+    timestamp: number;
+    accountData?: { account: string; nativeBalanceChange: number }[];
+  }[];
+  try {
+    const res = await fetch(
+      `https://${host}/v0/addresses/${owner}/transactions?api-key=${KEY}&limit=${limit}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    txs = await res.json();
+  } catch {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (!Array.isArray(txs) || txs.length === 0) {
+    return [{ t: now, sol: current / LAMPORTS_PER_SOL }];
+  }
+
+  // Walk newest→oldest: `running` is the balance AFTER each tx (starting from the
+  // live balance ≈ after the newest tx). Subtracting a tx's own delta yields the
+  // level before it == the level after the next older tx.
+  const deltaFor = (tx: (typeof txs)[number]) =>
+    tx.accountData?.find((a) => a.account === owner)?.nativeBalanceChange ?? 0;
+  const points: BalancePoint[] = [];
+  let running = current;
+  for (const tx of txs) {
+    if (typeof tx.timestamp === "number") {
+      points.push({ t: tx.timestamp, sol: running / LAMPORTS_PER_SOL });
+    }
+    running -= deltaFor(tx);
+  }
+  // Left anchor: the balance just before the oldest fetched tx (clamped ≥ 0).
+  const oldest = txs[txs.length - 1];
+  if (typeof oldest?.timestamp === "number") {
+    points.push({ t: oldest.timestamp - 1, sol: Math.max(0, running) / LAMPORTS_PER_SOL });
+  }
+  points.reverse(); // chronological
+  points.push({ t: now, sol: current / LAMPORTS_PER_SOL }); // end at the live balance
+  return points;
+}
+
 /** SOL balance for an address, or null if unconfigured / invalid / failed. */
 export async function getSolBalance(
   address: string,

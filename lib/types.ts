@@ -62,6 +62,12 @@ export interface Project {
    * alongside the spendable SOL, never folded into it).
    */
   treasuryTokenUi?: number | null;
+  /**
+   * Real on-chain SOL-balance trajectory of `treasuryWallet`, oldest→newest,
+   * reconstructed from tx history — null/undefined until read. Powers the
+   * treasury sparkline (event-spaced; every value is a real balance level).
+   */
+  treasuryHistory?: { t: number; sol: number }[] | null;
 }
 
 /** A live treasury reading. Animated client-side in the simulation. */
