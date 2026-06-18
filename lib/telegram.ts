@@ -63,7 +63,7 @@ export function buildProgressMessage(
   const out: string[] = [`🛠️ *${E(p.name)}* — building`];
   out.push("", `• ${E(work.title.trim())}`);
   const detail = (work.detail ?? "").trim();
-  if (detail) out.push(E(detail.length > 220 ? detail.slice(0, 219) + "…" : detail));
+  if (detail) out.push(E(detail.length > 450 ? detail.slice(0, 449) + "…" : detail));
   out.push("", `Watch it build → ${E(agentSite(p))}`);
   return out.join("\n");
 }

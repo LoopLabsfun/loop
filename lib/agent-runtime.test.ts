@@ -4,6 +4,8 @@ import {
   buildUserPrompt,
   coerceDecision,
   routeAction,
+  shouldPublishUpdate,
+  MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
 } from "./agent-runtime";
@@ -195,6 +197,77 @@ describe("routeAction", () => {
   });
   it("denies an invalid (negative) action", () => {
     expect(routeAction({ kind: "buyback", amountSol: -1 }).disposition).toBe("deny");
+  });
+});
+
+describe("shouldPublishUpdate (anti-spam posting gate)", () => {
+  const t0 = 1_000_000_000_000;
+  const last = (body: string, agoMs: number) => ({ body, at: t0 - agoMs });
+
+  it("posts the first update on a platform", () => {
+    expect(
+      shouldPublishUpdate({ last: null, text: "hi", shipped: false, isNewTask: false, now: t0 })
+    ).toBe(true);
+  });
+
+  it("never repeats the exact same body", () => {
+    expect(
+      shouldPublishUpdate({
+        last: last("same", 5_000),
+        text: "same",
+        shipped: true, // even a milestone won't re-post an identical body
+        isNewTask: true,
+        now: t0,
+      })
+    ).toBe(false);
+  });
+
+  it("always posts a shipped milestone (different body)", () => {
+    expect(
+      shouldPublishUpdate({
+        last: last("building X", 1_000), // just posted 1s ago
+        text: "✅ shipped X",
+        shipped: true,
+        isNewTask: false,
+        now: t0,
+      })
+    ).toBe(true);
+  });
+
+  it("posts a building update for a NEW task immediately", () => {
+    expect(
+      shouldPublishUpdate({
+        last: last("building A", 1_000),
+        text: "building B",
+        shipped: false,
+        isNewTask: true,
+        now: t0,
+      })
+    ).toBe(true);
+  });
+
+  it("suppresses a reworded 'still building' on the SAME task within the window", () => {
+    expect(
+      shouldPublishUpdate({
+        last: last("building A v1", 2 * 60 * 1000), // 2 min ago
+        text: "building A v2", // same task, reworded
+        shipped: false,
+        isNewTask: false,
+        now: t0,
+      })
+    ).toBe(false);
+  });
+
+  it("lets a long-running task post again once past the throttle window", () => {
+    expect(
+      shouldPublishUpdate({
+        last: last("building A v1", MIN_BUILDING_GAP_MS + 1),
+        text: "building A v2",
+        shipped: false,
+        isNewTask: false,
+        now: t0,
+      })
+    ).toBe(true);
   });
 });
 
