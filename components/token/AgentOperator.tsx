@@ -64,11 +64,7 @@ export function AgentOperator({
   const inbox = inboxProp ?? [];
   const social = socialProp ?? [];
   const summaries = summariesProp ?? [];
-  const stats = {
-    email: agentEmail(p),
-    visitors: 0,
-    signups: 0,
-  };
+  const stats = { email: agentEmail(p) };
   const sent = inbox.filter((m) => m.direction === "out").length;
   const received = inbox.length - sent;
 
@@ -139,9 +135,17 @@ export function AgentOperator({
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
             buyback/airdrop/bounty to holders), surfaced in Project Wallet. */}
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <Stat label="Visitors" value={stats.visitors.toLocaleString()} />
-          <Stat label="Signups" value={String(stats.signups)} />
-          <Stat label="Email" value={`${sent} sent · ${received} in`} />
+          {/* Honest placeholders: these have no real data source yet, so show an
+              em-dash (not a misleading "0"). They auto-fill once wired —
+              Visitors/Signups need an analytics source; Email needs the inbound
+              mail router (+ an outbound agent email action for "sent"). */}
+          <Stat label="Visitors" value="—" title="Traffic analytics not wired yet" />
+          <Stat label="Signups" value="—" title="No signup funnel yet" />
+          <Stat
+            label="Email"
+            value={sent || received ? `${sent} sent · ${received} in` : "—"}
+            title="Inbound email routes into the Agent Console once the mail router is live"
+          />
         </div>
       </div>
 
@@ -253,10 +257,14 @@ export function AgentOperator({
                 <span className="font-mono text-[10.5px] text-faint">{s.at}</span>
               </div>
               <div className="text-[13px] text-ink mt-[3px]">{s.text}</div>
-              <div className="flex items-center gap-3 mt-2 font-mono text-[11px] text-muted">
-                <span>♥ {s.likes}</span>
-                <span>↩ {s.replies}</span>
-              </div>
+              {/* Engagement only when we actually have it — no fake "♥ 0 ↩ 0"
+                  (platform metrics aren't fetched back yet). */}
+              {(s.likes > 0 || s.replies > 0) && (
+                <div className="flex items-center gap-3 mt-2 font-mono text-[11px] text-muted">
+                  <span>♥ {s.likes}</span>
+                  <span>↩ {s.replies}</span>
+                </div>
+              )}
             </div>
           ))}
 
@@ -314,9 +322,9 @@ export function AgentOperator({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-[9px] border border-line-4 bg-surface-2 px-3 py-2">
+    <div title={title} className="rounded-[9px] border border-line-4 bg-surface-2 px-3 py-2">
       <div className="font-mono text-[10px] text-faint uppercase tracking-wide">
         {label}
       </div>
