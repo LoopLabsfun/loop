@@ -56,6 +56,12 @@ describe("evaluateAction", () => {
   it("rejects a negative amount without escalating", () => {
     expect(evaluateAction(buyback(-1))).toMatchObject({ ok: false, escalate: false });
   });
+
+  it("rejects a zero-SOL buyback as a no-op (never reaches the exec layer)", () => {
+    const v = evaluateAction(buyback(0));
+    expect(v).toMatchObject({ ok: false, escalate: false });
+    expect(v.reason).toMatch(/zero amount/i);
+  });
 });
 
 describe("walletFor", () => {
