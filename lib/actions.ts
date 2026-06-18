@@ -228,3 +228,49 @@ export async function submitDirectiveAction(
   if (error) return { ok: false, persisted: false, error: error.message };
   return { ok: true, persisted: true };
 }
+
+export interface VoteInput {
+  /** Raw directive UUID (the UI strips the "d" feed-id prefix before calling). */
+  directiveId: string;
+  /** Connected wallet — one vote per wallet per proposal (re-voting flips side). */
+  voter: string;
+  dir: "for" | "against";
+}
+
+export interface VoteResult {
+  ok: boolean;
+  /** New tallies after the vote, echoed back so the UI shows the real counts. */
+  forVotes?: number;
+  againstVotes?: number;
+  error?: string;
+}
+
+/**
+ * Persist a holder vote on a proposal. Routes through the `cast_directive_vote`
+ * RPC (the single, SECURITY DEFINER write path): it dedupes by wallet, flips the
+ * side on re-vote, and recomputes the cached for/against tallies — so a vote
+ * survives a refresh instead of living only in React state (the old bug).
+ */
+export async function castVoteAction(input: VoteInput): Promise<VoteResult> {
+  if (!input.directiveId || !input.voter) {
+    return { ok: false, error: "Connect a wallet to vote." };
+  }
+  if (input.dir !== "for" && input.dir !== "against") {
+    return { ok: false, error: "Invalid vote." };
+  }
+  if (!supabase) return { ok: false, error: "Voting is unavailable right now." };
+
+  const { data, error } = await supabase.rpc("cast_directive_vote", {
+    p_directive_id: input.directiveId,
+    p_voter: input.voter.slice(0, 64),
+    p_dir: input.dir,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    ok: true,
+    forVotes: row?.for_votes ?? 0,
+    againstVotes: row?.against_votes ?? 0,
+  };
+}

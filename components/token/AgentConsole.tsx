@@ -8,7 +8,7 @@ import {
   type ConsoleRole,
   type FeedItem,
 } from "@/lib/console";
-import { submitDirectiveAction } from "@/lib/actions";
+import { submitDirectiveAction, castVoteAction } from "@/lib/actions";
 import { isSuspiciousDirective } from "@/lib/directives";
 import type { Project } from "@/lib/types";
 
@@ -61,7 +61,14 @@ export function AgentConsole({
     );
   }
 
-  function vote(id: string, dir: "for" | "against") {
+  async function vote(id: string, dir: "for" | "against") {
+    // Voting is wallet-gated (one vote per wallet, server-enforced).
+    if (!wallet.connected || !wallet.address) {
+      wallet.connect();
+      return;
+    }
+    // Optimistic bump for instant feedback; keep a snapshot to revert on failure.
+    const snapshot = feed;
     setFeed((f) =>
       f.map((x) =>
         x.id === id
@@ -70,6 +77,28 @@ export function AgentConsole({
               forVotes: (x.forVotes ?? 0) + (dir === "for" ? 1 : 0),
               againstVotes: (x.againstVotes ?? 0) + (dir === "against" ? 1 : 0),
             }
+          : x
+      )
+    );
+    // Persist only backend rows — the feed id is the directive UUID prefixed "d"
+    // (see rowToFeedItem). A just-submitted optimistic proposal ("c…") isn't in
+    // the DB yet; it becomes votable after the next load.
+    if (!id.startsWith("d")) return;
+    const res = await castVoteAction({
+      directiveId: id.slice(1),
+      voter: wallet.address,
+      dir,
+    });
+    if (!res.ok) {
+      setFeed(snapshot); // revert the optimistic bump
+      setNotice(res.error ?? "Vote didn't save — try again.");
+      return;
+    }
+    // Reconcile to the server's authoritative tallies (dedupe/flip corrected).
+    setFeed((f) =>
+      f.map((x) =>
+        x.id === id
+          ? { ...x, forVotes: res.forVotes, againstVotes: res.againstVotes }
           : x
       )
     );
