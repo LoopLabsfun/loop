@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { runAgentTick, agentRuntimeConfigured } from "@/lib/agent-runtime";
-import { isXConfigured } from "@/lib/x-send";
+import { isXConfigured, verifyXCredentials } from "@/lib/x-send";
 import { isTelegramConfigured } from "@/lib/telegram-send";
 import { agentWalletConfigured } from "@/lib/agent-wallet";
 
@@ -52,6 +52,8 @@ export async function POST(req: Request) {
       x: isXConfigured(),
       telegram: isTelegramConfigured(),
       agentWallet: agentWalletConfigured(),
+      // HTTP status of an X credential check (200 = valid creds). Diagnostic.
+      xAuthStatus: await verifyXCredentials(),
     };
     return NextResponse.json(
       { key: project.key, decision, integrations },
