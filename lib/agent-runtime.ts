@@ -430,6 +430,33 @@ export async function decideNextAction(
   return decision;
 }
 
+/** Default throttle for "still building" updates on a long-running task. */
+export const MIN_BUILDING_GAP_MS = 30 * 60 * 1000;
+
+/**
+ * Pure anti-spam gate for build-in-public posts — DECOUPLES posting from the
+ * (every ~2 min) tick cadence so social doesn't get a reworded "still building X"
+ * every tick. Publish when: it's the first post on the platform; OR it's a real
+ * "shipped" milestone; OR a "building" update whose task is NEW this tick (or a
+ * long-running one past `minGapMs`). Never the exact same body twice.
+ */
+export function shouldPublishUpdate(opts: {
+  last: { body: string; at: number } | null;
+  text: string;
+  shipped: boolean;
+  isNewTask: boolean;
+  now?: number;
+  minGapMs?: number;
+}): boolean {
+  const { last, text, shipped, isNewTask } = opts;
+  if (!last) return true;
+  if (text === last.body) return false;
+  if (shipped) return true;
+  const now = opts.now ?? Date.now();
+  const minGapMs = opts.minGapMs ?? MIN_BUILDING_GAP_MS;
+  return isNewTask || now - last.at >= minGapMs;
+}
+
 /** Persist a decision: a public build update + the advanced task. */
 export async function applyDecision(
   p: Project,
@@ -469,6 +496,10 @@ export async function applyDecision(
     .neq("status", "shipped")
     .limit(1)
     .maybeSingle();
+  // Did this tick START a new task (insert) or CONTINUE one (update)? The agent
+  // ticks every ~2 min but must not re-post a near-identical "still building X"
+  // every time — posting below is gated on this so a continuing task stays quiet.
+  const isNewTask = !existing?.id;
   if (existing?.id) {
     await supabaseAdmin
       .from("agent_tasks")
@@ -545,13 +576,14 @@ export async function applyDecision(
     });
   }
 
-  // BUILD-IN-PUBLIC posting — the agent posts to Telegram + X on EVERY tick that
-  // carries a genuine update, not just the rare "shipped" event (so the feed is
-  // alive). Honesty is preserved two ways: (1) a non-shipped update says
-  // "building", never claims completion (buildProgress*), and (2) we dedupe
-  // against the last post per platform, so the agent repeating the same decision
-  // across ticks doesn't spam an identical message. A send is recorded in
-  // agent_posts only after it actually succeeds. Failures never abort the cycle.
+  // BUILD-IN-PUBLIC posting — DECOUPLED from the tick cadence. The agent ticks
+  // every ~2 min to do work, but social must not get a near-identical "still
+  // building X" post every tick (that floods Telegram/X with reworded dupes).
+  // shouldPost gates it: a real "shipped" milestone always posts; a "building"
+  // update posts only when the task is NEW this tick, or it's been a while
+  // (MIN_BUILDING_GAP_MS) on a long-running one — and never the exact same body
+  // twice. A send is recorded in agent_posts only after it actually succeeds.
+  // Failures never abort the cycle.
   const work = { title: d.task.title, detail: d.task.detail };
 
   // Trust the agent's self-authored prose only when it's honest. The verifier
@@ -561,17 +593,20 @@ export async function applyDecision(
   // "building" update. Otherwise the agent's own voice is posted verbatim.
   const useAuthored = gated.status === d.task.status;
 
-  // The most recent body per platform, to skip duplicate consecutive posts.
-  const lastBody = async (platform: "telegram" | "x"): Promise<string | null> => {
+  // The most recent post per platform (body + time), to gate the next one.
+  const lastPost = async (
+    platform: "telegram" | "x"
+  ): Promise<{ body: string; at: number } | null> => {
     const { data } = await supabaseAdmin!
       .from("agent_posts")
-      .select("body")
+      .select("body, created_at")
       .eq("project_key", p.key)
       .eq("platform", platform)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    return (data?.body as string | undefined) ?? null;
+    if (!data?.body) return null;
+    return { body: data.body as string, at: new Date(data.created_at as string).getTime() };
   };
 
   // Telegram (read-only build bot): one bot + chat via env for Phase 1.
@@ -591,7 +626,14 @@ export async function applyDecision(
                 ],
               })
             : buildProgressMessage(p, work);
-      if (text !== (await lastBody("telegram"))) {
+      if (
+        shouldPublishUpdate({
+          last: await lastPost("telegram"),
+          text,
+          shipped: gated.status === "shipped",
+          isNewTask,
+        })
+      ) {
         const res = await sendTelegramMessage(chatId, text);
         if (res.ok) {
           await supabaseAdmin.from("agent_posts").insert({
@@ -617,7 +659,14 @@ export async function applyDecision(
           : gated.status === "shipped"
             ? buildShipTweet(p, work)
             : buildProgressTweet(p, work);
-      if (body !== (await lastBody("x"))) {
+      if (
+        shouldPublishUpdate({
+          last: await lastPost("x"),
+          text: body,
+          shipped: gated.status === "shipped",
+          isNewTask,
+        })
+      ) {
         const res = await sendTweet(body);
         // Record only when the tweet actually posted (honest feed; mirrors TG).
         if (res.ok) {
