@@ -1,6 +1,6 @@
 import "server-only";
 
-import { supabase } from "./supabase";
+import { supabase, supabaseAdmin } from "./supabase";
 import {
   type AgentTask,
   type DailySummary,
@@ -11,7 +11,12 @@ import {
 } from "./agent";
 import { rowToFeedItem, type DirectiveRow } from "./directives";
 import type { FeedItem } from "./console";
-import type { Learning, LearningCategory } from "./learnings";
+import {
+  isDuplicateLearning,
+  sanitizeLearning,
+  type Learning,
+  type LearningCategory,
+} from "./learnings";
 import type { Project } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -346,5 +351,39 @@ export async function getTopLearnings(limit = 6): Promise<Learning[]> {
     }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Write a self-generated learning back to the shared layer (C — closes the A5
+ * loop). Service-role write; needs SUPABASE_SERVICE_ROLE_KEY. Skips empties and
+ * near-duplicates of the most recent rows so the agent can't flood the table.
+ * Returns true if a row was inserted. Never throws — a failure here must not
+ * abort the tick.
+ */
+export async function recordLearning(
+  category: LearningCategory,
+  insight: string,
+  source = "a project"
+): Promise<boolean> {
+  if (!supabaseAdmin) return false;
+  const clean = sanitizeLearning(insight);
+  if (!clean) return false;
+  try {
+    // Dedupe against the recent layer (by punctuation-insensitive key).
+    const { data } = await supabaseAdmin
+      .from("learnings")
+      .select("insight")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (isDuplicateLearning(clean, (data as { insight: string }[]) ?? [])) {
+      return false;
+    }
+    const { error } = await supabaseAdmin
+      .from("learnings")
+      .insert({ category, insight: clean, source });
+    return !error;
+  } catch {
+    return false;
   }
 }

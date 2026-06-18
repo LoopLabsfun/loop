@@ -3,6 +3,7 @@ import {
   sanitizeLearning,
   rankLearnings,
   formatLearningsForPrompt,
+  isDuplicateLearning,
   type Learning,
 } from "./learnings";
 
@@ -47,6 +48,21 @@ describe("rankLearnings", () => {
 
   it("drops empty insights", () => {
     expect(rankLearnings([mk({ insight: "   " })])).toHaveLength(0);
+  });
+});
+
+describe("isDuplicateLearning", () => {
+  const existing = [mk({ insight: "Reply to leads within one hour." })];
+
+  it("matches ignoring case and punctuation", () => {
+    expect(isDuplicateLearning("reply to leads within one hour!!!", existing)).toBe(true);
+  });
+  it("treats a genuinely new insight as not a duplicate", () => {
+    expect(isDuplicateLearning("Smaller PRs pass review faster.", existing)).toBe(false);
+  });
+  it("never persists an empty insight", () => {
+    expect(isDuplicateLearning("   ", existing)).toBe(true);
+    expect(isDuplicateLearning("", [])).toBe(true);
   });
 });
 

@@ -6,8 +6,14 @@ import type { Project } from "./types";
 import { supabaseAdmin } from "./supabase";
 import { gateAgentShip, checkFromSandbox, type VerifyCheck } from "./verifier";
 import type { SandboxLanguage } from "./sandbox";
-import { formatLearningsForPrompt, type Learning } from "./learnings";
-import { getTopLearnings } from "./agent-data";
+import {
+  formatLearningsForPrompt,
+  sanitizeLearning,
+  LEARNING_CATEGORIES,
+  type Learning,
+  type LearningCategory,
+} from "./learnings";
+import { getTopLearnings, recordLearning } from "./agent-data";
 import { buildShipTweet } from "./x-recap";
 import {
   evaluateAction,
@@ -82,6 +88,13 @@ export interface AgentDecision {
    * for a final decision grounded in them, instead of letting it edit/claim blind.
    */
   readFiles?: string[];
+  /**
+   * Optional durable, anonymized insight this cycle taught the agent (C — A5
+   * write-back). Persisted to the shared `learnings` table and surfaced to every
+   * agent next cycle, so the network compounds from real outcomes instead of a
+   * hand-seeded layer. Only kept when a real verifier check ran this tick.
+   */
+  learning?: { category: LearningCategory; insight: string };
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -144,6 +157,15 @@ export const DECISION_SCHEMA = {
       type: "array",
       items: { type: "string" },
     },
+    learning: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        category: { type: "string", enum: LEARNING_CATEGORIES },
+        insight: { type: "string" },
+      },
+      required: ["category", "insight"],
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -193,6 +215,7 @@ export function buildSystemPrompt(
     `posts.x — OPTIONAL and RARE. Include it ONLY when THIS tick produced something genuinely worth a public tweet to people who don't follow the build: a shipped/working feature, a real milestone, or a marketing-worthy update. For routine, internal, or incremental ticks, OMIT posts.x entirely — MOST ticks should have NO posts.x. When you do include it: one punchy line (≤200 chars), plain prose, no hashtag spam; do NOT add the token cashtag or a link (the platform appends them). A handful of great tweets beats a stream of forgettable ones.`,
     `posts.telegram — your build-log channel; can be more frequent than X. A short dev-log for followers (2–5 short lines): what you're doing now, why it matters, what's next.`,
     `Honesty in posts is absolute: write "building"/"working on" for in-progress work; only say "shipped/done/live" when it genuinely shipped this cycle. No price or financial talk, and never reference past security incidents.`,
+    `LEARNINGS — when THIS cycle taught you something durable and REUSABLE that would help any project's agent (what build pattern shipped, which gate caught a real bug, what outreach converts, an ops lesson), return "learning" {category: one of outreach/build/growth/gate/ops, insight: one generalizable sentence ≤240 chars}. It must be anonymized and transferable — NEVER a wallet, person, secret, price, or one-off project trivia, and not a restatement of your task. OMIT it on ticks with no genuine new insight (that's most ticks). It is only saved when a real verifying check ran this cycle.`,
   ].join(" ");
 }
 
@@ -435,6 +458,22 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     if (paths.length) readFiles = paths;
   }
 
+  // learning: a durable insight to write back to the shared layer (C). Kept only
+  // if the category is valid and the sanitized insight is non-empty.
+  let learning: AgentDecision["learning"];
+  if (r.learning && typeof r.learning === "object") {
+    const cand = r.learning as { category?: unknown; insight?: unknown };
+    const insight =
+      typeof cand.insight === "string" ? sanitizeLearning(cand.insight) : "";
+    if (
+      insight &&
+      typeof cand.category === "string" &&
+      (LEARNING_CATEGORIES as readonly string[]).includes(cand.category)
+    ) {
+      learning = { category: cand.category as LearningCategory, insight };
+    }
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -448,6 +487,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     ...(posts ? { posts } : {}),
     ...(edits ? { edits } : {}),
     ...(readFiles ? { readFiles } : {}),
+    ...(learning ? { learning } : {}),
   };
 }
 
@@ -718,6 +758,18 @@ export async function applyDecision(
       status: gated.status,
       last_outcome: lastOutcome,
     });
+  }
+
+  // Self-generated learning (C — close the A5 write-back loop). Persist the
+  // agent's durable insight to the shared layer, but ONLY when a real verifier
+  // check ran this cycle — so learnings come from objective outcomes, not from
+  // planning-only ticks. recordLearning dedupes + never throws.
+  if (d.learning && (verify?.checks?.length ?? 0) > 0) {
+    await recordLearning(
+      d.learning.category,
+      d.learning.insight,
+      p.official ? "the loop.fun agent" : "a project"
+    );
   }
 
   // On-chain action (buyback/burn/airdrop/bounty/swap) the agent proposed this
