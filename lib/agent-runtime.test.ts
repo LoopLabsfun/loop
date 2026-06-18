@@ -6,6 +6,7 @@ import {
   routeAction,
   shouldPublishUpdate,
   summarizeTickOutcome,
+  buildReadFilesPrompt,
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
@@ -217,6 +218,15 @@ describe("coerceDecision", () => {
     expect(coerceDecision(good)?.action).toBeUndefined();
   });
 
+  it("parses readFiles (A2): strings only, trimmed, deduped, capped at 6", () => {
+    const d = coerceDecision({
+      ...good,
+      readFiles: [" lib/a.ts ", "lib/a.ts", "lib/b.ts", 42, "", "c", "d", "e", "f", "g"],
+    });
+    expect(d?.readFiles).toEqual(["lib/a.ts", "lib/b.ts", "c", "d", "e", "f"]);
+    expect(coerceDecision(good)?.readFiles).toBeUndefined();
+  });
+
   it("parses optional self-authored posts (x + telegram, clamped)", () => {
     const withPosts = coerceDecision({
       ...good,
@@ -304,6 +314,21 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
         now: t0,
       })
     ).toBe(true);
+  });
+});
+
+describe("buildReadFilesPrompt (A2 pass 2)", () => {
+  it("fences each file with its path and asks for the final grounded decision", () => {
+    const s = buildReadFilesPrompt([
+      { path: "lib/a.ts", contents: "export const a = 1;" },
+      { path: "lib/b.ts", contents: "export const b = 2;" },
+    ]);
+    expect(s).toContain("===== lib/a.ts =====");
+    expect(s).toContain("export const a = 1;");
+    expect(s).toContain("===== lib/b.ts =====");
+    expect(s).toContain("FINAL decision");
+    expect(s).toContain("FULL-FILE writes");
+    expect(s).toContain("Do NOT return `readFiles` again");
   });
 });
 

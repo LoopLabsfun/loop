@@ -93,6 +93,74 @@ export async function getRepoTree(
   }
 }
 
+/**
+ * Pure: clean + harden a list of requested read paths — strip leading "./",
+ * reject absolute paths and "../" traversal, dedupe, cap. Exported for testing.
+ */
+export function sanitizeReadPaths(paths: string[], max = 6): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of paths) {
+    const p = (raw || "").trim().replace(/^\.\//, "");
+    if (!p || p.startsWith("/") || p.split("/").includes("..") || seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export interface RepoFile {
+  path: string;
+  contents: string; // truncated; or a "(could not read …)" note on failure
+}
+
+/**
+ * Fetch the real CONTENTS of specific repo files (A2 — code-aware context), so
+ * the agent edits/plans against what's actually there instead of guessing. Each
+ * file is hard-capped; a failed read becomes an honest note rather than throwing.
+ * Server-only; mirrors getRecentCommits' auth + graceful-failure posture.
+ */
+export async function getRepoFiles(
+  repo: string,
+  paths: string[],
+  branch = "main",
+  maxBytesPerFile = 14000
+): Promise<RepoFile[]> {
+  const parsed = parseGitHubRepo(repo);
+  if (!parsed) return [];
+  const { owner, name } = parsed;
+  const clean = sanitizeReadPaths(paths);
+  if (!clean.length) return [];
+  const token = process.env.GITHUB_TOKEN;
+  return Promise.all(
+    clean.map(async (path): Promise<RepoFile> => {
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${owner}/${name}/contents/${path}?ref=${branch}`,
+          {
+            headers: {
+              // raw media type returns the file body directly (no base64 decode)
+              Accept: "application/vnd.github.raw+json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            next: { revalidate: 60 },
+          }
+        );
+        if (!res.ok) return { path, contents: `(could not read — HTTP ${res.status})` };
+        const body = await res.text();
+        const contents =
+          body.length > maxBytesPerFile
+            ? body.slice(0, maxBytesPerFile) + "\n… (truncated)"
+            : body;
+        return { path, contents };
+      } catch {
+        return { path, contents: "(read failed)" };
+      }
+    })
+  );
+}
+
 export async function getRecentCommits(
   repo: string,
   n = 4

@@ -1,5 +1,29 @@
 import { describe, it, expect } from "vitest";
-import { pruneRepoTree } from "./commits";
+import { pruneRepoTree, sanitizeReadPaths } from "./commits";
+
+describe("sanitizeReadPaths", () => {
+  it("strips ./ , dedupes, and caps", () => {
+    const out = sanitizeReadPaths(
+      ["./lib/a.ts", "lib/a.ts", "lib/b.ts", "lib/c.ts"],
+      2
+    );
+    expect(out).toEqual(["lib/a.ts", "lib/b.ts"]);
+  });
+
+  it("rejects absolute paths and ../ traversal", () => {
+    const out = sanitizeReadPaths([
+      "/etc/passwd",
+      "../secrets.txt",
+      "lib/../../x",
+      "lib/ok.ts",
+    ]);
+    expect(out).toEqual(["lib/ok.ts"]);
+  });
+
+  it("is empty-safe and drops blanks", () => {
+    expect(sanitizeReadPaths(["", "   "])).toEqual([]);
+  });
+});
 
 describe("pruneRepoTree", () => {
   it("drops deps, build output, lockfiles and binaries; keeps source", () => {
