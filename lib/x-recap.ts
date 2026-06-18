@@ -137,6 +137,33 @@ export function buildProgressTweet(
 }
 
 /**
+ * Wrap a tweet the AGENT wrote itself (its own voice — a punchy one-liner) for
+ * safe posting, instead of templating the same `{title, detail}` the Telegram
+ * post derives from. The agent's words ARE the tweet; we only enforce the
+ * platform/honesty floor mechanically: collapse to one line, neutralize every
+ * cashtag (X rejects >1), then append a canonical footer carrying exactly the
+ * project's own cashtag + the watch link so the post is always discoverable and
+ * links back. The body is trimmed so the footer always fits TWEET_MAX. Use this
+ * when the agent supplied a self-authored `posts.x`; otherwise fall back to
+ * buildProgressTweet / buildShipTweet.
+ */
+export function composeAgentTweet(
+  p: Project,
+  text: string,
+  opts: ShipTweetOptions = {}
+): string {
+  const cashtag = "$" + p.ticker.replace(/^\$+/, "");
+  const url = opts.url ?? agentSite(p);
+  const footer = `${cashtag} · ${url}`;
+  // Strip every cashtag (avoids the >1 rejection and a wrong-ticker mention) and
+  // drop a watch link the agent may have written inline (the footer carries it).
+  let body = stripCashtags(oneLine(text ?? "")).split(url).join("").trim();
+  const room = TWEET_MAX - footer.length - 2; // 2 = the "\n\n" before the footer
+  body = cut(body, Math.max(0, room));
+  return body ? `${body}\n\n${footer}` : footer;
+}
+
+/**
  * Compose a "just shipped" tweet from a project's REAL agent task — the X
  * counterpart of the Telegram build update (buildUpdateMessage). The runtime
  * posts it ONLY when work actually ships (the verifier-gated signal), so the
