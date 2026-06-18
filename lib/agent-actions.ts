@@ -67,6 +67,14 @@ export function evaluateAction(
   const sol = a.amountSol ?? 0;
   if (sol < 0) return { ok: false, escalate: false, reason: "Negative amount." };
 
+  // A SOL-committing action (buyback/bounty/swap) of zero is a no-op: don't run
+  // it. Without this the agent's stray 0-SOL buyback proposals reach the exec
+  // layer and surface as a misleading "simulated 0 SOL" note. Irreversible kinds
+  // (burn/airdrop) commit tokens, not SOL, so they fall through to their own gate.
+  if (sol === 0 && !isIrreversible(a.kind)) {
+    return { ok: false, escalate: false, reason: "Zero amount — nothing to commit." };
+  }
+
   if (sol > policy.maxSolPerAction) {
     return {
       ok: false,

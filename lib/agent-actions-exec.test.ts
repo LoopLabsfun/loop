@@ -12,6 +12,12 @@ describe("buildQuoteQuery", () => {
     expect(q).toContain("slippageBps=50");
     expect(q).toContain("swapMode=ExactIn");
   });
+
+  it("targets a live Jupiter host, not the sunset quote-api.jup.ag/v6", () => {
+    const q = buildQuoteQuery({ outputMint: MINT, amountSol: 0.1 });
+    expect(q).not.toContain("quote-api.jup.ag");
+    expect(q.startsWith("https://lite-api.jup.ag/swap/v1/quote")).toBe(true);
+  });
 });
 
 describe("executeBuyback — policy gate (no network)", () => {
@@ -32,5 +38,15 @@ describe("executeBuyback — policy gate (no network)", () => {
     expect(r.executed).toBe(false);
     expect(r.escalated).toBe(true);
     expect(r.simulated).toBe(false);
+  });
+
+  it("denies a zero-SOL buyback before any signing/network (not 'simulated')", async () => {
+    const r = await executeBuyback(
+      { kind: "buyback", amountSol: 0 },
+      { outputMint: MINT, cluster: "mainnet" }
+    );
+    expect(r.executed).toBe(false);
+    expect(r.simulated).toBe(false);
+    expect(r.reason).toMatch(/zero amount/i);
   });
 });

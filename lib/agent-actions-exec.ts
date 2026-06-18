@@ -22,8 +22,15 @@ import { parseSecretKeyJson } from "./vanity";
 import { agentWalletConfigured, privySignAndSendSolanaTx } from "./agent-wallet";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
-const JUP_QUOTE = "https://quote-api.jup.ag/v6/quote";
-const JUP_SWAP = "https://quote-api.jup.ag/v6/swap";
+// Jupiter v6 (quote-api.jup.ag) was sunset — the host no longer resolves, so
+// every fetch threw "fetch failed" and forced buybacks into the simulated/catch
+// branch. Use Jupiter's current Swap API. lite-api.jup.ag is the keyless tier;
+// the request/response shapes (quote: outAmount/routePlan; swap: {swapTransaction})
+// are unchanged from v6, so only the base URLs move. For higher rate limits set a
+// key and point JUP_BASE at api.jup.ag.
+const JUP_BASE = process.env.JUP_API_BASE || "https://lite-api.jup.ag/swap/v1";
+const JUP_QUOTE = `${JUP_BASE}/quote`;
+const JUP_SWAP = `${JUP_BASE}/swap`;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 /** A signer is available when either a raw hot-key OR Privy custody is set. */
