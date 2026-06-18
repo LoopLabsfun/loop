@@ -3,6 +3,7 @@ import "server-only";
 import { supabase } from "./supabase";
 import {
   type AgentTask,
+  type DailySummary,
   type InboxMessage,
   type SocialPost,
   type TaskCategory,
@@ -51,6 +52,8 @@ export interface AgentState {
   tasks: AgentTask[];
   inbox: InboxMessage[];
   social: SocialPost[];
+  /** Honest per-day rollup derived from the task history (newest first; [] until any). */
+  summaries: DailySummary[];
   /** Persisted steering directives/proposals, newest first ([] until any). Quarantined (suspicious) ones are excluded. */
   directives: FeedItem[];
   /** Count of directives auto-screened out (injection / fund-grab attempts). */
@@ -112,6 +115,42 @@ interface ActionRow {
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 
+/**
+ * Honest daily rollup from the task history: for each recent day, the titles of
+ * tasks that shipped, plus a note when nothing shipped that day. Derived from the
+ * real `agent_tasks` rows — no separate table needed — so the Summary tab reflects
+ * actual work instead of a dead "nothing yet".
+ */
+export function buildSummaries(rows: TaskRow[], now = Date.now()): DailySummary[] {
+  const byDay = new Map<string, { shipped: string[]; worked: number }>();
+  for (const r of rows) {
+    const day = new Date(r.created_at).toISOString().slice(0, 10);
+    const e = byDay.get(day) ?? { shipped: [], worked: 0 };
+    e.worked += 1;
+    if (r.status === "shipped" && !e.shipped.includes(r.title)) e.shipped.push(r.title);
+    byDay.set(day, e);
+  }
+  const todayKey = new Date(now).toISOString().slice(0, 10);
+  const yesterdayKey = new Date(now - 86_400_000).toISOString().slice(0, 10);
+  const label = (day: string) =>
+    day === todayKey ? "Today" : day === yesterdayKey ? "Yesterday" : day;
+  return Array.from(byDay.keys())
+    .sort()
+    .reverse()
+    .slice(0, 5)
+    .map((day) => {
+      const e = byDay.get(day)!;
+      return {
+        id: `sum-${day}`,
+        day: label(day),
+        shipped: e.shipped.slice(0, 8),
+        note: e.shipped.length
+          ? ""
+          : `Worked on ${e.worked} task${e.worked > 1 ? "s" : ""} — nothing shipped yet.`,
+      };
+    });
+}
+
 export async function getAgentState(p: Project): Promise<AgentState> {
   // No simulated seeds: until the runtime writes real agent_* rows, each panel
   // is honestly empty. The UI renders "nothing yet" empty states.
@@ -119,6 +158,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     tasks: [],
     inbox: [],
     social: [],
+    summaries: [],
     directives: [],
     screenedDirectives: 0,
     actions: [],
@@ -167,8 +207,10 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     // an unfinished task across several ticks, inserting a row each time). Rows
     // arrive newest-first, so keeping the first occurrence per title shows the
     // latest state once — no duplicated "building" cards in the UI.
+    const taskRows = (t.data as TaskRow[] | null) ?? [];
+    const summaries = buildSummaries(taskRows);
     const seenTitles = new Set<string>();
-    const tasks: AgentTask[] = ((t.data as TaskRow[] | null) ?? [])
+    const tasks: AgentTask[] = taskRows
       .filter((r) => {
         const key = r.title.trim().toLowerCase();
         if (seenTitles.has(key)) return false;
@@ -252,6 +294,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
       tasks,
       inbox,
       social,
+      summaries,
       directives,
       screenedDirectives,
       actions,

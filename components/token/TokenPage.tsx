@@ -144,6 +144,7 @@ export function TokenPage({
             tasks={agentState?.tasks}
             inbox={agentState?.inbox}
             social={agentState?.social}
+            summaries={agentState?.summaries}
           />
           {/* Project Wallet — the agent's on-chain positions (buyback/burn/airdrop) */}
           <ProjectWallet project={p} actions={agentState?.actions} agentSol={agentSol} />

@@ -38,11 +38,13 @@ describe("buildSystemPrompt", () => {
     expect(s).toContain("Pivot to a mobile-first relaunch");
     expect(s).toContain("No treasury withdrawals");
   });
-  it("asks for two distinct self-authored posts (X one-liner + Telegram dev-log)", () => {
+  it("asks for selective self-authored posts (rare X, more-frequent Telegram dev-log)", () => {
     const s = buildSystemPrompt(project);
     expect(s).toContain("posts.x");
     expect(s).toContain("posts.telegram");
-    expect(s).toContain("DISTINCT");
+    // X must be framed as optional/rare, not a per-tick filler.
+    expect(s).toContain("SELECTIVE");
+    expect(s).toMatch(/OPTIONAL and RARE/);
   });
 });
 
