@@ -430,31 +430,37 @@ export async function decideNextAction(
   return decision;
 }
 
-/** Default throttle for "still building" updates on a long-running task. */
+/** Default throttle for "still building" updates between any two posts. */
 export const MIN_BUILDING_GAP_MS = 30 * 60 * 1000;
 
 /**
  * Pure anti-spam gate for build-in-public posts — DECOUPLES posting from the
  * (every ~2 min) tick cadence so social doesn't get a reworded "still building X"
  * every tick. Publish when: it's the first post on the platform; OR it's a real
- * "shipped" milestone; OR a "building" update whose task is NEW this tick (or a
- * long-running one past `minGapMs`). Never the exact same body twice.
+ * "shipped" milestone; OR a "building" update and it has been at least `minGapMs`
+ * since the last post on this platform. Never the exact same body twice.
+ *
+ * NOTE: the gap is a hard PER-PLATFORM floor — it is intentionally NOT bypassed by
+ * "this is a new task". The agent re-words its task title almost every tick, so a
+ * new-task bypass made the throttle a no-op and the feed posted on nearly every
+ * 2-min cron tick. Building updates now respect the floor regardless; only a
+ * genuine `shipped` milestone (gated upstream by the independent verifier) skips
+ * it.
  */
 export function shouldPublishUpdate(opts: {
   last: { body: string; at: number } | null;
   text: string;
   shipped: boolean;
-  isNewTask: boolean;
   now?: number;
   minGapMs?: number;
 }): boolean {
-  const { last, text, shipped, isNewTask } = opts;
+  const { last, text, shipped } = opts;
   if (!last) return true;
   if (text === last.body) return false;
   if (shipped) return true;
   const now = opts.now ?? Date.now();
   const minGapMs = opts.minGapMs ?? MIN_BUILDING_GAP_MS;
-  return isNewTask || now - last.at >= minGapMs;
+  return now - last.at >= minGapMs;
 }
 
 /** Persist a decision: a public build update + the advanced task. */
@@ -496,10 +502,6 @@ export async function applyDecision(
     .neq("status", "shipped")
     .limit(1)
     .maybeSingle();
-  // Did this tick START a new task (insert) or CONTINUE one (update)? The agent
-  // ticks every ~2 min but must not re-post a near-identical "still building X"
-  // every time — posting below is gated on this so a continuing task stays quiet.
-  const isNewTask = !existing?.id;
   if (existing?.id) {
     await supabaseAdmin
       .from("agent_tasks")
@@ -631,7 +633,6 @@ export async function applyDecision(
           last: await lastPost("telegram"),
           text,
           shipped: gated.status === "shipped",
-          isNewTask,
         })
       ) {
         const res = await sendTelegramMessage(chatId, text);
@@ -649,9 +650,13 @@ export async function applyDecision(
   }
 
   // X — posts AS the project's own account (@looplabsfun for LOOP).
+  // Kill switch: AGENT_X_PAUSED=1 hard-pauses X posting (keeps Telegram + all
+  // other agent work running). Set it in the env to stop tweets without touching
+  // the X credentials or redeploying the rest of the runtime.
+  const xPaused = process.env.AGENT_X_PAUSED === "1";
   try {
     const { isXConfigured, sendTweet } = await import("./x-send");
-    if (isXConfigured()) {
+    if (!xPaused && isXConfigured()) {
       const { buildProgressTweet, composeAgentTweet } = await import("./x-recap");
       const body =
         useAuthored && d.posts?.x
@@ -664,7 +669,6 @@ export async function applyDecision(
           last: await lastPost("x"),
           text: body,
           shipped: gated.status === "shipped",
-          isNewTask,
         })
       ) {
         const res = await sendTweet(body);
