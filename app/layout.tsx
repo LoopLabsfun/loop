@@ -3,6 +3,7 @@ import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
 import { PrivyAuthProvider } from "@/lib/privy";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -54,6 +55,7 @@ export default function RootLayout({
             <WalletProvider>{children}</WalletProvider>
           </PrivyAuthProvider>
         </NetworkProvider>
+        <Analytics />
       </body>
     </html>
   );
