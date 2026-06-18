@@ -3,6 +3,7 @@ import {
   buildLaunchTweet,
   buildSelfLaunchTweet,
   buildShipTweet,
+  buildProgressTweet,
   TWEET_MAX,
 } from "./x-recap";
 import type { Project } from "./types";
@@ -149,5 +150,30 @@ describe("buildShipTweet", () => {
   it("honors a custom url", () => {
     const t = buildShipTweet(base, { title: "Did a thing" }, { url: "https://loop.fun/x" });
     expect(t).toContain("https://loop.fun/x");
+  });
+});
+
+describe("buildProgressTweet", () => {
+  const cashtags = (s: string) => (s.match(/\$(?=[A-Za-z])/g) ?? []).length;
+
+  it("frames as 'building' (never claims shipped) and stays honest", () => {
+    const t = buildProgressTweet(base, {
+      title: "Wiring the CI smoke gate",
+      detail: "Type-check + smoke test on every push.",
+    });
+    expect(t).toContain("$DEMO building:");
+    expect(t).not.toContain("shipped");
+    expect(t).toContain("Wiring the CI smoke gate");
+    expect(t).toContain("www.looplabs.fun/token?p=demo");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("keeps exactly one cashtag and fits 280 even with overflowing text", () => {
+    const t = buildProgressTweet(base, {
+      title: "Buying back $DEMO ".repeat(40),
+      detail: "z".repeat(400),
+    });
+    expect(cashtags(t)).toBe(1);
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
   });
 });

@@ -108,6 +108,35 @@ export interface ShipTweetOptions {
 }
 
 /**
+ * Compose an honest BUILD-IN-PUBLIC progress tweet from the agent's real current
+ * decision — what it's working on right now, NOT a "shipped" claim (use
+ * buildShipTweet for that). Lets the agent post frequently without faking
+ * completion: the verb is "building", the timeline stays truthful. One cashtag
+ * (X rejects >1), never drops the watch link, no price/financial framing.
+ */
+export function buildProgressTweet(
+  p: Project,
+  work: { title: string; detail?: string },
+  opts: ShipTweetOptions = {}
+): string {
+  const cashtag = "$" + p.ticker.replace(/^\$+/, "");
+  const url = opts.url ?? agentSite(p);
+  const closer = "Built by its agent, funded by its market.";
+
+  const title = stripCashtags(oneLine(work.title ?? ""));
+  const detail = stripCashtags(oneLine(work.detail ?? ""));
+
+  const frame = (t: string, d: string) =>
+    d
+      ? `🛠️ ${cashtag} building: ${t}\n\n${d}\n\n${closer}\n${url}`
+      : `🛠️ ${cashtag} building: ${t}\n\n${closer}\n${url}`;
+
+  const t = cut(title, Math.max(0, TWEET_MAX - frame("", "").length));
+  const detailRoom = TWEET_MAX - frame(t, "").length - 2;
+  return detail && detailRoom > 12 ? frame(t, cut(detail, detailRoom)) : frame(t, "");
+}
+
+/**
  * Compose a "just shipped" tweet from a project's REAL agent task — the X
  * counterpart of the Telegram build update (buildUpdateMessage). The runtime
  * posts it ONLY when work actually ships (the verifier-gated signal), so the
