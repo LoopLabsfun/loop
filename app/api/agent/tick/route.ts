@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { runAgentTick, agentRuntimeConfigured } from "@/lib/agent-runtime";
-import { isXConfigured, verifyXCredentials } from "@/lib/x-send";
+import { isXConfigured } from "@/lib/x-send";
 import { isTelegramConfigured } from "@/lib/telegram-send";
 import { agentWalletConfigured } from "@/lib/agent-wallet";
 
@@ -26,27 +26,13 @@ export async function POST(req: Request) {
   }
 
   let key: string | undefined;
-  let diagTweet = false;
   try {
-    const body = await req.json();
-    key = body?.key;
-    diagTweet = body?.diagTweet === true;
+    key = (await req.json())?.key;
   } catch {
     /* no/invalid body */
   }
   if (!key) {
     return NextResponse.json({ error: "missing project key" }, { status: 400 });
-  }
-
-  // One-off diagnostic: post a UNIQUE (timestamped) tweet and return the raw
-  // result, so we can see the exact X failure (e.g. 403 duplicate vs 403 write
-  // permission) without spamming. Unique text dodges duplicate-content rejection.
-  if (diagTweet) {
-    const { sendTweet } = await import("@/lib/x-send");
-    const r = await sendTweet(
-      `LOOP build heartbeat · ${new Date().toISOString()} — agent online.`
-    );
-    return NextResponse.json({ diagTweet: r });
   }
 
   const project = await getProject(key);
@@ -66,8 +52,6 @@ export async function POST(req: Request) {
       x: isXConfigured(),
       telegram: isTelegramConfigured(),
       agentWallet: agentWalletConfigured(),
-      // HTTP status of an X credential check (200 = valid creds). Diagnostic.
-      xAuthStatus: await verifyXCredentials(),
     };
     return NextResponse.json(
       { key: project.key, decision, integrations },
