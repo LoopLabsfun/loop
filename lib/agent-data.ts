@@ -85,6 +85,7 @@ interface TaskRow {
   category: string;
   status: string;
   created_at: string;
+  last_outcome?: string | null;
 }
 interface EmailRow {
   id: number;
@@ -228,6 +229,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
           ? (r.status as TaskStatus)
           : "todo",
         at: rel(r.created_at),
+        lastOutcome: r.last_outcome ?? undefined,
       }));
 
     const inbox: InboxMessage[] = ((e.data as EmailRow[] | null) ?? []).map(

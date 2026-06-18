@@ -26,6 +26,13 @@ export interface AgentTask {
   status: TaskStatus;
   /** human label, e.g. "tonight", "2h ago" */
   at: string;
+  /**
+   * Verifier outcome of the most recent tick on this task (episodic memory) —
+   * e.g. "last attempt FAILED tsc — error TS2345…" or "held: no check ran".
+   * Fed back into the agent's next prompt so it adapts instead of re-planning
+   * the same thing. Undefined until a tick records one.
+   */
+  lastOutcome?: string;
 }
 
 export type Channel = "email" | "twitter" | "reddit";
