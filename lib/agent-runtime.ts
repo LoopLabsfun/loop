@@ -619,8 +619,12 @@ export async function applyDecision(
   const useAuthored = gated.status === d.task.status;
 
   // The most recent post per platform (body + time), to gate the next one.
+  // NOTE: the platform value MUST match the agent_posts.platform CHECK
+  // constraint ('twitter','reddit','telegram','farcaster') — X is stored as
+  // "twitter". Using "x" here both reads nothing AND fails the insert below,
+  // which silently defeats the X throttle (every tweet-worthy tick re-posts).
   const lastPost = async (
-    platform: "telegram" | "x"
+    platform: "telegram" | "twitter"
   ): Promise<{ body: string; at: number } | null> => {
     const { data } = await supabaseAdmin!
       .from("agent_posts")
@@ -694,7 +698,7 @@ export async function applyDecision(
       if (
         body &&
         shouldPublishUpdate({
-          last: await lastPost("x"),
+          last: await lastPost("twitter"),
           text: body,
           shipped: gated.status === "shipped",
           minGapMs: X_MIN_GAP_MS,
@@ -705,7 +709,7 @@ export async function applyDecision(
         if (res.ok) {
           await supabaseAdmin.from("agent_posts").insert({
             project_key: p.key,
-            platform: "x",
+            platform: "twitter",
             body,
           });
         }
