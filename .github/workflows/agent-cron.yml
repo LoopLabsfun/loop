@@ -2,23 +2,26 @@
 #
 # Vercel Hobby permits a single DAILY cron (see vercel.json), which is too slow
 # for a live token with holders watching the build log. GitHub Actions `schedule`
-# is free and runs at ~30-min granularity, hitting the same protected endpoint —
-# the daily Vercel cron stays as a backstop. The endpoint is bounded per run
-# (MAX_PER_RUN) and budget-gated (empty treasury ⇒ the project sleeps), so a
-# tighter cadence can't run away on cost.
+# is free and runs at 5-min granularity (GitHub's floor), hitting the same
+# protected endpoint — the daily Vercel cron stays as a backstop. The endpoint is
+# bounded per run (MAX_PER_RUN) and budget-gated (empty treasury ⇒ the project
+# sleeps), so a tighter cadence can't run away on cost.
 #
 # Founder setup (one-time, in repo Settings → Secrets and variables → Actions):
 #   - secret  CRON_SECRET   — same value as the Vercel CRON_SECRET env var
-#   - variable AGENT_CRON_URL — e.g. https://loop-fun-nine.vercel.app/api/agent/cron
+#   - variable AGENT_CRON_URL — e.g. https://www.looplabs.fun/api/agent/cron
 # If either is unset the job no-ops cleanly instead of failing the workflow.
 
 name: agent-cron
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs under load — this is a
-    # best-effort cadence, not a hard guarantee; the Vercel daily cron backstops it.
-    - cron: "*/30 * * * *"
+    # Every 5 minutes (GitHub's minimum). GitHub heavily throttles/delays
+    # scheduled runs under load — this is a best-effort cadence that in practice
+    # lands every ~5–15 min, NOT a hard guarantee; the Vercel daily cron backstops
+    # it. For a firm sub-5-min heartbeat, drive /api/agent/cron from Vercel Pro
+    # cron or an external scheduler instead.
+    - cron: "*/5 * * * *"
   workflow_dispatch: {} # allow a manual tick from the Actions tab
 
 concurrency:
