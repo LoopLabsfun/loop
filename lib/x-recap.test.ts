@@ -4,6 +4,7 @@ import {
   buildSelfLaunchTweet,
   buildShipTweet,
   buildProgressTweet,
+  composeAgentTweet,
   TWEET_MAX,
 } from "./x-recap";
 import type { Project } from "./types";
@@ -174,6 +175,41 @@ describe("buildProgressTweet", () => {
       detail: "z".repeat(400),
     });
     expect(cashtags(t)).toBe(1);
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+});
+
+describe("composeAgentTweet", () => {
+  const cashtags = (s: string) => (s.match(/\$(?=[A-Za-z])/g) ?? []).length;
+
+  it("posts the agent's own one-liner with a single cashtag + link footer", () => {
+    const t = composeAgentTweet(base, "Taught the CI gate to type-check every push — fewer broken builds, faster merges.");
+    expect(t).toContain("Taught the CI gate to type-check every push");
+    expect(cashtags(t)).toBe(1);
+    expect(t).toContain("$DEMO");
+    expect(t).toContain("www.looplabs.fun/token?p=demo");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("neutralizes extra cashtags the agent wrote and stays at one", () => {
+    const t = composeAgentTweet(base, "Shipped a $DEMO buyback after the $SOL dip — treasury working for holders.");
+    expect(cashtags(t)).toBe(1);
+    expect(t).toContain("$DEMO");
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("collapses whitespace and fits 280 even when the agent overflows", () => {
+    const t = composeAgentTweet(base, "word ".repeat(120));
+    expect(t).toContain("$DEMO");
+    expect(t).toContain("www.looplabs.fun/token?p=demo");
+    expect(t).not.toMatch(/  +/);
+    expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
+  });
+
+  it("does not duplicate the link when the agent already wrote it", () => {
+    const url = "www.looplabs.fun/token?p=demo";
+    const t = composeAgentTweet(base, `New dashboard is live → ${url}`);
+    expect(t.split(url).length - 1).toBe(1);
     expect(t.length).toBeLessThanOrEqual(TWEET_MAX);
   });
 });

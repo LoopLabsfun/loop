@@ -5,6 +5,7 @@ import {
   escapeMarkdownV2,
   buildUpdateMessage,
   buildLaunchMessage,
+  composeAgentMessage,
 } from "./telegram";
 import type { AgentTask } from "./agent";
 import type { Project, Commit } from "./types";
@@ -130,5 +131,30 @@ describe("buildLaunchMessage", () => {
     expect(msg).toContain("🚀 *$X is live on pump\\.fun*");
     expect(msg).toContain("CA: `M`");
     expect(msg.split("\n").length).toBe(5); // header, "", CA, "", trade
+  });
+});
+
+describe("composeAgentMessage", () => {
+  it("posts the agent's own dev-log, MarkdownV2-escaped, with a watch link", () => {
+    const msg = composeAgentMessage(
+      base,
+      "Spent the tick on the CI gate.\nType-check now runs on every push (no more broken main!).\nNext: wire a smoke test."
+    );
+    // Multi-line dev-log preserved, reserved chars escaped, footer appended.
+    expect(msg).toContain("Spent the tick on the CI gate");
+    expect(msg).toContain("broken main\\!");
+    expect(msg).toContain("Watch it build → www\\.looplabs\\.fun");
+  });
+
+  it("escapes injection-prone markdown so the Bot API can't reject it", () => {
+    const msg = composeAgentMessage(base, "shipped feature_x (v2.0) [done]");
+    expect(msg).toContain("feature\\_x \\(v2\\.0\\) \\[done\\]");
+  });
+
+  it("caps an overlong dev-log with an ellipsis", () => {
+    const msg = composeAgentMessage(base, "x".repeat(2000));
+    expect(msg).toContain("…");
+    // Body (first line) is bounded; the footer follows on its own line.
+    expect(msg.split("\n")[0].length).toBeLessThanOrEqual(901);
   });
 });
