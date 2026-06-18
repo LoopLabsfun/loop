@@ -217,6 +217,77 @@ create policy "anon can submit a safe directive (prototype)" on public.directive
     and verified = false
   );
 
+-- ── directive votes (holder voting on proposals) ─────────────────────────────
+-- One vote per (proposal, voter wallet); re-voting flips the side. The cached
+-- directives.for_votes/against_votes are kept in sync ONLY by cast_directive_vote
+-- (the single, SECURITY DEFINER write path), so anon never touches the counts or
+-- this table directly. `weight` is 1 today; token-weighting is a future upgrade.
+create table if not exists public.directive_votes (
+  directive_id uuid not null references public.directives(id) on delete cascade,
+  voter text not null check (char_length(voter) between 1 and 64),
+  dir text not null check (dir in ('for', 'against')),
+  weight integer not null default 1 check (weight > 0),
+  created_at timestamptz not null default now(),
+  primary key (directive_id, voter)
+);
+alter table public.directive_votes enable row level security;
+create policy "directive_votes are publicly readable" on public.directive_votes for select using (true);
+-- No anon/authenticated insert/update/delete policy: writes go only through the
+-- definer RPC below, which dedupes by wallet and recomputes the cached tallies.
+
+create or replace function public.cast_directive_vote(
+  p_directive_id uuid,
+  p_voter text,
+  p_dir text
+) returns table (for_votes integer, against_votes integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_for integer;
+  v_against integer;
+begin
+  if p_dir not in ('for', 'against') then
+    raise exception 'dir must be for or against';
+  end if;
+  if p_voter is null or char_length(p_voter) = 0 or char_length(p_voter) > 64 then
+    raise exception 'invalid voter';
+  end if;
+  -- Only proposals are votable (directives are not put to a vote).
+  if not exists (
+    select 1 from public.directives d
+    where d.id = p_directive_id and d.kind = 'proposal'
+  ) then
+    raise exception 'not a votable proposal';
+  end if;
+
+  insert into public.directive_votes (directive_id, voter, dir)
+  values (p_directive_id, p_voter, p_dir)
+  on conflict (directive_id, voter)
+    do update set dir = excluded.dir, created_at = now();
+
+  select
+    coalesce(sum(weight) filter (where dir = 'for'), 0),
+    coalesce(sum(weight) filter (where dir = 'against'), 0)
+  into v_for, v_against
+  from public.directive_votes
+  where directive_id = p_directive_id;
+
+  update public.directives
+    set for_votes = v_for, against_votes = v_against
+    where id = p_directive_id;
+
+  return query select v_for, v_against;
+end;
+$$;
+
+-- service_role-only: the vote is cast from the "use server" castVoteAction (the
+-- trusted call site), never directly from the browser. Keeping a SECURITY DEFINER
+-- function off the anon/authenticated API keeps the security advisors clean.
+revoke all on function public.cast_directive_vote(uuid, text, text) from public;
+grant execute on function public.cast_directive_vote(uuid, text, text) to service_role;
+
 -- ── learnings (A5) ───────────────────────────────────────────────────────────
 create table if not exists public.learnings (
   id uuid primary key default gen_random_uuid(),
