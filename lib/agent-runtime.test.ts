@@ -206,7 +206,7 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
 
   it("posts the first update on a platform", () => {
     expect(
-      shouldPublishUpdate({ last: null, text: "hi", shipped: false, isNewTask: false, now: t0 })
+      shouldPublishUpdate({ last: null, text: "hi", shipped: false, now: t0 })
     ).toBe(true);
   });
 
@@ -216,7 +216,6 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
         last: last("same", 5_000),
         text: "same",
         shipped: true, // even a milestone won't re-post an identical body
-        isNewTask: true,
         now: t0,
       })
     ).toBe(false);
@@ -228,43 +227,30 @@ describe("shouldPublishUpdate (anti-spam posting gate)", () => {
         last: last("building X", 1_000), // just posted 1s ago
         text: "✅ shipped X",
         shipped: true,
-        isNewTask: false,
         now: t0,
       })
     ).toBe(true);
   });
 
-  it("posts a building update for a NEW task immediately", () => {
+  it("throttles a building update within the window — even for a brand-new task", () => {
+    // The agent re-words its task title almost every tick, so "new task" must NOT
+    // bypass the floor (that was the bug that posted on nearly every 2-min tick).
     expect(
       shouldPublishUpdate({
-        last: last("building A", 1_000),
-        text: "building B",
+        last: last("building A", 2 * 60 * 1000), // posted 2 min ago
+        text: "building B", // different (new/reworded) task
         shipped: false,
-        isNewTask: true,
-        now: t0,
-      })
-    ).toBe(true);
-  });
-
-  it("suppresses a reworded 'still building' on the SAME task within the window", () => {
-    expect(
-      shouldPublishUpdate({
-        last: last("building A v1", 2 * 60 * 1000), // 2 min ago
-        text: "building A v2", // same task, reworded
-        shipped: false,
-        isNewTask: false,
         now: t0,
       })
     ).toBe(false);
   });
 
-  it("lets a long-running task post again once past the throttle window", () => {
+  it("lets a building update post again once past the throttle window", () => {
     expect(
       shouldPublishUpdate({
         last: last("building A v1", MIN_BUILDING_GAP_MS + 1),
         text: "building A v2",
         shipped: false,
-        isNewTask: false,
         now: t0,
       })
     ).toBe(true);
