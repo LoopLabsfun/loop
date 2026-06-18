@@ -577,8 +577,10 @@ export async function decideNextAction(
     }),
     messages: [{ role: "user", content: userContent }],
   };
+  // Bind to client.messages: calling the method detached loses `this`, which the
+  // SDK dereferences as `this._client` (→ "Cannot read properties of undefined").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const create = client.messages.create as any;
+  const create = (client.messages.create as any).bind(client.messages);
   const res = (await create(params)) as {
     content: Array<{ type: string; text?: string }>;
   };
