@@ -58,7 +58,7 @@ export function HowAndTreasury({ engine }: { engine: LoopEngineState }) {
             {engine.live ? "Live Treasury" : "Treasury"}
           </h2>
           <span className="font-mono text-[12px] text-faint">
-            {engine.live ? "on-chain" : "devnet · no wallet yet"}
+            {engine.live ? "on-chain" : "pre-launch"}
           </span>
         </div>
         <div className="grid grid-cols-3 gap-[10px]">
