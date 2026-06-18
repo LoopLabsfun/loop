@@ -5,7 +5,8 @@
 // Run:
 //   set -a; source .env.local; set +a
 //   NODE_OPTIONS="--conditions=react-server" npx tsx scripts/x-test.ts
-import { isXConfigured, oauth1Header, sendTweet, type OAuth1Creds } from "../lib/x-send";
+import { isXConfigured, sendTweet } from "../lib/x-send";
+import { oauth1Header, type OAuth1Creds } from "../lib/oauth1";
 
 (async () => {
   if (!isXConfigured()) {

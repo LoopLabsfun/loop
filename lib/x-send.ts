@@ -1,7 +1,7 @@
 import "server-only";
 
-import crypto from "node:crypto";
 import type { Project } from "./types";
+import { oauth1Header, type OAuth1Creds } from "./oauth1";
 import { buildLaunchTweet, type LaunchTweetOptions } from "./x-recap";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,68 +25,6 @@ export function isXConfigured(): boolean {
       process.env.X_API_SECRET &&
       process.env.X_ACCESS_TOKEN &&
       process.env.X_ACCESS_SECRET
-  );
-}
-
-export interface OAuth1Creds {
-  consumerKey: string;
-  consumerSecret: string;
-  token: string;
-  tokenSecret: string;
-}
-
-/** RFC 3986 percent-encoding (stricter than encodeURIComponent). */
-function pct(s: string): string {
-  return encodeURIComponent(s).replace(
-    /[!*'()]/g,
-    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase()
-  );
-}
-
-/**
- * Build the OAuth 1.0a `Authorization` header for a signed request. `extra`
- * holds any form/query params to sign (none for a JSON-body POST /2/tweets, but
- * needed for the auth endpoints + testability). `nonce`/`ts` are injectable so
- * the signature is deterministic in tests. An empty `token` omits oauth_token
- * (used for the request_token step). Pure — no I/O.
- */
-export function oauth1Header(
-  method: string,
-  url: string,
-  creds: OAuth1Creds,
-  extra: Record<string, string> = {},
-  nonce = crypto.randomBytes(16).toString("hex"),
-  ts = Math.floor(Date.now() / 1000).toString()
-): string {
-  const oauth: Record<string, string> = {
-    oauth_consumer_key: creds.consumerKey,
-    oauth_nonce: nonce,
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: ts,
-    oauth_version: "1.0",
-  };
-  if (creds.token) oauth.oauth_token = creds.token;
-
-  // Signature base string: METHOD&url&sortedParams (oauth + extra), all encoded.
-  const all: Record<string, string> = { ...oauth, ...extra };
-  const paramString = Object.keys(all)
-    .sort()
-    .map((k) => `${pct(k)}=${pct(all[k])}`)
-    .join("&");
-  const base = [method.toUpperCase(), pct(url), pct(paramString)].join("&");
-  const signingKey = `${pct(creds.consumerSecret)}&${pct(creds.tokenSecret)}`;
-  const signature = crypto
-    .createHmac("sha1", signingKey)
-    .update(base)
-    .digest("base64");
-
-  const header: Record<string, string> = { ...oauth, oauth_signature: signature };
-  return (
-    "OAuth " +
-    Object.keys(header)
-      .sort()
-      .map((k) => `${pct(k)}="${pct(header[k])}"`)
-      .join(", ")
   );
 }
 
