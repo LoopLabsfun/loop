@@ -282,8 +282,11 @@ begin
 end;
 $$;
 
+-- service_role-only: the vote is cast from the "use server" castVoteAction (the
+-- trusted call site), never directly from the browser. Keeping a SECURITY DEFINER
+-- function off the anon/authenticated API keeps the security advisors clean.
 revoke all on function public.cast_directive_vote(uuid, text, text) from public;
-grant execute on function public.cast_directive_vote(uuid, text, text) to anon, authenticated;
+grant execute on function public.cast_directive_vote(uuid, text, text) to service_role;
 
 -- ── learnings (A5) ───────────────────────────────────────────────────────────
 create table if not exists public.learnings (

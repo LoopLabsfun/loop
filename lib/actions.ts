@@ -258,9 +258,12 @@ export async function castVoteAction(input: VoteInput): Promise<VoteResult> {
   if (input.dir !== "for" && input.dir !== "against") {
     return { ok: false, error: "Invalid vote." };
   }
-  if (!supabase) return { ok: false, error: "Voting is unavailable right now." };
+  // The RPC is service_role-only (SECURITY DEFINER, not exposed to anon — keeps
+  // the security advisors clean). This "use server" action is the trusted call
+  // site, so it routes through the admin client.
+  if (!supabaseAdmin) return { ok: false, error: "Voting is unavailable right now." };
 
-  const { data, error } = await supabase.rpc("cast_directive_vote", {
+  const { data, error } = await supabaseAdmin.rpc("cast_directive_vote", {
     p_directive_id: input.directiveId,
     p_voter: input.voter.slice(0, 64),
     p_dir: input.dir,
