@@ -69,6 +69,26 @@ export function buildProgressMessage(
 }
 
 /**
+ * Wrap a Telegram dev-log the AGENT wrote itself (its own voice — a multi-line
+ * changelog note, richer than the X one-liner) for safe MarkdownV2 posting,
+ * instead of templating the same `{title, detail}`. The agent's words ARE the
+ * post; we only escape every reserved char, cap the body, and append the
+ * watch-link footer. Use this when the agent supplied a self-authored
+ * `posts.telegram`; otherwise fall back to buildProgressMessage / buildUpdateMessage.
+ */
+export function composeAgentMessage(
+  p: Project,
+  text: string
+): string {
+  const E = escapeMarkdownV2;
+  const raw = (text ?? "").trim();
+  const body = raw.length > 900 ? raw.slice(0, 899).trimEnd() + "…" : raw;
+  const out: string[] = [E(body)];
+  out.push("", `Watch it build → ${E(agentSite(p))}`);
+  return out.join("\n");
+}
+
+/**
  * Format a read-only build update for a project's Telegram bot, as MarkdownV2.
  * Returns the message text only (the caller pairs it with `parse_mode:
  * "MarkdownV2"`). Empty sections are omitted; an empty update still yields a

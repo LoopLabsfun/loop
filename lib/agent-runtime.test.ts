@@ -36,6 +36,12 @@ describe("buildSystemPrompt", () => {
     expect(s).toContain("Pivot to a mobile-first relaunch");
     expect(s).toContain("No treasury withdrawals");
   });
+  it("asks for two distinct self-authored posts (X one-liner + Telegram dev-log)", () => {
+    const s = buildSystemPrompt(project);
+    expect(s).toContain("posts.x");
+    expect(s).toContain("posts.telegram");
+    expect(s).toContain("DISTINCT");
+  });
 });
 
 describe("buildUserPrompt", () => {
@@ -149,6 +155,28 @@ describe("coerceDecision", () => {
         ?.amountSol
     ).toBe(0);
     expect(coerceDecision(good)?.action).toBeUndefined();
+  });
+
+  it("parses optional self-authored posts (x + telegram, clamped)", () => {
+    const withPosts = coerceDecision({
+      ...good,
+      posts: { x: "  one-liner for X  ", telegram: "dev-log\nfor telegram" },
+    });
+    expect(withPosts?.posts).toEqual({
+      x: "one-liner for X",
+      telegram: "dev-log\nfor telegram",
+    });
+    // each side is independently optional
+    expect(coerceDecision({ ...good, posts: { x: "just x" } })?.posts).toEqual({
+      x: "just x",
+    });
+    // empty/blank posts object ⇒ dropped entirely
+    expect(coerceDecision({ ...good, posts: { x: "  ", telegram: "" } })?.posts).toBeUndefined();
+    expect(coerceDecision(good)?.posts).toBeUndefined();
+    // clamps
+    const long = coerceDecision({ ...good, posts: { x: "a".repeat(400), telegram: "b".repeat(1500) } });
+    expect(long!.posts!.x!.length).toBeLessThanOrEqual(280);
+    expect(long!.posts!.telegram!.length).toBeLessThanOrEqual(900);
   });
 });
 

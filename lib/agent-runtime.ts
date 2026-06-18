@@ -61,6 +61,14 @@ export interface AgentDecision {
    * executed by the agent alone.
    */
   action?: { kind: AgentActionKind; amountSol: number; rationale: string };
+  /**
+   * Optional self-authored build-in-public posts in the agent's OWN voice — two
+   * DISTINCT messages about the same work: a punchy one-liner for X and a longer
+   * dev-log for Telegram. When present (and honest — see applyDecision) these are
+   * posted instead of the templated `{title, detail}`; absent, the runtime falls
+   * back to the deterministic builders so the feed never goes quiet.
+   */
+  posts?: { x?: string; telegram?: string };
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -99,6 +107,14 @@ export const DECISION_SCHEMA = {
       },
       required: ["kind", "amountSol", "rationale"],
     },
+    posts: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        x: { type: "string" },
+        telegram: { type: "string" },
+      },
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -132,6 +148,13 @@ export function buildSystemPrompt(
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
     `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
     `Never invent fake metrics or claim work you didn't do.`,
+    // Build-in-public voice: the agent WRITES its own posts rather than the runtime
+    // templating one body for both channels — a distinct one-liner for X and a
+    // richer dev-log for Telegram, each in the agent's own voice.
+    `Build in public in your OWN voice: return "posts", two DISTINCT messages about THIS tick's work — never the same text twice, never just a restatement of the task title.`,
+    `posts.x — one punchy line for X/Twitter (≤200 chars) that would hook someone who's never heard of the project. Plain prose, no hashtag spam; do NOT add the token cashtag or a link — the platform appends them.`,
+    `posts.telegram — a short dev-log for your Telegram followers (2–5 short lines): what you're doing now, why it matters, what's next — a builder's changelog note, with more detail and personality than the X line.`,
+    `Honesty in posts is absolute: write "building"/"working on" for in-progress work; only say "shipped/done/live" when it genuinely shipped this cycle. No price or financial talk, and never reference past security incidents.`,
   ].join(" ");
 }
 
@@ -233,8 +256,10 @@ export function buildUserPrompt(
     "Decide the single next action to take now — a GENUINELY NEW increment that",
     "builds on the commits + shipped tasks above, never a repeat of them and never",
     "an 'initialize/scaffold the repo' step (the repo already exists). Return a",
-    "one-line build update (`summary`) and the task you are advancing (`task`),",
-    "with an honest status.",
+    "one-line internal build update (`summary`), the task you are advancing (`task`)",
+    "with an honest status, and `posts` — two distinct public messages in your own",
+    "voice about that work (a punchy `posts.x` one-liner and a longer `posts.telegram`",
+    "dev-log), never the same text reused across both.",
   ].join("\n");
 }
 
@@ -282,6 +307,19 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     };
   }
 
+  const pp = (r.posts ?? null) as Record<string, unknown> | null;
+  let posts: AgentDecision["posts"];
+  if (pp) {
+    const x = typeof pp.x === "string" ? pp.x.trim() : "";
+    const telegram = typeof pp.telegram === "string" ? pp.telegram.trim() : "";
+    if (x || telegram) {
+      posts = {
+        ...(x ? { x: x.slice(0, 280) } : {}),
+        ...(telegram ? { telegram: telegram.slice(0, 900) } : {}),
+      };
+    }
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -292,6 +330,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     },
     ...(command ? { command } : {}),
     ...(action ? { action } : {}),
+    ...(posts ? { posts } : {}),
   };
 }
 
@@ -515,6 +554,13 @@ export async function applyDecision(
   // agent_posts only after it actually succeeds. Failures never abort the cycle.
   const work = { title: d.task.title, detail: d.task.detail };
 
+  // Trust the agent's self-authored prose only when it's honest. The verifier
+  // gate ONLY ever downgrades shipped→building (never the reverse), so a status
+  // mismatch means the agent over-claimed "shipped" this tick — in that case we
+  // discard its (possibly "done!") prose and fall back to the templated, honest
+  // "building" update. Otherwise the agent's own voice is posted verbatim.
+  const useAuthored = gated.status === d.task.status;
+
   // The most recent body per platform, to skip duplicate consecutive posts.
   const lastBody = async (platform: "telegram" | "x"): Promise<string | null> => {
     const { data } = await supabaseAdmin!
@@ -533,15 +579,18 @@ export async function applyDecision(
   if (chatId && process.env.TELEGRAM_BOT_TOKEN) {
     try {
       const { sendTelegramMessage } = await import("./telegram-send");
-      const { buildUpdateMessage, buildProgressMessage } = await import("./telegram");
+      const { buildUpdateMessage, buildProgressMessage, composeAgentMessage } =
+        await import("./telegram");
       const text =
-        gated.status === "shipped"
-          ? buildUpdateMessage(p, {
-              shipped: [
-                { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
-              ],
-            })
-          : buildProgressMessage(p, work);
+        useAuthored && d.posts?.telegram
+          ? composeAgentMessage(p, d.posts.telegram)
+          : gated.status === "shipped"
+            ? buildUpdateMessage(p, {
+                shipped: [
+                  { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
+                ],
+              })
+            : buildProgressMessage(p, work);
       if (text !== (await lastBody("telegram"))) {
         const res = await sendTelegramMessage(chatId, text);
         if (res.ok) {
@@ -561,11 +610,13 @@ export async function applyDecision(
   try {
     const { isXConfigured, sendTweet } = await import("./x-send");
     if (isXConfigured()) {
-      const { buildProgressTweet } = await import("./x-recap");
+      const { buildProgressTweet, composeAgentTweet } = await import("./x-recap");
       const body =
-        gated.status === "shipped"
-          ? buildShipTweet(p, work)
-          : buildProgressTweet(p, work);
+        useAuthored && d.posts?.x
+          ? composeAgentTweet(p, d.posts.x)
+          : gated.status === "shipped"
+            ? buildShipTweet(p, work)
+            : buildProgressTweet(p, work);
       if (body !== (await lastBody("x"))) {
         const res = await sendTweet(body);
         // Record only when the tweet actually posted (honest feed; mirrors TG).
