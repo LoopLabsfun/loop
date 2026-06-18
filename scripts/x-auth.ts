@@ -15,7 +15,7 @@
 // These do not expire — you run this once per account.
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { oauth1Header, type OAuth1Creds } from "../lib/x-send";
+import { oauth1Header, type OAuth1Creds } from "../lib/oauth1";
 
 const REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
 const AUTHORIZE_URL = "https://api.twitter.com/oauth/authorize";
