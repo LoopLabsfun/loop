@@ -90,3 +90,49 @@ export async function getAgentWallet(
   const w = json.data?.[0];
   return w ? { id: w.id, address: w.address } : null;
 }
+
+// CAIP-2 chain ids for Solana (truncated genesis hash, per the CAIP-2 registry).
+// Privy routes the signed tx to its RPC for this chain.
+const SOLANA_CAIP2: Record<"mainnet" | "devnet", string> = {
+  mainnet: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+  devnet: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+};
+
+/**
+ * Sign AND submit a Solana transaction with the agent's Privy-custodied wallet.
+ * The raw key never leaves Privy — we hand it the (unsigned) base64 tx and Privy
+ * signs it under its policies and broadcasts to the chain, returning the tx
+ * signature. This is the custodial counterpart to signing with a local keypair,
+ * so a funded agent wallet can actually act without Loop ever holding its key.
+ */
+export async function privySignAndSendSolanaTx(
+  walletId: string,
+  base64Tx: string,
+  cluster: "mainnet" | "devnet"
+): Promise<string> {
+  if (!agentWalletConfigured()) {
+    throw new Error("Privy custody not configured (PRIVY_APP_ID/PRIVY_APP_SECRET).");
+  }
+  const res = await fetch(`${PRIVY_BASE}/wallets/${walletId}/rpc`, {
+    method: "POST",
+    headers: authHeaders(),
+    cache: "no-store",
+    body: JSON.stringify({
+      method: "signAndSendTransaction",
+      caip2: SOLANA_CAIP2[cluster],
+      params: { transaction: base64Tx, encoding: "base64" },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Privy sign+send failed: ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as {
+    data?: { hash?: string; signature?: string };
+    hash?: string;
+    signature?: string;
+  };
+  const sig =
+    json.data?.hash ?? json.data?.signature ?? json.hash ?? json.signature;
+  if (!sig) throw new Error("Privy sign+send returned no transaction signature.");
+  return sig;
+}
