@@ -69,6 +69,13 @@ export interface AgentDecision {
    * back to the deterministic builders so the feed never goes quiet.
    */
   posts?: { x?: string; telegram?: string };
+  /**
+   * Real code the agent ships this tick: full-file writes the runtime applies in
+   * a sandbox, gates (install → typecheck → tests), and pushes to main ONLY if
+   * green (repo-hands). Validated against caps + a denylist first. Acted on only
+   * when AGENT_REPO_HANDS=1; ignored otherwise.
+   */
+  edits?: { path: string; contents: string }[];
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -115,6 +122,18 @@ export const DECISION_SCHEMA = {
         telegram: { type: "string" },
       },
     },
+    edits: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string" },
+          contents: { type: "string" },
+        },
+        required: ["path", "contents"],
+      },
+    },
   },
   required: ["summary", "task"],
 } as const;
@@ -130,7 +149,8 @@ export function agentRuntimeConfigured(): boolean {
  */
 export function buildSystemPrompt(
   p: Project,
-  mandate: AgentMandate = defaultMandate(p)
+  mandate: AgentMandate = defaultMandate(p),
+  opts: { canCommit?: boolean } = {}
 ): string {
   return [
     `You are the autonomous AI engineer that builds and grows the project "${p.name}" (${p.ticker}).`,
@@ -148,6 +168,11 @@ export function buildSystemPrompt(
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
     `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
     `To mark a task "shipped" you MUST include a "command" that runs an OBJECTIVE check proving the increment works (a test / build / typecheck); an independent sandbox runs it and only a passing run lets the task ship. With no verifying command, the task stays "building" no matter what you claim.`,
+    ...(opts.canCommit
+      ? [
+          `REPO-HANDS — you can ship REAL code: return "edits", an array of {path, contents} FULL-FILE writes (not diffs), at most 12 files. The runtime clones the repo, applies them, runs install → typecheck → tests, and pushes to main ONLY if every check passes — so "edits" IS the verifying check (no separate "command" needed for a code change), and the task ships exactly when your edits land green. You may NEVER edit your own safety rails, secrets, CI, or infra (.env, .github/, supabase/, lib/agent-runtime, lib/verifier, lib/budget, lib/agent-actions, lib/repo-hands, etc. are blocked — they reject the whole commit). Make the SMALLEST real change that compiles and passes the existing tests; omit "edits" on a tick with no code change.`,
+        ]
+      : []),
     `ANTI-FIXATION — do not loop on one task: if you have already been "building" the SAME task across multiple cycles and you cannot verifiably ship it now, STOP re-submitting the same "still working on X". Either (a) ship it this cycle with a passing command, or (b) move on to a genuinely DIFFERENT next increment. Re-posting near-identical progress on the same task over and over is a failure.`,
     `Never invent fake metrics or claim work you didn't do.`,
     // Build-in-public voice: the agent WRITES its own posts. X is the broad,
@@ -326,6 +351,23 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     }
   }
 
+  // Edits are only loosely shape-checked here; the hard caps + denylist live in
+  // validateEdits (repo-hands), run at execution time.
+  const re = Array.isArray(r.edits) ? r.edits : null;
+  let edits: AgentDecision["edits"];
+  if (re && re.length) {
+    const parsed = re
+      .filter(
+        (e): e is { path: string; contents: string } =>
+          !!e &&
+          typeof e === "object" &&
+          typeof (e as { path?: unknown }).path === "string" &&
+          typeof (e as { contents?: unknown }).contents === "string"
+      )
+      .map((e) => ({ path: e.path, contents: e.contents }));
+    if (parsed.length) edits = parsed;
+  }
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -337,6 +379,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     ...(command ? { command } : {}),
     ...(action ? { action } : {}),
     ...(posts ? { posts } : {}),
+    ...(edits ? { edits } : {}),
   };
 }
 
@@ -408,7 +451,9 @@ export async function decideNextAction(
     max_tokens: 2000,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
-    system: buildSystemPrompt(p, mandate),
+    system: buildSystemPrompt(p, mandate, {
+      canCommit: process.env.AGENT_REPO_HANDS === "1",
+    }),
     messages: [
       {
         role: "user",
@@ -724,14 +769,76 @@ export async function runAgentTick(
 ): Promise<AgentDecision> {
   const decision = await decideNextAction(p, state);
 
+  // The objective verifier signal for this cycle (maker ≠ checker, A1): a sandbox
+  // run distinct from the agent. Set by repo-hands (a real push) or a plain
+  // `command` below; without it, a self-declared "shipped" is held at "building".
+  let verify: { checkerId: string; checks: VerifyCheck[] } | undefined;
+
+  // Repo-hands (env-gated OFF via AGENT_REPO_HANDS): if the agent emitted real
+  // file edits, apply them in a sandbox — clone → gate (install → typecheck →
+  // tests) → push to main ONLY if every check is green (buildHandsScript). A
+  // landed commit (PUSHED=yes) is the ship signal, so a task ships exactly when
+  // its code lands green; a green gate that didn't push is NOT a ship. The
+  // GITHUB_TOKEN is injected as sandbox env, never embedded in the script. This
+  // path takes precedence over a plain `command` and never aborts the tick.
+  if (
+    process.env.AGENT_REPO_HANDS === "1" &&
+    decision.edits?.length &&
+    process.env.E2B_API_KEY &&
+    process.env.GITHUB_TOKEN
+  ) {
+    try {
+      const { validateEdits, buildHandsScript, parseHandsOutput } = await import(
+        "./repo-hands"
+      );
+      const v = validateEdits(decision.edits);
+      if (!v.ok) {
+        decision.summary = `${decision.summary} — edits rejected: ${v.reason}`.slice(0, 280);
+      } else {
+        const repoSlug = p.repo
+          .replace(/^https?:\/\//, "")
+          .replace(/^github\.com\//, "")
+          .replace(/\.git$/, "")
+          .replace(/\/$/, "");
+        const prefix = decision.task.category === "fix" ? "fix" : "feat";
+        const script = buildHandsScript({
+          repoSlug,
+          branch: "main",
+          edits: v.edits,
+          commitMessage: `${prefix}(agent): ${decision.task.title}\n\nCo-Authored-By: Loop Agent <agent@looplabs.fun>`,
+          authorName: "loop-agent",
+          authorEmail: "agent@looplabs.fun",
+        });
+        const { runInSandbox } = await import("./sandbox");
+        const result = await runInSandbox(script, "bash", {
+          GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+        });
+        const hands = parseHandsOutput(result.stdout);
+        decision.summary = `${decision.summary} — ${hands.note}`.slice(0, 280);
+        verify = {
+          checkerId: "verifier:e2b-repo-hands",
+          checks: [
+            {
+              kind: "test",
+              name: "e2b:repo-hands",
+              passed: hands.pushed, // only a real, landed commit ships the task
+              detail: hands.note,
+            },
+          ],
+        };
+      }
+    } catch {
+      /* repo-hands unavailable/failed — no commit, no ship signal */
+    }
+  }
+
   // Hands: if the agent asked to run code and the sandbox is configured, execute
   // it and fold the result into the build update. A sandbox failure must not
   // abort the tick (the plan still stands). The run also yields the objective
   // verifier signal: the sandbox is a runner distinct from the maker agent, so
   // its pass/fail is what lets honest work actually ship (A1) — the agent can't
-  // fake a green run.
-  let verify: { checkerId: string; checks: VerifyCheck[] } | undefined;
-  if (decision.command && process.env.E2B_API_KEY) {
+  // fake a green run. Skipped when repo-hands already produced a ship signal.
+  if (!verify && decision.command && process.env.E2B_API_KEY) {
     try {
       const { runInSandbox, summarizeSandbox } = await import("./sandbox");
       const result = await runInSandbox(
