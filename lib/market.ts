@@ -62,6 +62,13 @@ async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
         .filter((p) => p.quoteToken?.address === SOL_MINT)
         .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] ??
       pairs[0];
+    // Graduation = a pair exists on a real AMM (not the pump.fun bonding curve).
+    // Pre-graduation DexScreener only lists the "pumpfun" pair; once it migrates,
+    // a "pumpswap"/"raydium"/etc. pair appears. This is the truthful on-curve vs
+    // graduated signal — no stored snapshot, no $-threshold guessing.
+    const graduated = pairs.some(
+      (p) => p.dexId && p.dexId.toLowerCase() !== "pumpfun"
+    );
     return {
       priceUsd: num(pair.priceUsd),
       priceNative: num(pair.priceNative),
@@ -70,6 +77,7 @@ async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
       volume24hUsd: num(pair.volume?.h24),
       priceChange24h: num(pair.priceChange?.h24),
       pairAddress: pair.pairAddress,
+      graduated,
     };
   } catch {
     return null;
@@ -179,6 +187,7 @@ function shortAddr(a: string): string {
 
 interface DexPair {
   pairAddress: string;
+  dexId?: string;
   priceUsd?: string;
   priceNative?: string;
   marketCap?: number;

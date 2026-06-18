@@ -163,18 +163,30 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         .limit(20),
     ]);
 
-    const tasks: AgentTask[] = ((t.data as TaskRow[] | null) ?? []).map((r) => ({
-      id: `t${r.id}`,
-      title: r.title,
-      detail: r.detail,
-      category: CATEGORIES.includes(r.category as TaskCategory)
-        ? (r.category as TaskCategory)
-        : "feature",
-      status: STATUSES.includes(r.status as TaskStatus)
-        ? (r.status as TaskStatus)
-        : "todo",
-      at: rel(r.created_at),
-    }));
+    // Collapse repeated rows for the same logical task (the agent may re-advance
+    // an unfinished task across several ticks, inserting a row each time). Rows
+    // arrive newest-first, so keeping the first occurrence per title shows the
+    // latest state once — no duplicated "building" cards in the UI.
+    const seenTitles = new Set<string>();
+    const tasks: AgentTask[] = ((t.data as TaskRow[] | null) ?? [])
+      .filter((r) => {
+        const key = r.title.trim().toLowerCase();
+        if (seenTitles.has(key)) return false;
+        seenTitles.add(key);
+        return true;
+      })
+      .map((r) => ({
+        id: `t${r.id}`,
+        title: r.title,
+        detail: r.detail,
+        category: CATEGORIES.includes(r.category as TaskCategory)
+          ? (r.category as TaskCategory)
+          : "feature",
+        status: STATUSES.includes(r.status as TaskStatus)
+          ? (r.status as TaskStatus)
+          : "todo",
+        at: rel(r.created_at),
+      }));
 
     const inbox: InboxMessage[] = ((e.data as EmailRow[] | null) ?? []).map(
       (r) => ({

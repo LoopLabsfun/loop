@@ -378,18 +378,40 @@ export async function applyDecision(
   });
   const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
 
-  await supabaseAdmin.from("agent_posts").insert({
-    project_key: p.key,
-    platform: "telegram",
-    body: summary,
-  });
-  await supabaseAdmin.from("agent_tasks").insert({
-    project_key: p.key,
-    title: d.task.title,
-    detail: d.task.detail,
-    category: d.task.category,
-    status: gated.status,
-  });
+  // NOTE: a social post (agent_posts) is recorded ONLY when it was genuinely
+  // published to a real channel (Telegram/X) further down — never on every tick.
+  // The decision summary itself lives in the task/summary, not the Social feed,
+  // so the public Social tab can't show a "post" that was never actually sent.
+
+  // Upsert-by-title: if the agent is still advancing an unfinished task it picked
+  // before, UPDATE that row instead of inserting a duplicate — so the task list
+  // shows one card per logical task with its latest state, not one per tick.
+  const { data: existing } = await supabaseAdmin
+    .from("agent_tasks")
+    .select("id")
+    .eq("project_key", p.key)
+    .eq("title", d.task.title)
+    .neq("status", "shipped")
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) {
+    await supabaseAdmin
+      .from("agent_tasks")
+      .update({
+        detail: d.task.detail,
+        category: d.task.category,
+        status: gated.status,
+      })
+      .eq("id", existing.id);
+  } else {
+    await supabaseAdmin.from("agent_tasks").insert({
+      project_key: p.key,
+      title: d.task.title,
+      detail: d.task.detail,
+      category: d.task.category,
+      status: gated.status,
+    });
+  }
 
   // On-chain action (buyback/burn/airdrop/bounty/swap) the agent proposed this
   // tick. Route it through the guardrails: irreversible/over-budget escalate to
@@ -461,6 +483,12 @@ export async function applyDecision(
         at: "now",
       };
       await sendBuildUpdate(chatId, p, { shipped: [shipped] });
+      // Sent for real → now (and only now) record it in the Social feed.
+      await supabaseAdmin.from("agent_posts").insert({
+        project_key: p.key,
+        platform: "telegram",
+        body: summary,
+      });
     } catch {
       /* telegram unavailable/failed — never abort the cycle */
     }
@@ -475,9 +503,14 @@ export async function applyDecision(
     try {
       const { isXConfigured, sendTweet } = await import("./x-send");
       if (isXConfigured()) {
-        await sendTweet(
-          buildShipTweet(p, { title: d.task.title, detail: d.task.detail })
-        );
+        const body = buildShipTweet(p, { title: d.task.title, detail: d.task.detail });
+        await sendTweet(body);
+        // Tweeted for real → record it in the Social feed (honest, post-send).
+        await supabaseAdmin.from("agent_posts").insert({
+          project_key: p.key,
+          platform: "x",
+          body: body.slice(0, 280),
+        });
       }
     } catch {
       /* X unavailable/failed — never abort the cycle */

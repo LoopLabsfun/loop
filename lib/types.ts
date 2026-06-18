@@ -125,6 +125,12 @@ export interface MarketStats {
   priceChange24h: number;
   /** The pump.fun pair/pool address — used to fetch candles + trades. */
   pairAddress: string;
+  /**
+   * True once the token has migrated off the pump.fun bonding curve (a pair
+   * exists on an AMM like PumpSwap/Raydium). Derived live from DexScreener, not
+   * a stored snapshot — so the UI reflects the real graduation state.
+   */
+  graduated: boolean;
 }
 
 /** A token holder's share of supply (0..1), for governance + wind-down math. */
