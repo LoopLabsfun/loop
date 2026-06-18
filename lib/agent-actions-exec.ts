@@ -19,14 +19,16 @@ import {
 // and signs nothing — safe to run pre-launch. Heavy libs imported dynamically.
 
 import { parseSecretKeyJson } from "./vanity";
+import { agentWalletConfigured, privySignAndSendSolanaTx } from "./agent-wallet";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const JUP_QUOTE = "https://quote-api.jup.ag/v6/quote";
 const JUP_SWAP = "https://quote-api.jup.ag/v6/swap";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
+/** A signer is available when either a raw hot-key OR Privy custody is set. */
 export function agentExecConfigured(): boolean {
-  return Boolean(process.env.AGENT_WALLET_SECRET);
+  return Boolean(process.env.AGENT_WALLET_SECRET) || agentWalletConfigured();
 }
 
 /** Pure: the Jupiter v6 quote query string for a SOL→token buyback. */
@@ -71,7 +73,14 @@ async function fetchQuote(outputMint: string, amountSol: number, slippageBps?: n
  */
 export async function executeBuyback(
   action: AgentAction,
-  ctx: { outputMint: string; cluster: LaunchCluster; policy?: ActionPolicy; spentTodaySol?: number }
+  ctx: {
+    outputMint: string;
+    cluster: LaunchCluster;
+    policy?: ActionPolicy;
+    spentTodaySol?: number;
+    /** The Privy-custodied agent wallet (id + address); enables real signing. */
+    agentWallet?: { id: string; address: string } | null;
+  }
 ): Promise<BuybackResult> {
   if (action.kind !== "buyback") {
     return { executed: false, escalated: false, simulated: false, reason: "Not a buyback." };
@@ -81,21 +90,30 @@ export async function executeBuyback(
     return { executed: false, escalated: verdict.escalate, simulated: false, reason: verdict.reason };
   }
 
+  // Pick a signer: a raw hot-key takes precedence (explicit override / tests),
+  // otherwise Privy custody when a wallet is available for this project. With
+  // neither, we still return a real Jupiter quote but sign nothing (simulated).
+  const canRaw = Boolean(process.env.AGENT_WALLET_SECRET);
+  const canPrivy =
+    !canRaw && agentWalletConfigured() && Boolean(ctx.agentWallet?.id && ctx.agentWallet?.address);
+
   // Allowed. Fetch a live route either way (so the plan is real).
   let expectedOut: string | undefined;
   try {
     const quote = await fetchQuote(ctx.outputMint, action.amountSol ?? 0);
     expectedOut = quote.outAmount;
-    if (!agentExecConfigured()) {
+    if (!canRaw && !canPrivy) {
       return {
         executed: false,
         escalated: false,
         simulated: true,
-        reason: `Simulated buyback from ${walletFor("buyback")} wallet (fund AGENT_WALLET_SECRET to execute).`,
+        reason: `Simulated buyback from ${walletFor("buyback")} wallet (fund the agent wallet to execute).`,
         expectedOut,
       };
     }
-    const txSig = await signAndSubmitSwap(quote, ctx.cluster);
+    const txSig = canPrivy
+      ? await signAndSubmitSwapPrivy(quote, ctx.cluster, ctx.agentWallet!)
+      : await signAndSubmitSwap(quote, ctx.cluster);
     return { executed: true, escalated: false, simulated: false, reason: "Buyback executed.", expectedOut, txSig };
   } catch (e) {
     return {
@@ -108,6 +126,39 @@ export async function executeBuyback(
   }
 }
 
+/** Build a Jupiter swap for `userPublicKey` → base64 VersionedTransaction. */
+async function buildSwapTx(quote: unknown, userPublicKey: string): Promise<string> {
+  const res = await fetch(JUP_SWAP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey,
+      wrapAndUnwrapSol: true,
+    }),
+  });
+  if (!res.ok) throw new Error(`Jupiter swap build failed (${res.status}).`);
+  const { swapTransaction } = (await res.json()) as { swapTransaction: string };
+  return swapTransaction;
+}
+
+/**
+ * Privy custody path: build the swap for the agent's Privy wallet, then let Privy
+ * sign AND broadcast it. The raw key never touches our process.
+ */
+async function signAndSubmitSwapPrivy(
+  quote: unknown,
+  cluster: LaunchCluster,
+  wallet: { id: string; address: string }
+): Promise<string> {
+  const swapTx = await buildSwapTx(quote, wallet.address);
+  return privySignAndSendSolanaTx(
+    wallet.id,
+    swapTx,
+    cluster === "devnet" ? "devnet" : "mainnet"
+  );
+}
+
 async function signAndSubmitSwap(
   quote: unknown,
   cluster: LaunchCluster
@@ -117,17 +168,7 @@ async function signAndSubmitSwap(
   const { Keypair, Connection, VersionedTransaction } = await import("@solana/web3.js");
   const signer = Keypair.fromSecretKey(Uint8Array.from(secret));
 
-  const res = await fetch(JUP_SWAP, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      quoteResponse: quote,
-      userPublicKey: signer.publicKey.toBase58(),
-      wrapAndUnwrapSol: true,
-    }),
-  });
-  if (!res.ok) throw new Error(`Jupiter swap build failed (${res.status}).`);
-  const { swapTransaction } = (await res.json()) as { swapTransaction: string };
+  const swapTransaction = await buildSwapTx(quote, signer.publicKey.toBase58());
   const tx = VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
   tx.sign([signer]);
 

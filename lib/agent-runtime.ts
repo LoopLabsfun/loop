@@ -439,9 +439,14 @@ export async function applyDecision(
     if (routed.disposition === "execute" && act.kind === "buyback" && p.mint) {
       try {
         const { executeBuyback } = await import("./agent-actions-exec");
+        // Resolve the project's Privy-custodied agent wallet so the buyback can
+        // be signed for real (no raw key in-process). Null ⇒ stays simulated.
+        const { getAgentWallet } = await import("./agent-wallet");
+        const agentWallet = await getAgentWallet(p.key).catch(() => null);
         const r = await executeBuyback(act, {
           outputMint: p.mint,
           cluster: p.network === "mainnet" ? "mainnet" : "devnet",
+          agentWallet,
         });
         disposition = r.executed
           ? "executed"
