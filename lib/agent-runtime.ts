@@ -148,12 +148,12 @@ export function buildSystemPrompt(
     `Prefer shipping small, real increments (features, fixes, outreach, ops) over vague plans.`,
     `You may optionally include a "command" (python/javascript/bash) to run real code in a sandbox this tick — use it to actually do work, not to fake it.`,
     `Never invent fake metrics or claim work you didn't do.`,
-    // Build-in-public voice: the agent WRITES its own posts rather than the runtime
-    // templating one body for both channels — a distinct one-liner for X and a
-    // richer dev-log for Telegram, each in the agent's own voice.
-    `Build in public in your OWN voice: return "posts", two DISTINCT messages about THIS tick's work — never the same text twice, never just a restatement of the task title.`,
-    `posts.x — one punchy line for X/Twitter (≤200 chars) that would hook someone who's never heard of the project. Plain prose, no hashtag spam; do NOT add the token cashtag or a link — the platform appends them.`,
-    `posts.telegram — a short dev-log for your Telegram followers (2–5 short lines): what you're doing now, why it matters, what's next — a builder's changelog note, with more detail and personality than the X line.`,
+    // Build-in-public voice: the agent WRITES its own posts. X is the broad,
+    // ban-sensitive audience channel — be SELECTIVE there; Telegram is the
+    // opt-in build log and can run more often.
+    `Build in public in your OWN voice via "posts" — but be SELECTIVE, especially on X. Quality and signal over cadence.`,
+    `posts.x — OPTIONAL and RARE. Include it ONLY when THIS tick produced something genuinely worth a public tweet to people who don't follow the build: a shipped/working feature, a real milestone, or a marketing-worthy update. For routine, internal, or incremental ticks, OMIT posts.x entirely — MOST ticks should have NO posts.x. When you do include it: one punchy line (≤200 chars), plain prose, no hashtag spam; do NOT add the token cashtag or a link (the platform appends them). A handful of great tweets beats a stream of forgettable ones.`,
+    `posts.telegram — your build-log channel; can be more frequent than X. A short dev-log for followers (2–5 short lines): what you're doing now, why it matters, what's next.`,
     `Honesty in posts is absolute: write "building"/"working on" for in-progress work; only say "shipped/done/live" when it genuinely shipped this cycle. No price or financial talk, and never reference past security incidents.`,
   ].join(" ");
 }
@@ -257,9 +257,10 @@ export function buildUserPrompt(
     "builds on the commits + shipped tasks above, never a repeat of them and never",
     "an 'initialize/scaffold the repo' step (the repo already exists). Return a",
     "one-line internal build update (`summary`), the task you are advancing (`task`)",
-    "with an honest status, and `posts` — two distinct public messages in your own",
-    "voice about that work (a punchy `posts.x` one-liner and a longer `posts.telegram`",
-    "dev-log), never the same text reused across both.",
+    "with an honest status, and OPTIONALLY `posts`: include `posts.telegram` (a short",
+    "dev-log) when there's something to share, and include `posts.x` ONLY for a",
+    "genuinely tweet-worthy milestone — omit it on routine ticks (most ticks have no",
+    "posts.x). Never reuse the same text across both channels.",
   ].join("\n");
 }
 
@@ -434,6 +435,14 @@ export async function decideNextAction(
 export const MIN_BUILDING_GAP_MS = 30 * 60 * 1000;
 
 /**
+ * X is the broad, ban-sensitive audience channel, so it's throttled far harder
+ * than the opt-in Telegram build log: at most one tweet per this window. Combined
+ * with the selectivity gate (only the agent's own tweet-worthy post or a real
+ * shipped milestone ever reaches X), this keeps the timeline sparse and high-signal.
+ */
+export const X_MIN_GAP_MS = 3 * 60 * 60 * 1000; // 3h
+
+/**
  * Pure anti-spam gate for build-in-public posts — DECOUPLES posting from the
  * (every ~2 min) tick cadence so social doesn't get a reworded "still building X"
  * every tick. Publish when: it's the first post on the platform; OR it's a real
@@ -527,7 +536,16 @@ export async function applyDecision(
   // Jupiter exec — which stays simulated until the agent wallet is funded, and
   // needs a mint (so it's a no-op pre-launch). Either way we record an honest
   // public note; a failure here never aborts the cycle.
-  if (d.action) {
+  // Skip recording a SOL-committing no-op (buyback/bounty/swap of 0 SOL): the
+  // agent occasionally proposes a 0-SOL action, which the gate rightly denies —
+  // but persisting a "denied 0 SOL" stub just clutters the project Wallet feed.
+  // Token-committing kinds (burn/airdrop) carry no amountSol, so they're unaffected.
+  const isSolKind =
+    d.action?.kind === "buyback" ||
+    d.action?.kind === "bounty" ||
+    d.action?.kind === "swap";
+  const isNoop = isSolKind && (!d.action!.amountSol || d.action!.amountSol <= 0);
+  if (d.action && !isNoop) {
     const act: AgentAction = {
       kind: d.action.kind,
       amountSol: d.action.amountSol,
@@ -657,18 +675,24 @@ export async function applyDecision(
   try {
     const { isXConfigured, sendTweet } = await import("./x-send");
     if (!xPaused && isXConfigured()) {
-      const { buildProgressTweet, composeAgentTweet } = await import("./x-recap");
+      const { composeAgentTweet } = await import("./x-recap");
+      // SELECTIVE on X: post ONLY when the agent itself judged this tick
+      // tweet-worthy (it authored posts.x) OR it's a genuine, verifier-gated
+      // shipped milestone. No templated "still building" filler — if there's
+      // nothing tweet-worthy, X stays quiet this tick. Throttled to X_MIN_GAP_MS.
       const body =
         useAuthored && d.posts?.x
           ? composeAgentTweet(p, d.posts.x)
           : gated.status === "shipped"
             ? buildShipTweet(p, work)
-            : buildProgressTweet(p, work);
+            : null;
       if (
+        body &&
         shouldPublishUpdate({
           last: await lastPost("x"),
           text: body,
           shipped: gated.status === "shipped",
+          minGapMs: X_MIN_GAP_MS,
         })
       ) {
         const res = await sendTweet(body);
