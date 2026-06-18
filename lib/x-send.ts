@@ -74,6 +74,32 @@ export async function sendTweet(text: string): Promise<TweetResult> {
   }
 }
 
+/**
+ * Verify the configured X credentials by calling GET /2/users/me. Returns the
+ * HTTP status (200 = valid) or null when unconfigured — diagnostics only, never
+ * exposes the keys. Distinguishes "wrong/truncated creds" (401/403) from a
+ * post-specific failure (200 here but POST fails).
+ */
+export async function verifyXCredentials(): Promise<number | null> {
+  if (!isXConfigured()) return null;
+  const creds: OAuth1Creds = {
+    consumerKey: process.env.X_API_KEY!,
+    consumerSecret: process.env.X_API_SECRET!,
+    token: process.env.X_ACCESS_TOKEN!,
+    tokenSecret: process.env.X_ACCESS_SECRET!,
+  };
+  const url = "https://api.twitter.com/2/users/me";
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: oauth1Header("GET", url, creds) },
+      cache: "no-store",
+    });
+    return res.status;
+  } catch {
+    return null;
+  }
+}
+
 /** Compose + post a project's launch recap. No-op when X isn't configured. */
 export async function sendLaunchRecap(
   p: Project,
