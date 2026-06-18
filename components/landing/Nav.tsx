@@ -12,7 +12,6 @@ import type { Network } from "@/lib/types";
 const SECTIONS: { id: string; label: string }[] = [
   { id: "loop-projects", label: "Projects" },
   { id: "loop-how", label: "How it Works" },
-  { id: "loop-token", label: "Tokenomics" },
   { id: "loop-cases", label: "Use Cases" },
 ];
 

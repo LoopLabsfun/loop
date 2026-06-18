@@ -30,6 +30,29 @@ import type { Project } from "./types";
 // Mirrors the live/fallback pattern in lib/queries.ts. Server-only.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Has the project's agent ticked within `withinMs` (default 15 min)? The runtime
+ * upserts an agent_tasks row every tick, so a recent `updated_at` is the honest
+ * "Runtime active" signal — distinct from the simulated engine flag (always
+ * false). Best-effort: false on no backend / no rows / error.
+ */
+export async function isAgentActive(
+  key: string,
+  withinMs = 15 * 60 * 1000
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from("agent_tasks")
+    .select("updated_at")
+    .eq("project_key", key)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const at = (data as { updated_at?: string } | null)?.updated_at;
+  if (error || !at) return false;
+  return Date.now() - new Date(at).getTime() < withinMs;
+}
+
 export type WalletActionKind =
   | "buyback"
   | "burn"

@@ -6,7 +6,6 @@ import { Hero } from "./Hero";
 import { LiveProjects } from "./LiveProjects";
 import { HowAndTreasury } from "./HowAndTreasury";
 import { LoopMarquee } from "./LoopMarquee";
-import { Tokenomics } from "./Tokenomics";
 import { UseCases } from "./UseCases";
 import { CTA } from "./CTA";
 import { Footer } from "./Footer";
@@ -17,9 +16,12 @@ import type { Project } from "@/lib/types";
 export function Landing({
   projects,
   solUsd,
+  agentActive = false,
 }: {
   projects: Project[];
   solUsd: number;
+  /** True when the LOOP agent ticked recently — drives the live Runtime status. */
+  agentActive?: boolean;
 }) {
   const loop = projects.find((p) => p.key === "loop");
   const engine = useLoopEngine(loop?.treasurySol);
@@ -53,13 +55,13 @@ export function Landing({
           treasuryToken={loop?.treasuryTokenUi ?? 0}
           treasuryTokenUsd={(loop?.treasuryTokenUi ?? 0) * (loop?.price ?? 0)}
           treasuryHistory={loop?.treasuryHistory ?? undefined}
+          agentActive={agentActive}
           onLaunch={openModal}
           onScroll={scrollTo}
         />
         <LiveProjects projects={projects} loopBalance={engine.balance} />
         <HowAndTreasury engine={engine} />
         <LoopMarquee />
-        <Tokenomics />
         <UseCases />
         <CTA onLaunch={openModal} />
       </main>
