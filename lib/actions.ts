@@ -5,8 +5,8 @@ import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
-import { verifyLaunchProof } from "./signature";
-import { sanitizeDirectiveText } from "./directives";
+import { verifyLaunchProof, verifyDirectiveProof, type LaunchProof } from "./signature";
+import { sanitizeDirectiveText, isSuspiciousDirective } from "./directives";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "./launch-config";
 
 /**
@@ -142,6 +142,12 @@ export interface DirectiveInput {
   kind?: "directive" | "proposal";
   /** Connected wallet, recorded as the author when available. */
   authorWallet?: string | null;
+  /**
+   * Optional ed25519 proof the author owns `authorWallet` (signs the canonical
+   * directive message). Recorded as a VERIFIED author only if it checks out;
+   * without it the wallet is an unproven claim and is dropped (never attributed).
+   */
+  proof?: LaunchProof;
 }
 
 export interface DirectiveResult {
@@ -152,14 +158,17 @@ export interface DirectiveResult {
 }
 
 /**
- * Persist a steering directive submitted from the Agent Console. The insert is
- * locked to the hardened RLS invariants — every submission lands as an `open`,
- * `holder`-role row with zeroed tallies, so a direct REST call can't spoof an
- * already-applied founder directive. Promoting a directive to applied/adopted is
- * a runtime/service_role action.
+ * Persist a steering directive submitted from the Agent Console. Every submission
+ * lands as an `open`, `holder`-role row with zeroed tallies (RLS-enforced), so it
+ * is NEVER authoritative — the agent treats console directives as untrusted
+ * suggestions, and promoting one to applied/adopted is a runtime/service_role
+ * action. Two hardening rules close the spoofing/injection vector:
  *
- * Still TODO (mirrors the launch flow): verify the author wallet (signature) and
- * weight holder directives by their token balance before accepting.
+ *  1. An author wallet is recorded (and shown) ONLY with a valid signature proof;
+ *     a verified row is written via service_role (anon RLS forbids it). Without
+ *     proof the wallet claim is dropped — no more forged "— <founder wallet>".
+ *  2. Text matching a prompt-injection pattern is rejected outright, so the feed
+ *     can't be stuffed with fake system/sign-off framing.
  */
 export async function submitDirectiveAction(
   input: DirectiveInput
@@ -169,18 +178,52 @@ export async function submitDirectiveAction(
   if (!input.projectKey) {
     return { ok: false, persisted: false, error: "Missing project." };
   }
+  if (isSuspiciousDirective(text)) {
+    return {
+      ok: false,
+      persisted: false,
+      error:
+        "Directive rejected. Steer in plain language — directives can't contain wallet addresses or override instructions. On-chain actions require a signed founder action, not the console.",
+    };
+  }
   // No backend configured (cold/prototype) — succeed without persistence so the
   // Console's optimistic item still stands.
   if (!supabase) return { ok: true, persisted: false };
 
-  const wallet = input.authorWallet?.slice(0, 64) || null;
+  const kind = input.kind === "proposal" ? "proposal" : "directive";
+
+  // Verified author: the signature proves ownership of authorWallet. Only then do
+  // we attribute the directive — and only via service_role, since anon RLS forbids
+  // a non-null author or verified=true (that's what blocks REST spoofing).
+  const verified =
+    !!input.proof &&
+    !!input.authorWallet &&
+    input.proof.pubkey === input.authorWallet &&
+    verifyDirectiveProof(input.proof, input.projectKey, text);
+
+  if (verified && supabaseAdmin) {
+    const { error } = await supabaseAdmin.from("directives").insert({
+      project_key: input.projectKey,
+      kind,
+      text,
+      role: "holder",
+      status: "open",
+      author_wallet: input.proof!.pubkey.slice(0, 64),
+      verified: true,
+    });
+    if (error) return { ok: false, persisted: false, error: error.message };
+    return { ok: true, persisted: true };
+  }
+
+  // Unverified: anonymous, unattributed, unverified. RLS requires exactly this.
   const { error } = await supabase.from("directives").insert({
     project_key: input.projectKey,
-    kind: input.kind === "proposal" ? "proposal" : "directive",
+    kind,
     text,
     role: "holder",
     status: "open",
-    author_wallet: wallet,
+    author_wallet: null,
+    verified: false,
   });
   if (error) return { ok: false, persisted: false, error: error.message };
   return { ok: true, persisted: true };

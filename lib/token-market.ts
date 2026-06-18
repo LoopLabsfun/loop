@@ -49,14 +49,29 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
     project.agentWallet ? getSolBalance(project.agentWallet, net) : Promise.resolve(null),
   ]);
 
+  // Attach .sol names to the top holders (one batched, cached SNS lookup) so the
+  // holder list can show human names; unnamed wallets stay as short addresses.
+  const named = holders.length ? await withSnsNames(holders) : holders;
+
   return {
     project: applyLiveMarket(project, stats, holderCount, supply),
     stats,
     candles,
     trades,
-    holders,
+    holders: named,
     agentSol,
   };
+}
+
+/** Resolve and attach .sol names to a holder list (best-effort, never throws). */
+async function withSnsNames(holders: Holder[]): Promise<Holder[]> {
+  try {
+    const { resolveSnsNames } = await import("./sns");
+    const names = await resolveSnsNames(holders.map((h) => h.address));
+    return holders.map((h) => ({ ...h, name: names.get(h.address) ?? null }));
+  } catch {
+    return holders;
+  }
 }
 
 /**

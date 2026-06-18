@@ -122,7 +122,11 @@ export function TokenPage({
         {/* Left column */}
         <div className="flex flex-col gap-4">
           {/* Agent Console — steer the project's AI */}
-          <AgentConsole project={p} directives={agentState?.directives} />
+          <AgentConsole
+            project={p}
+            directives={agentState?.directives}
+            screened={agentState?.screenedDirectives}
+          />
           {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
           <AgentOperator
             project={p}
@@ -1115,8 +1119,13 @@ function TopHolders({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted hover:text-accent-text transition-colors"
+                title={h.name ? h.address : undefined}
               >
-                {shortAddr(h.address)}
+                {h.name ? (
+                  <span className="text-ink">{h.name}</span>
+                ) : (
+                  shortAddr(h.address)
+                )}
               </a>
               <span className="tabular-nums">{(h.share * 100).toFixed(2)}%</span>
             </div>

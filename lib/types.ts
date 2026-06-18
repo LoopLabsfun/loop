@@ -131,6 +131,8 @@ export interface MarketStats {
 export interface Holder {
   address: string;
   share: number;
+  /** Primary Solana Name Service (.sol) name for `address`, if any (else null). */
+  name?: string | null;
 }
 
 /** A SOL payout to a holder (e.g. a wind-down distribution). */

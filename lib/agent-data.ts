@@ -51,8 +51,10 @@ export interface AgentState {
   tasks: AgentTask[];
   inbox: InboxMessage[];
   social: SocialPost[];
-  /** Persisted steering directives/proposals, newest first ([] until any). */
+  /** Persisted steering directives/proposals, newest first ([] until any). Quarantined (suspicious) ones are excluded. */
   directives: FeedItem[];
+  /** Count of directives auto-screened out (injection / fund-grab attempts). */
+  screenedDirectives: number;
   /** Agent on-chain positions (buyback/burn/airdrop/bounty/swap), newest first. */
   actions: WalletAction[];
   /** True when at least one panel came from real rows this request. */
@@ -118,6 +120,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     inbox: [],
     social: [],
     directives: [],
+    screenedDirectives: 0,
     actions: [],
     live: false,
   };
@@ -148,7 +151,9 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         .select("*")
         .eq("project_key", p.key)
         .order("created_at", { ascending: false })
-        .limit(20),
+        // Over-fetch: most rows may be quarantined spam, so pull a wider window
+        // to still surface the genuine ones after screening (below).
+        .limit(60),
       supabase
         .from("agent_actions")
         .select("*")
@@ -193,9 +198,16 @@ export async function getAgentState(p: Project): Promise<AgentState> {
       })
     );
 
-    const directives: FeedItem[] = ((d.data as DirectiveRow[] | null) ?? []).map(
-      (r) => rowToFeedItem(r, rel(r.created_at))
-    );
+    // Screen out quarantined directives (prompt-injection / fund-grab attempts)
+    // at the source: neither the public feed nor the agent's prompt should carry
+    // them. `screenedDirectives` reports how many were caught in this window —
+    // a transparency signal, not a vector. Genuine suggestions are kept.
+    const allDirectives = (d.data as DirectiveRow[] | null) ?? [];
+    const keptDirectives = allDirectives
+      .map((r) => rowToFeedItem(r, rel(r.created_at)))
+      .filter((item) => !item.flagged);
+    const screenedDirectives = allDirectives.length - keptDirectives.length;
+    const directives: FeedItem[] = keptDirectives.slice(0, 20);
 
     const ACTION_KINDS: WalletActionKind[] = [
       "buyback",
@@ -229,6 +241,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
       inbox,
       social,
       directives,
+      screenedDirectives,
       actions,
       live:
         tasks.length > 0 ||

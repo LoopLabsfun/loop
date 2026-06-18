@@ -9,15 +9,19 @@ import {
   type FeedItem,
 } from "@/lib/console";
 import { submitDirectiveAction } from "@/lib/actions";
+import { isSuspiciousDirective } from "@/lib/directives";
 import type { Project } from "@/lib/types";
 
 export function AgentConsole({
   project: p,
   directives,
+  screened,
 }: {
   project: Project;
   /** Persisted directives/proposals from the backend (newest first). */
   directives?: FeedItem[];
+  /** Count of suspicious directives auto-screened out (transparency). */
+  screened?: number;
 }) {
   const wallet = useWallet();
   const sym = p.ticker.replace(/^\$/, "");
@@ -31,6 +35,7 @@ export function AgentConsole({
   // until a founder/holder steers or the runtime streams actions.
   const [feed, setFeed] = useState<FeedItem[]>(() => directives ?? []);
   const [draft, setDraft] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
   const idRef = useRef(1000);
   const newId = () => `c${idRef.current++}`;
 
@@ -77,6 +82,17 @@ export function AgentConsole({
     }
     const text = draft.trim();
     if (!text) return;
+    // Mirror the server's injection guard so the attempt never even lands in the
+    // local feed; give the submitter direct feedback instead.
+    if (isSuspiciousDirective(text)) {
+      setNotice(
+        "Rejected — steer in plain language. Directives can't contain wallet addresses or override instructions."
+      );
+      return;
+    }
+    // A console submission is never authoritative: it's queued as an UNVERIFIED
+    // suggestion (open), not an applied founder action. Real founder authority
+    // runs through a signed/service-role channel, not this text box.
     const item: FeedItem =
       role === "founder"
         ? {
@@ -84,8 +100,9 @@ export function AgentConsole({
             kind: "directive",
             at: "just now",
             text,
-            status: "applied",
-            by: "you (founder)",
+            status: "open",
+            by: "you",
+            verified: false,
           }
         : {
             id: newId(),
@@ -94,16 +111,18 @@ export function AgentConsole({
             text,
             status: "open",
             by: "you",
+            verified: false,
             forVotes: 1,
             againstVotes: 0,
             quorum: 100,
           };
     setFeed((f) => [item, ...f].slice(0, 14));
     setDraft("");
+    setNotice(null);
 
-    // Persist in the background; the optimistic item stays regardless. The
-    // server locks every submission to a safe open/holder row (RLS), so this is
-    // a fire-and-forget write — failures don't disrupt the conversation.
+    // Persist in the background; the optimistic item stays regardless. The server
+    // locks every submission to a safe open/holder row (RLS) and only records an
+    // author with a valid signature — so this is a fire-and-forget write.
     void submitDirectiveAction({
       projectKey: p.key,
       text,
@@ -202,6 +221,20 @@ export function AgentConsole({
         </div>
       )}
 
+      {/* Security transparency: how many hostile steering attempts were screened */}
+      {typeof screened === "number" && screened > 0 && (
+        <div className="px-5 pt-3 -mb-1">
+          <div className="flex items-center gap-2 text-[11.5px] text-muted font-mono rounded-[10px] border border-line-4 bg-surface-2 px-3 py-[7px]">
+            <span className="text-pos">🛡</span>
+            <span>
+              {screened} hostile steering attempt{screened === 1 ? "" : "s"}{" "}
+              auto-screened &amp; ignored. The agent has no tool to move treasury
+              funds and never acts on directive text.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Feed */}
       <div className="px-5 py-3 flex flex-col gap-[10px] max-h-[300px] overflow-y-auto scroll-thin">
         {feed.length === 0 ? (
@@ -249,11 +282,14 @@ export function AgentConsole({
             </button>
           </div>
         )}
+        {notice && (
+          <div className="text-[11px] text-neg mt-2">{notice}</div>
+        )}
         <div className="text-[11px] text-faint mt-2">
           {role === "founder"
-            ? "Founder directives apply directly to the agent."
+            ? "Directives are queued as suggestions. The agent never moves funds or changes its mandate from a text directive — that needs a signed action."
             : role === "holder"
-              ? `Proposals go to a $${sym}-weighted holder vote — quorum adopts.`
+              ? `Proposals go to a $${sym}-weighted holder vote — quorum adopts. They steer; they never move treasury funds.`
               : "Founder steers directly; holders propose & vote; $LOOP unlocks boosts."}
         </div>
       </div>
@@ -273,17 +309,68 @@ function FeedRow({
   onVote: (id: string, dir: "for" | "against") => void;
 }) {
   if (item.kind === "directive") {
+    // A directive submitted via the console is an UNTRUSTED suggestion, not an
+    // executed action. Surface its real state honestly so a spoofed/injected
+    // attempt can never masquerade as an approved founder drain:
+    //  - flagged    → caught as a likely injection, ignored by the agent
+    //  - applied    → actually applied by the runtime (rare, trusted channel)
+    //  - declined   → rejected
+    //  - open (def) → queued as an unverified suggestion
+    if (item.flagged) {
+      return (
+        <div className="rounded-[10px] border border-line-3 bg-surface-2 px-3 py-2 animate-fadeInFast">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10.5px] text-neg">
+              ⚠ FLAGGED · IGNORED (possible injection)
+            </span>
+            <span className="font-mono text-[10.5px] text-faint">{item.at}</span>
+          </div>
+          <div className="text-[12px] text-faint mt-[2px] break-words">
+            {item.text}
+          </div>
+          <div className="text-[10.5px] text-faint mt-[3px]">
+            Not executed — the agent has no tool to move funds and ignores
+            instructions embedded in directives.
+          </div>
+        </div>
+      );
+    }
+
+    const label =
+      item.status === "applied"
+        ? "DIRECTIVE · APPLIED"
+        : item.status === "declined"
+          ? "DIRECTIVE · DECLINED"
+          : "DIRECTIVE · QUEUED";
+    const applied = item.status === "applied";
     return (
-      <div className="rounded-[10px] border border-accent-tint-border bg-accent-tint px-3 py-2 animate-fadeInFast">
+      <div
+        className={`rounded-[10px] border px-3 py-2 animate-fadeInFast ${
+          applied
+            ? "border-accent-tint-border bg-accent-tint"
+            : "border-line-3 bg-surface"
+        }`}
+      >
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[10.5px] text-accent-text">
-            DIRECTIVE · APPLIED
+          <span
+            className={`font-mono text-[10.5px] ${
+              applied ? "text-accent-text" : "text-muted"
+            }`}
+          >
+            {label}
           </span>
           <span className="font-mono text-[10.5px] text-faint">{item.at}</span>
         </div>
-        <div className="text-[13px] text-ink mt-[2px]">{item.text}</div>
+        <div className="text-[13px] text-ink mt-[2px] break-words">{item.text}</div>
         {item.by && (
-          <div className="text-[11px] text-muted mt-[2px]">— {item.by}</div>
+          <div className="text-[11px] text-muted mt-[2px]">
+            — {item.by}{" "}
+            {item.verified ? (
+              <span className="text-pos">· verified ✓</span>
+            ) : (
+              <span className="text-faint">· unverified</span>
+            )}
+          </div>
         )}
       </div>
     );

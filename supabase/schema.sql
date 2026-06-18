@@ -189,6 +189,10 @@ create table if not exists public.directives (
   kind text not null default 'directive' check (kind in ('directive', 'proposal')),
   text text not null check (char_length(text) between 1 and 600),
   author_wallet text check (author_wallet is null or char_length(author_wallet) <= 64),
+  -- True only when author_wallet ownership was proven by an ed25519 signature.
+  -- Anon may never set this true (see the insert policy), so an attribution shown
+  -- as "verified" can't be self-declared — it closes the author-spoofing vector.
+  verified boolean not null default false,
   role text not null default 'holder' check (role in ('founder', 'holder')),
   status text not null default 'open' check (status in ('open', 'applied', 'adopted', 'declined')),
   for_votes integer not null default 0 check (for_votes >= 0),
@@ -196,7 +200,7 @@ create table if not exists public.directives (
   quorum integer not null default 100 check (quorum > 0),
   created_at timestamptz not null default now()
 );
-comment on table public.directives is 'Steering directives submitted via the Agent Console. Anon may insert a safe open submission (prototype); the runtime/service_role applies status + tallies. Publicly readable.';
+comment on table public.directives is 'Steering directives submitted via the Agent Console. Anon may insert only an UNVERIFIED, unattributed open/holder submission; verified/attributed rows and status promotion are service_role-only. Publicly readable. Never authoritative — the runtime treats directive text as untrusted data.';
 create index if not exists directives_project_created_idx on public.directives (project_key, created_at desc);
 alter table public.directives enable row level security;
 create policy "directives are publicly readable" on public.directives for select using (true);
@@ -206,7 +210,11 @@ create policy "anon can submit a safe directive (prototype)" on public.directive
     and char_length(text) between 1 and 600
     and status = 'open' and role = 'holder'
     and for_votes = 0 and against_votes = 0
-    and (author_wallet is null or char_length(author_wallet) <= 64)
+    -- No self-declared author or verification: an unsigned submission is anonymous
+    -- and unverified. Attributing a wallet (e.g. the founder's) requires a signed
+    -- insert through service_role, so a direct REST call can't spoof authorship.
+    and author_wallet is null
+    and verified = false
   );
 
 -- ── learnings (A5) ───────────────────────────────────────────────────────────

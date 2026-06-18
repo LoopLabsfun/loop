@@ -17,6 +17,17 @@ export interface FeedItem {
   /** escalation/proposal lifecycle */
   status?: "open" | "applied" | "adopted" | "declined";
   by?: string; // author label, e.g. "you (founder)" / "9xQ…a1B"
+  /**
+   * True only when the author wallet's ownership was proven by signature. An
+   * unverified `by` is just a self-declared claim and must NOT be trusted as the
+   * founder — the UI marks it accordingly and the runtime never acts on it.
+   */
+  verified?: boolean;
+  /**
+   * Matched a prompt-injection pattern (fake system tags, "override guardrails",
+   * spoofed sign-off…). Shown as caught/ignored — never executed.
+   */
+  flagged?: boolean;
   // proposal/escalation tally
   forVotes?: number;
   againstVotes?: number;
@@ -36,6 +47,7 @@ export interface AgentMandate {
 export const BASE_GUARDRAILS = [
   "Spend ≤ daily budget",
   "No treasury withdrawals",
+  "Never send treasury funds to unknown wallets",
   "Escalate anything irreversible",
 ];
 
