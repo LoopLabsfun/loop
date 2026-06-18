@@ -38,6 +38,11 @@ describe("buildSystemPrompt", () => {
     expect(s).toContain("Pivot to a mobile-first relaunch");
     expect(s).toContain("No treasury withdrawals");
   });
+  it("requires a verifying command to ship and forbids fixating on one task", () => {
+    const s = buildSystemPrompt(project);
+    expect(s).toContain("ANTI-FIXATION");
+    expect(s).toMatch(/MUST include a "command"/);
+  });
   it("asks for selective self-authored posts (rare X, more-frequent Telegram dev-log)", () => {
     const s = buildSystemPrompt(project);
     expect(s).toContain("posts.x");
