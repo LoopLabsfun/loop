@@ -26,13 +26,27 @@ export async function POST(req: Request) {
   }
 
   let key: string | undefined;
+  let diagTweet = false;
   try {
-    key = (await req.json())?.key;
+    const body = await req.json();
+    key = body?.key;
+    diagTweet = body?.diagTweet === true;
   } catch {
     /* no/invalid body */
   }
   if (!key) {
     return NextResponse.json({ error: "missing project key" }, { status: 400 });
+  }
+
+  // One-off diagnostic: post a UNIQUE (timestamped) tweet and return the raw
+  // result, so we can see the exact X failure (e.g. 403 duplicate vs 403 write
+  // permission) without spamming. Unique text dodges duplicate-content rejection.
+  if (diagTweet) {
+    const { sendTweet } = await import("@/lib/x-send");
+    const r = await sendTweet(
+      `LOOP build heartbeat · ${new Date().toISOString()} — agent online.`
+    );
+    return NextResponse.json({ diagTweet: r });
   }
 
   const project = await getProject(key);
