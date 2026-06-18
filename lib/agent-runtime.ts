@@ -531,12 +531,15 @@ export async function applyDecision(
           ? buildShipTweet(p, work)
           : buildProgressTweet(p, work);
       if (body !== (await lastBody("x"))) {
-        await sendTweet(body);
-        await supabaseAdmin.from("agent_posts").insert({
-          project_key: p.key,
-          platform: "x",
-          body,
-        });
+        const res = await sendTweet(body);
+        // Record only when the tweet actually posted (honest feed; mirrors TG).
+        if (res.ok) {
+          await supabaseAdmin.from("agent_posts").insert({
+            project_key: p.key,
+            platform: "x",
+            body,
+          });
+        }
       }
     }
   } catch {
