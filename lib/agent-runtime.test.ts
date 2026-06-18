@@ -207,7 +207,7 @@ describe("coerceDecision", () => {
     });
     expect(emptyInsight?.learning).toBeUndefined();
 
-    expect(coerceDecision(good).learning).toBeUndefined();
+    expect(coerceDecision(good)?.learning).toBeUndefined();
   });
 
   it("clamps lengths", () => {
