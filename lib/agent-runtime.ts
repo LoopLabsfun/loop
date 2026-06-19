@@ -1178,8 +1178,21 @@ export async function runAgentTick(
           ],
         };
       }
-    } catch {
-      /* repo-hands unavailable/failed — no commit, no ship signal */
+    } catch (e) {
+      // Don't swallow it — a silent catch here is exactly why the stall was
+      // invisible for hours (the gate threw, e.g. E2B sandbox timeout mid
+      // `npm ci`, and the tick just read "planned only"). Surface the reason in
+      // the summary + as a FAILED verifier check (so it lands in episodic
+      // memory) and log it, so the NEXT tick is diagnosable instead of mute.
+      const reason = e instanceof Error ? e.message : "repo-hands failed";
+      decision.summary = `${decision.summary} — repo-hands error: ${reason}`.slice(0, 280);
+      verify = {
+        checkerId: "verifier:e2b-repo-hands",
+        checks: [
+          { kind: "test", name: "e2b:repo-hands", passed: false, detail: reason },
+        ],
+      };
+      console.error(`[repo-hands] ${JSON.stringify({ key: p.key, error: reason })}`);
     }
   }
 
