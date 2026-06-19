@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { LoopMark } from "../LoopMark";
-import { NetworkToggle } from "../NetworkToggle";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -136,7 +135,6 @@ export function TokenPage({
           <AgentConsole
             project={p}
             directives={agentState?.directives}
-            screened={agentState?.screenedDirectives}
           />
           {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
           <AgentOperator
@@ -274,7 +272,6 @@ export function TokenPage({
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
           <TreasuryStats project={p} solUsd={solUsd} />
           <FeesCustodyCard project={p} preLaunch={preLaunch} />
-          <FundCard project={p} />
           <TopHolders holders={market.holders} network={p.network ?? "mainnet"} preLaunch={preLaunch} />
 
         </div>
@@ -355,7 +352,6 @@ function TokenNav({
         <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
       </div>
       <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
-        <NetworkToggle className="hidden sm:flex" />
         <ShareButton />
         <Link
           href="/"
@@ -932,152 +928,6 @@ function TreasuryExits() {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// Donate SOL straight to a project's on-chain treasury. Real transfer only:
-// the button is disabled until the project has a treasury_wallet, and guards
-// that the active cluster matches the project's before sending.
-function FundCard({ project: p }: { project: Project }) {
-  const wallet = useWallet();
-  const { network, setNetwork } = useNetwork();
-  const projectNet = p.network ?? "mainnet";
-  const hasTreasury = !!p.treasuryWallet;
-  const wrongNet = hasTreasury && network !== projectNet;
-
-  const [amt, setAmt] = useState("0.5");
-  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
-    "idle"
-  );
-  const [sig, setSig] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const amtN = parseFloat(amt) || 0;
-  const valid = amtN > 0;
-  const quicks = ["0.1", "0.5", "1", "5"];
-
-  const onFund = async () => {
-    if (!wallet.connected) {
-      wallet.connect();
-      return;
-    }
-    if (!p.treasuryWallet || wrongNet || !valid || status === "sending") return;
-    setStatus("sending");
-    setErr(null);
-    setSig(null);
-    try {
-      const s = await wallet.sendSol(p.treasuryWallet, amtN);
-      setSig(s);
-      setStatus("done");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Transaction failed";
-      setErr(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
-      setStatus("error");
-    }
-  };
-
-  const label = !wallet.connected
-    ? "Connect Wallet"
-    : status === "sending"
-    ? "Confirm in wallet…"
-    : !valid
-    ? "Enter an amount"
-    : `Fund ${amtN} SOL`;
-
-  return (
-    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-display font-semibold text-[14.5px]">
-          Fund this project
-        </span>
-        <span className="font-mono text-[10.5px] text-accent-text bg-accent-tint px-[7px] py-[2px] rounded-[5px]">
-          {projectNet}
-        </span>
-      </div>
-      <p className="text-[12px] text-muted leading-[1.5] mb-3">
-        Donate SOL straight to the treasury — it extends the runway and pays the
-        agent&apos;s infra bills. No tokens minted, no strings.
-      </p>
-
-      {!hasTreasury ? (
-        <div className="text-[12px] text-faint bg-surface-2 rounded-[10px] px-3 py-[10px]">
-          No on-chain treasury wallet yet. Donations open once this project
-          launches on-chain.
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-2 border border-line-3 rounded-[10px] p-1 pl-[14px] mb-[10px]">
-            <input
-              value={amt}
-              onChange={(e) => setAmt(e.target.value)}
-              inputMode="decimal"
-              aria-label="Donation amount in SOL"
-              className="flex-1 border-0 outline-none font-mono text-[16px] py-2 bg-transparent min-w-0"
-            />
-            <span className="font-mono text-[12px] text-faint px-[10px] py-2 bg-surface-3 rounded-[7px]">
-              SOL
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-[6px] mb-3">
-            {quicks.map((v) => (
-              <button
-                key={v}
-                onClick={() => setAmt(v)}
-                className="font-mono text-[11.5px] py-[6px] border border-line-3 rounded-[7px] bg-surface text-muted hover:border-line-hover transition-colors"
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-
-          {wrongNet ? (
-            <button
-              onClick={() => setNetwork(projectNet)}
-              className="w-full font-display font-semibold text-[14px] py-[12px] rounded-[11px] border border-warn text-warn"
-            >
-              Switch to {projectNet} to fund
-            </button>
-          ) : (
-            <button
-              onClick={onFund}
-              disabled={status === "sending" || (wallet.connected && !valid)}
-              className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] text-white transition-opacity disabled:opacity-60"
-              style={{ background: wallet.connected ? "var(--accent)" : "#16131A" }}
-            >
-              {label}
-            </button>
-          )}
-
-          <div className="mt-[10px] flex items-center justify-between font-mono text-[11px] text-faint">
-            <span>To treasury</span>
-            <a
-              href={explorerUrl(p.treasuryWallet!, projectNet)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-accent-text hover:text-accent-d transition-colors"
-            >
-              {shortAddr(p.treasuryWallet!)} ↗
-            </a>
-          </div>
-
-          {status === "done" && sig && (
-            <a
-              href={explorerTx(sig, projectNet)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-[10px] block font-mono text-[11.5px] text-pos bg-[oklch(0.97_0.03_150)] border border-[oklch(0.9_0.06_150)] rounded-[8px] px-3 py-[9px] animate-fadeIn"
-            >
-              ✓ Donation sent · {shortAddr(sig)} ↗
-            </a>
-          )}
-          {status === "error" && err && (
-            <div className="mt-[10px] font-mono text-[11.5px] text-neg bg-[oklch(0.97_0.03_25)] border border-[oklch(0.9_0.06_25)] rounded-[8px] px-3 py-[9px] animate-fadeIn">
-              {err}
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }

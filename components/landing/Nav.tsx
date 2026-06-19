@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
-import { NetworkToggle } from "../NetworkToggle";
 import { LoopContract } from "../LoopContract";
 import { WalletIcon } from "../AuthIcons";
 import { useWallet } from "@/lib/wallet";
@@ -73,7 +72,6 @@ export function Nav({
           network={loopNetwork}
           className="hidden lg:inline-flex"
         />
-        <NetworkToggle className="hidden sm:flex" />
         <button
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Toggle navigation menu"
@@ -156,10 +154,6 @@ export function Nav({
           <div className="flex items-center justify-between py-[11px]">
             <span className="text-[15px] text-body">$LOOP contract</span>
             <LoopContract mint={loopMint} network={loopNetwork} />
-          </div>
-          <div className="flex items-center justify-between py-[11px]">
-            <span className="text-[15px] text-body">Network</span>
-            <NetworkToggle />
           </div>
         </div>
       )}

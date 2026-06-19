@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSummaries } from "./agent-data";
+import { buildSummaries, dedupeSimilarTasks } from "./agent-data";
 
 // buildSummaries is pure (no DB) — it rolls up the real task rows into an honest
 // per-day summary. Rows use the agent_tasks shape (id, title, status, created_at).
@@ -36,5 +36,37 @@ describe("buildSummaries", () => {
 
   it("returns [] for no rows", () => {
     expect(buildSummaries([], now)).toEqual([]);
+  });
+});
+
+// dedupeSimilarTasks collapses a stalled agent's reworded re-plans of one task
+// (newest-first in → newest representative kept) while keeping genuinely
+// different tasks. This is what stops the "wall of budget-status cards".
+describe("dedupeSimilarTasks", () => {
+  const t = (title: string) => ({ title });
+
+  it("collapses reworded variants of the same task to one (the newest)", () => {
+    const rows = [
+      t("Add today's budget-status (spent/cap/remaining/pct) endpoint to transparency API"),
+      t("Add today's budget-status (spent/cap/remaining/pct) helper + endpoint to transparency API"),
+      t("Add budgetStatus(spent/cap/remaining/pct) helper for transparency budget view"),
+      t("Add today's budget-status (spent/cap/remaining) endpoint + helper to transparency API"),
+    ];
+    const out = dedupeSimilarTasks(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe(rows[0]); // newest representative kept
+  });
+
+  it("keeps genuinely different tasks even with shared words", () => {
+    const rows = [
+      t("Add holder count to the token page"),
+      t("Add price chart to the token page"),
+      t("Wire Vercel Analytics into the visitors stat"),
+    ];
+    expect(dedupeSimilarTasks(rows)).toHaveLength(3);
+  });
+
+  it("returns an empty list unchanged", () => {
+    expect(dedupeSimilarTasks([])).toEqual([]);
   });
 });

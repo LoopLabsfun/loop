@@ -15,13 +15,10 @@ import type { Project } from "@/lib/types";
 export function AgentConsole({
   project: p,
   directives,
-  screened,
 }: {
   project: Project;
   /** Persisted directives/proposals from the backend (newest first). */
   directives?: FeedItem[];
-  /** Count of suspicious directives auto-screened out (transparency). */
-  screened?: number;
 }) {
   const wallet = useWallet();
   const sym = p.ticker.replace(/^\$/, "");
@@ -143,7 +140,7 @@ export function AgentConsole({
             verified: false,
             forVotes: 1,
             againstVotes: 0,
-            quorum: 100,
+            quorum: 10,
           };
     setFeed((f) => [item, ...f].slice(0, 14));
     setDraft("");
@@ -247,20 +244,6 @@ export function AgentConsole({
               Connect wallet to weigh in
             </button>
           )}
-        </div>
-      )}
-
-      {/* Security transparency: how many hostile steering attempts were screened */}
-      {typeof screened === "number" && screened > 0 && (
-        <div className="px-5 pt-3 -mb-1">
-          <div className="flex items-center gap-2 text-[11.5px] text-muted font-mono rounded-[10px] border border-line-4 bg-surface-2 px-3 py-[7px]">
-            <span className="text-pos">🛡</span>
-            <span>
-              {screened} hostile steering attempt{screened === 1 ? "" : "s"}{" "}
-              auto-screened &amp; ignored. The agent has no tool to move treasury
-              funds and never acts on directive text.
-            </span>
-          </div>
         </div>
       )}
 
@@ -408,7 +391,7 @@ function FeedRow({
   if (item.kind === "proposal") {
     const f = item.forVotes ?? 0;
     const a = item.againstVotes ?? 0;
-    const q = item.quorum ?? 100;
+    const q = item.quorum ?? 10;
     const pct = Math.min(100, Math.round(((f + a) / q) * 100));
     return (
       <div className="rounded-[10px] border border-line-3 bg-surface px-3 py-2 animate-fadeInFast">

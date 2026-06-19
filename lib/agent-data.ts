@@ -195,6 +195,72 @@ export function buildSummaries(rows: TaskRow[], now = Date.now()): DailySummary[
     });
 }
 
+// Generic task words that carry no signal for "is this the same task?" — they
+// appear in almost every title, so counting them inflates similarity.
+const TITLE_STOP = new Set([
+  "add",
+  "the",
+  "and",
+  "for",
+  "its",
+  "new",
+  "via",
+  "into",
+  "plus",
+  "this",
+  "that",
+  "from",
+  "onto",
+  "today",
+  "todays",
+]);
+
+/** Significant tokens of a task title (camelCase split, punctuation stripped). */
+function titleTokens(title: string): Set<string> {
+  return new Set(
+    title
+      .replace(/([a-z])([A-Z])/g, "$1 $2") // budgetStatus → budget Status
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !TITLE_STOP.has(w))
+  );
+}
+
+/** Jaccard overlap of two token sets (0..1). */
+function titleSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  a.forEach((w) => {
+    if (b.has(w)) inter++;
+  });
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+/**
+ * Collapse rows whose titles describe the same logical task. A stalled agent can
+ * re-plan one feature across many ticks with slightly reworded titles ("Add
+ * budget-status endpoint" / "Add budgetStatus helper + endpoint" / …) — exact
+ * de-dup misses these and the panel fills with near-identical cards. Rows arrive
+ * newest-first, so we keep the newest representative of each cluster. Pure +
+ * exported for testing.
+ */
+export function dedupeSimilarTasks<T extends { title: string }>(
+  rows: T[],
+  threshold = 0.6
+): T[] {
+  const keptTokens: Set<string>[] = [];
+  const out: T[] = [];
+  for (const r of rows) {
+    const tok = titleTokens(r.title);
+    if (keptTokens.some((k) => titleSimilarity(tok, k) >= threshold)) continue;
+    keptTokens.push(tok);
+    out.push(r);
+  }
+  return out;
+}
+
 export async function getAgentState(p: Project): Promise<AgentState> {
   // No simulated seeds: until the runtime writes real agent_* rows, each panel
   // is honestly empty. The UI renders "nothing yet" empty states.
@@ -247,20 +313,12 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         .limit(20),
     ]);
 
-    // Collapse repeated rows for the same logical task (the agent may re-advance
-    // an unfinished task across several ticks, inserting a row each time). Rows
-    // arrive newest-first, so keeping the first occurrence per title shows the
-    // latest state once — no duplicated "building" cards in the UI.
+    // Collapse rows for the same logical task — even when reworded across ticks
+    // (see dedupeSimilarTasks) — so the panel shows each task once at its latest
+    // state instead of a wall of near-identical "building" cards.
     const taskRows = (t.data as TaskRow[] | null) ?? [];
     const summaries = buildSummaries(taskRows);
-    const seenTitles = new Set<string>();
-    const tasks: AgentTask[] = taskRows
-      .filter((r) => {
-        const key = r.title.trim().toLowerCase();
-        if (seenTitles.has(key)) return false;
-        seenTitles.add(key);
-        return true;
-      })
+    const tasks: AgentTask[] = dedupeSimilarTasks(taskRows)
       .map((r) => ({
         id: `t${r.id}`,
         title: r.title,
@@ -352,6 +410,37 @@ export async function getAgentState(p: Project): Promise<AgentState> {
     };
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Add real claimed creator fees to a project's cumulative `earned_sol` (the
+ * "Total earned" line). Called from the cron after a successful pump.fun fee
+ * claim with the measured SOL delta, so earned reflects actual revenue instead
+ * of a dead 0. Read-then-write (the cron is single-threaded, so no race);
+ * service-role; never throws — a bookkeeping failure must not abort the tick.
+ * Returns the new total, or null if unconfigured/failed/zero.
+ */
+export async function addEarnedSol(
+  key: string,
+  sol: number
+): Promise<number | null> {
+  if (!supabaseAdmin || !(sol > 0)) return null;
+  try {
+    const { data } = await supabaseAdmin
+      .from("projects")
+      .select("earned_sol")
+      .eq("key", key)
+      .maybeSingle();
+    const current = (data as { earned_sol?: number } | null)?.earned_sol ?? 0;
+    const next = current + sol;
+    const { error } = await supabaseAdmin
+      .from("projects")
+      .update({ earned_sol: next })
+      .eq("key", key);
+    return error ? null : next;
+  } catch {
+    return null;
   }
 }
 

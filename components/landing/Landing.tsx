@@ -17,11 +17,14 @@ export function Landing({
   projects,
   solUsd,
   agentActive = false,
+  commits = [],
 }: {
   projects: Project[];
   solUsd: number;
   /** True when the LOOP agent ticked recently — drives the live Runtime status. */
   agentActive?: boolean;
+  /** Real recent commits for the LOOP repo (newest first), server-fetched. */
+  commits?: { hash: string; msg: string }[];
 }) {
   const loop = projects.find((p) => p.key === "loop");
   const engine = useLoopEngine(loop?.treasurySol);
@@ -60,7 +63,13 @@ export function Landing({
           onScroll={scrollTo}
         />
         <LiveProjects projects={projects} loopBalance={engine.balance} />
-        <HowAndTreasury engine={engine} />
+        <HowAndTreasury
+          engine={engine}
+          agentActive={agentActive}
+          earned={loop?.earnedSol ?? 0}
+          launched={!!loop?.mint}
+          commits={commits}
+        />
         <LoopMarquee />
         <UseCases />
         <CTA onLaunch={openModal} />

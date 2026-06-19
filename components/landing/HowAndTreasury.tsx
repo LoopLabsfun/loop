@@ -1,5 +1,5 @@
 import type { LoopEngineState } from "@/lib/useLoopEngine";
-import { countdown, sol } from "@/lib/format";
+import { sol } from "@/lib/format";
 
 // Natural 1→6 order so the DOM (and the single-column mobile layout) reads in
 // sequence. On ≥sm the grid flows column-first (see below) so it still renders
@@ -13,7 +13,27 @@ const STEPS = [
   { n: 6, title: "Project Evolves", body: "The more it grows, the more it gets funded." },
 ];
 
-export function HowAndTreasury({ engine }: { engine: LoopEngineState }) {
+export function HowAndTreasury({
+  engine,
+  agentActive = false,
+  earned = 0,
+  launched = false,
+  commits = [],
+}: {
+  engine: LoopEngineState;
+  /** Real signal: the LOOP agent ticked recently (from agent_tasks/agent_posts). */
+  agentActive?: boolean;
+  /** Real cumulative SOL earned (creator fees), from the project row. */
+  earned?: number;
+  /** True once $LOOP is minted on-chain — so we never read "pre-launch" when it's live. */
+  launched?: boolean;
+  /** Real recent commits from the repo (newest first). */
+  commits?: { hash: string; msg: string }[];
+}) {
+  // Honest status: the treasury is "on-chain" the moment the token is launched;
+  // the agent is "active" only when it actually ticked recently. No fake
+  // countdown, no "idle/not started" while it's live.
+  const live = agentActive;
   return (
     <section
       id="loop-how"
@@ -55,15 +75,15 @@ export function HowAndTreasury({ engine }: { engine: LoopEngineState }) {
       <div className="bg-surface border border-line-2 rounded-[18px] p-7 flex flex-col gap-4">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0">
-            {engine.live ? "Live Treasury" : "Treasury"}
+            {launched ? "Live Treasury" : "Treasury"}
           </h2>
           <span className="font-mono text-[12px] text-faint">
-            {engine.live ? "on-chain" : "pre-launch"}
+            {launched ? "on-chain" : "pre-launch"}
           </span>
         </div>
         <div className="grid grid-cols-3 gap-[10px]">
           <TreasuryStat label="Balance" value={`${sol(engine.balance)} SOL`} />
-          <TreasuryStat label="Total Earned" value={`${sol(engine.income)} SOL`} />
+          <TreasuryStat label="Total Earned" value={`${sol(earned)} SOL`} />
           <TreasuryStat label="Burn Rate" value="0.00 / day" />
         </div>
         <div className="grid grid-cols-2 gap-4 flex-1">
@@ -91,27 +111,38 @@ export function HowAndTreasury({ engine }: { engine: LoopEngineState }) {
             <div className="text-[12px] text-faint mb-[10px]">
               Recent Commits · GitHub
             </div>
-            <div className="text-[12px] text-faint">
-              Appear once the agent runs.
-            </div>
+            {commits.length === 0 ? (
+              <div className="text-[12px] text-faint">No commits yet.</div>
+            ) : (
+              <div className="flex flex-col gap-[7px]">
+                {commits.slice(0, 4).map((c) => (
+                  <div key={c.hash} className="font-mono text-[11.5px] truncate">
+                    <span className="text-accent-text">{c.hash}</span>{" "}
+                    <span className="text-muted">{c.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="border-t border-line-4 pt-[14px] flex justify-between items-center">
           <span className="text-[13px] text-muted">Agent status</span>
-          {engine.live ? (
+          {live ? (
             <span className="font-mono text-[13px] text-pos">
-              ● coding — next check {countdown(engine.countdown)}
+              ● active — building $LOOP
+            </span>
+          ) : launched ? (
+            <span className="font-mono text-[13px] text-faint">
+              ○ idle between ticks
             </span>
           ) : (
-            <span className="font-mono text-[13px] text-faint">
-              ○ idle — starts when the treasury is funded
-            </span>
+            <span className="font-mono text-[13px] text-faint">○ pre-launch</span>
           )}
         </div>
       </div>
 
       {/* Loop engine terminal */}
-      <AgentTerminal engine={engine} />
+      <AgentTerminal live={live} commits={commits} />
     </section>
   );
 }
@@ -125,38 +156,49 @@ function TreasuryStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AgentTerminal({ engine }: { engine: LoopEngineState }) {
+function AgentTerminal({
+  live,
+  commits,
+}: {
+  live: boolean;
+  commits: { hash: string; msg: string }[];
+}) {
   return (
     <div className="lg:col-span-2 bg-ink rounded-[18px] px-[26px] py-[22px] font-mono">
       <div className="flex items-center justify-between mb-[14px]">
         <div className="flex items-center gap-[10px]">
           <span
-            className={`w-2 h-2 rounded-full ${engine.live ? "bg-accent-400 animate-pulseFast" : "bg-muted"}`}
+            className={`w-2 h-2 rounded-full ${live ? "bg-accent-400 animate-pulseFast" : "bg-muted"}`}
           />
           <span className="text-[12.5px] text-canvas">
-            loop-engine · agent $LOOP · {engine.live ? "live" : "idle"}
+            loop-engine · agent $LOOP · {live ? "live" : "idle"}
           </span>
         </div>
-        <span className="text-[11.5px] text-muted">
-          {engine.live ? "streaming" : "not started"}
-        </span>
+        <a
+          href="/token?p=loop"
+          className="text-[11.5px] text-muted hover:text-canvas transition-colors"
+        >
+          {live ? "watch live →" : "view project →"}
+        </a>
       </div>
       <div className="flex flex-col gap-[7px]">
-        {engine.agentLog.length === 0 ? (
+        {commits.length === 0 ? (
           <div className="text-[12.5px] text-muted">
-            Agent starts logging once it runs — the build stream appears here in
-            real time.
+            No build activity yet — the latest commits appear here as the agent
+            ships.
           </div>
         ) : (
           <>
-            {engine.agentLog.map((l, i) => (
-              <div key={i} className="text-[12.5px] text-[#B7B2BE] animate-fadeInFast">
-                <span className="text-accent-400">{l.t}</span> {l.msg}
+            {commits.slice(0, 5).map((c) => (
+              <div key={c.hash} className="text-[12.5px] text-[#B7B2BE] animate-fadeInFast">
+                <span className="text-accent-400">{c.hash}</span> {c.msg}
               </div>
             ))}
-            <div className="text-[12.5px] text-muted">
-              <span className="animate-pulseTick">▮</span>
-            </div>
+            {live && (
+              <div className="text-[12.5px] text-muted">
+                <span className="animate-pulseTick">▮</span>
+              </div>
+            )}
           </>
         )}
       </div>

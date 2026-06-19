@@ -49,15 +49,29 @@ export async function runInSandbox(
   language: SandboxLanguage = "python",
   /** Env vars injected into the sandbox (e.g. GITHUB_TOKEN for repo-hands). Kept
    *  out of `code` so the script string stays safe to log/persist. */
-  envs?: Record<string, string>
+  envs?: Record<string, string>,
+  /** Execution budget. E2B's `runCode` default is ~60s — far too short for the
+   *  repo-hands gate (clone → npm ci → tsc → vitest), which silently timed out
+   *  and so never pushed. Set this generously for repo-hands; keep the sandbox
+   *  lifetime ≥ it so the box isn't reaped mid-run. */
+  opts?: { timeoutMs?: number }
 ): Promise<SandboxResult> {
   if (!sandboxConfigured()) {
     throw new Error("Sandbox requested but E2B_API_KEY is not set.");
   }
   const { Sandbox } = await import("@e2b/code-interpreter");
-  const sbx = await Sandbox.create(envs ? { envs } : undefined);
+  const timeoutMs = opts?.timeoutMs;
+  const sbx = await Sandbox.create({
+    ...(envs ? { envs } : {}),
+    // Sandbox lifetime must outlast the run, or E2B reaps it mid-gate.
+    ...(timeoutMs ? { timeoutMs: timeoutMs + 30_000 } : {}),
+  });
   try {
-    const exec = await sbx.runCode(code, { language, envs });
+    const exec = await sbx.runCode(code, {
+      language,
+      envs,
+      ...(timeoutMs ? { timeoutMs } : {}),
+    });
     return {
       ok: !exec.error,
       stdout: (exec.logs?.stdout ?? []).join("\n"),

@@ -1151,9 +1151,19 @@ export async function runAgentTick(
           authorEmail: "agent@looplabs.fun",
         });
         const { runInSandbox } = await import("./sandbox");
-        const result = await runInSandbox(script, "bash", {
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-        });
+        // The gate (clone → npm ci → tsc → vitest → push) needs minutes, but
+        // E2B's runCode defaults to ~60s — so it was silently timing out mid
+        // `npm ci` and never pushing. Give it a real budget, bounded so the run
+        // still fits the cron function's 300s cap (lib/sandbox adds +30s of
+        // sandbox lifetime on top). Tunable via env without a redeploy.
+        const handsTimeoutMs =
+          Number(process.env.AGENT_HANDS_TIMEOUT_MS) || 240_000;
+        const result = await runInSandbox(
+          script,
+          "bash",
+          { GITHUB_TOKEN: process.env.GITHUB_TOKEN },
+          { timeoutMs: handsTimeoutMs }
+        );
         const hands = parseHandsOutput(result.stdout);
         decision.summary = `${decision.summary} — ${hands.note}`.slice(0, 280);
         verify = {
