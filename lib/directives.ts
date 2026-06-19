@@ -136,7 +136,7 @@ export function rowToFeedItem(r: DirectiveRow, at: string): FeedItem {
   if (kind === "proposal") {
     item.forVotes = r.for_votes ?? 0;
     item.againstVotes = r.against_votes ?? 0;
-    item.quorum = r.quorum ?? 100;
+    item.quorum = r.quorum ?? 10;
   }
   return item;
 }

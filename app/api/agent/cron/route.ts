@@ -76,12 +76,24 @@ export async function GET(req: Request) {
   // opt-in: it only fires when AGENT_CLAIM_FEES=1 (the founder's explicit go).
   // A failed/empty claim is reported, never fatal.
   let feeClaim:
-    | { ok: boolean; txSig?: string; skipped?: boolean; error?: string }
+    | {
+        ok: boolean;
+        txSig?: string;
+        claimedSol?: number;
+        skipped?: boolean;
+        error?: string;
+      }
     | undefined;
   if (process.env.AGENT_CLAIM_FEES === "1") {
     try {
       const { collectCreatorFees } = await import("@/lib/creator-fees");
       feeClaim = await collectCreatorFees("mainnet");
+      // Record real claimed fees as cumulative "earned" (LOOP-only phase: the
+      // claim sweeps the creator==treasury wallet, so it's LOOP's revenue).
+      if (feeClaim.ok && feeClaim.claimedSol && feeClaim.claimedSol > 0) {
+        const { addEarnedSol } = await import("@/lib/agent-data");
+        await addEarnedSol("loop", feeClaim.claimedSol);
+      }
     } catch (e) {
       feeClaim = { ok: false, error: e instanceof Error ? e.message : "claim failed" };
     }

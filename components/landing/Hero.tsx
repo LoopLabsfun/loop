@@ -1,7 +1,7 @@
 import { LoopMarkAnimated } from "../LoopMark";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import type { Network } from "@/lib/types";
-import { compactNum, countdown, sol, usd } from "@/lib/format";
+import { compactNum, sol, usd } from "@/lib/format";
 
 export function Hero({
   engine,
@@ -12,6 +12,7 @@ export function Hero({
   treasuryToken,
   treasuryTokenUsd,
   treasuryHistory,
+  agentActive,
   onLaunch,
   onScroll,
 }: {
@@ -23,6 +24,7 @@ export function Hero({
   treasuryToken?: number;
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
+  agentActive?: boolean;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -89,6 +91,7 @@ export function Hero({
           treasuryToken={treasuryToken}
           treasuryTokenUsd={treasuryTokenUsd}
           treasuryHistory={treasuryHistory}
+          agentActive={agentActive}
         />
       </div>
     </section>
@@ -208,6 +211,7 @@ function TreasuryCard({
   treasuryToken,
   treasuryTokenUsd,
   treasuryHistory,
+  agentActive,
 }: {
   engine: LoopEngineState;
   solUsd: number;
@@ -217,6 +221,7 @@ function TreasuryCard({
   treasuryToken?: number;
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
+  agentActive?: boolean;
 }) {
   const net = (network ?? "mainnet").toUpperCase();
   // The treasury also holds the project's OWN token. Shown as a separate line —
@@ -228,10 +233,29 @@ function TreasuryCard({
   // moves to a sub-line. The curve is the real on-chain balance trajectory,
   // valued at the current SOL price — every level is a real on-chain balance.
   const spendableUsd = engine.balance * solUsd;
+  // Headline the REAL total the treasury controls: spendable SOL + the live value
+  // of the project tokens it holds. The SOL/token breakdown stays on the sub-lines.
+  const heldUsd = typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? treasuryTokenUsd : 0;
+  const totalUsd = spendableUsd + heldUsd;
   const series =
     treasuryHistory && treasuryHistory.length >= 2
       ? treasuryHistory.map((p) => p.sol * solUsd)
       : null;
+  // 24h income/spend from the REAL on-chain trajectory: sum the SOL deltas whose
+  // tx landed in the last 24h (creator-fee claims in, buybacks out). Honest —
+  // every number is a real balance change, not the simulated engine's zeros.
+  // (BalancePoint.t is unix SECONDS, see lib/solana.ts.)
+  const dayAgoSec = Date.now() / 1000 - 24 * 60 * 60;
+  let income24 = 0;
+  let spend24 = 0;
+  if (treasuryHistory && treasuryHistory.length >= 2) {
+    for (let i = 1; i < treasuryHistory.length; i++) {
+      if (treasuryHistory[i].t < dayAgoSec) continue;
+      const delta = treasuryHistory[i].sol - treasuryHistory[i - 1].sol;
+      if (delta > 0) income24 += delta;
+      else spend24 += -delta;
+    }
+  }
   return (
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
@@ -250,7 +274,7 @@ function TreasuryCard({
       </div>
       <div className="font-display font-bold text-[42px] tracking-[-0.02em] leading-none tabular-nums">
         <span className="text-[22px] text-faint font-medium align-top mr-[1px]">$</span>
-        {usd(spendableUsd)}
+        {usd(totalUsd)}
       </div>
       <div className="mt-[6px] mb-4">
         <div className="font-mono text-[13px] text-faint">
@@ -267,17 +291,14 @@ function TreasuryCard({
       </div>
       <TreasurySparkline values={series} />
       <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
-        <Stat label="24h Income" value={`+${sol(engine.income)} SOL`} tone="pos" />
-        <Stat label="24h Spend" value={`−${sol(engine.spend)} SOL`} />
+        <Stat label="24h Income" value={`+${sol(income24)} SOL`} tone="pos" />
+        <Stat label="24h Spend" value={`−${sol(spend24)} SOL`} />
         <Stat
           label="Runtime"
-          value={engine.live ? "● Active" : "○ Idle"}
-          tone={engine.live ? "pos" : undefined}
+          value={agentActive ? "● Active" : "○ Idle"}
+          tone={agentActive ? "pos" : undefined}
         />
-        <Stat
-          label="Next Check"
-          value={engine.live ? countdown(engine.countdown) : "—"}
-        />
+        <Stat label="Next Check" value={agentActive ? "~2 min" : "—"} />
       </div>
     </div>
   );

@@ -29,15 +29,18 @@ export async function GET(
       project.network
     );
   }
+  // getProject now applies withLiveMarket, so project.price is the LIVE market
+  // price (not the stale 0 snapshot) — the treasury's tens of millions of tokens
+  // are valued correctly instead of counting as $0.
   const solUsd = await getSolUsd();
-  const valueUsd =
-    balanceSol * solUsd + (tokenUi ?? 0) * (project.price || 0);
+  const valueUsd = balanceSol * solUsd + (tokenUi ?? 0) * (project.price || 0);
 
   return NextResponse.json(
     {
       key: project.key,
       balanceSol,
       tokenUi,
+      tokenPriceUsd: project.price || 0,
       valueUsd,
       live: Boolean(project.treasuryLive),
     },

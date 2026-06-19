@@ -28,6 +28,9 @@ export interface CollectFeeResult {
   ok: boolean;
   /** Claim transaction signature on success. */
   txSig?: string;
+  /** SOL the claim actually delivered (signer balance delta), so the caller can
+   *  record it as real "earned". undefined if confirmation/read failed. */
+  claimedSol?: number;
   /** True when no creator wallet is configured — nothing was attempted. */
   skipped?: boolean;
   error?: string;
@@ -66,9 +69,8 @@ export async function collectCreatorFees(
   }
 
   try {
-    const { Keypair, Connection, VersionedTransaction } = await import(
-      "@solana/web3.js"
-    );
+    const { Keypair, Connection, VersionedTransaction, LAMPORTS_PER_SOL } =
+      await import("@solana/web3.js");
     const signer = Keypair.fromSecretKey(Uint8Array.from(signerBytes));
     const payload = buildCollectCreatorFeePayload({
       publicKey: signer.publicKey.toBase58(),
@@ -88,8 +90,28 @@ export async function collectCreatorFees(
       ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
       : "https://api.mainnet-beta.solana.com";
     const conn = new Connection(endpoint, "confirmed");
+    // Measure what the claim actually delivered so the caller records real
+    // "earned": the fees land in the signer wallet (for LOOP, the treasury).
+    // before → confirm → after. Net of the tiny tx fee; clamped at 0.
+    const before = await conn.getBalance(signer.publicKey);
     const txSig = await conn.sendRawTransaction(tx.serialize());
-    return { ok: true, txSig };
+    let claimedSol: number | undefined;
+    try {
+      const latest = await conn.getLatestBlockhash();
+      await conn.confirmTransaction(
+        {
+          signature: txSig,
+          blockhash: latest.blockhash,
+          lastValidBlockHeight: latest.lastValidBlockHeight,
+        },
+        "confirmed"
+      );
+      const after = await conn.getBalance(signer.publicKey);
+      claimedSol = Math.max(0, (after - before) / LAMPORTS_PER_SOL);
+    } catch {
+      /* confirmation/read failed — still return the sig; amount stays undefined */
+    }
+    return { ok: true, txSig, claimedSol };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "claim failed" };
   }

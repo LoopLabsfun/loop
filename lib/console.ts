@@ -112,9 +112,9 @@ export function seedFeed(p: Project): FeedItem[] {
       text: "Holder proposal: prioritise a mobile build next sprint.",
       status: "open",
       by: "9xQ…a1B",
-      forVotes: 62,
-      againstVotes: 18,
-      quorum: 100,
+      forVotes: 6,
+      againstVotes: 2,
+      quorum: 10,
     },
     {
       id: "f4",

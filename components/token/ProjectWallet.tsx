@@ -119,6 +119,13 @@ export function ProjectWallet({
                       >
                         {a.amountSol > 0 ? `${a.amountSol} SOL` : ""}
                       </span>
+                      {/* A buyback always buys the project's OWN token — name it
+                          so the row says what was bought, not just how much SOL. */}
+                      {a.kind === "buyback" && p.ticker && (
+                        <span className="font-mono text-[12px] text-muted">
+                          {" "}→ {p.ticker}
+                        </span>
+                      )}
                     </span>
                     <span
                       className={`font-mono text-[10px] px-[7px] py-[2px] rounded-[6px] border whitespace-nowrap bg-surface-2 ${DISP_STYLE[a.disposition]}`}

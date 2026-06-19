@@ -7,6 +7,8 @@ import {
   shouldPublishUpdate,
   summarizeTickOutcome,
   buildReadFilesPrompt,
+  buildForceActPrompt,
+  isStalledDecision,
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
@@ -356,6 +358,32 @@ describe("buildReadFilesPrompt (A2 pass 2)", () => {
     expect(s).toContain("FINAL decision");
     expect(s).toContain("FULL-FILE writes");
     expect(s).toContain("`readFiles` is IGNORED if you return it");
+  });
+  it("closes the re-plan escape hatch: a decision with neither edits nor command is a stall", () => {
+    const s = buildReadFilesPrompt([{ path: "lib/a.ts", contents: "x" }]);
+    expect(s).toMatch(/stall and will be rejected/i);
+    expect(s).not.toMatch(/pick a DIFFERENT increment/i);
+  });
+});
+
+describe("isStalledDecision (A2 stall guard)", () => {
+  it("is true when a read→act decision has neither edits nor a command", () => {
+    expect(isStalledDecision({})).toBe(true);
+    expect(isStalledDecision({ edits: [] })).toBe(true);
+  });
+  it("is false when the decision actually acts (edits or command)", () => {
+    expect(isStalledDecision({ edits: [{ path: "lib/a.ts", contents: "x" }] })).toBe(false);
+    expect(isStalledDecision({ command: { language: "python", code: "print(1)" } })).toBe(false);
+  });
+});
+
+describe("buildForceActPrompt (A2 pass 3 — act or block)", () => {
+  it("demands edits/command or an honest block, and forbids another plan", () => {
+    const s = buildForceActPrompt();
+    expect(s).toMatch(/no `edits` and no `command`/i);
+    expect(s).toMatch(/stall/i);
+    expect(s).toMatch(/status = "blocked"/);
+    expect(s).toMatch(/Do NOT return another plan/i);
   });
 });
 

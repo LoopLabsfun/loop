@@ -370,8 +370,40 @@ export function buildReadFilesPrompt(
     "you are not deliberately changing; never re-add something that already exists).",
     "`edits` is the verifying check: the runtime applies them, runs the tests, and",
     "ships the task only if green. Make the SMALLEST real change that compiles and",
-    "passes. If — and only if — reading proves the change is genuinely unnecessary or",
-    "already done, pick a DIFFERENT increment and say so honestly. Do not stall.",
+    "passes. If reading proves THIS exact change is already done, implement the next",
+    "smallest increment as `edits` instead — you must still return `edits` (or a",
+    "`command`). A decision with neither is a stall and will be rejected.",
+  ].join("\n");
+}
+
+/**
+ * Pure: a pass-2 decision that read files but returned NEITHER `edits` NOR a
+ * `command` is a stall — it advances nothing, so the task spins on "planned only"
+ * forever. This is the exact loop that kept the agent re-reading the same files
+ * for hours without committing.
+ */
+export function isStalledDecision(
+  d: Pick<AgentDecision, "edits" | "command">
+): boolean {
+  return !(d.edits && d.edits.length) && !d.command;
+}
+
+/**
+ * Pass-3 FORCING turn. Pass-2 stalled (read the real files, then returned a plan
+ * with no edits/command). The two-pass design assumes "read → act"; this closes
+ * it: act now, or honestly BLOCK — never a third re-plan. Sent only on the stall
+ * path, so it costs nothing on a healthy tick.
+ */
+export function buildForceActPrompt(): string {
+  return [
+    "You returned a plan with NO `edits` and NO `command`. That is a stall, not",
+    "progress, and it is not allowed — you have already read the real files.",
+    "Choose exactly ONE, now:",
+    "1. Return `edits` (full-file writes) implementing the SMALLEST next step for",
+    "   THIS task — minimal, so it compiles and passes the existing tests; or",
+    "2. If the task is genuinely impossible or already done, set",
+    '   task.status = "blocked" and explain precisely why in task.detail.',
+    "Do NOT return another plan, and do NOT ask to read more files.",
   ].join("\n");
 }
 
@@ -573,7 +605,11 @@ export async function decideNextAction(
   // types; call loosely and read the content blocks off the result.
   const params = {
     model: AGENT_MODEL,
-    max_tokens: 2000,
+    // Full-file `edits` are large, and `thinking` tokens draw from the same
+    // budget — at 2000 the JSON was truncated mid-edit every time the agent
+    // tried to ship code, so it fell back to a plan ("reads forever, never
+    // edits"). Give it real room to emit full files + a test.
+    max_tokens: 16000,
     thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
     system: buildSystemPrompt(p, mandate, {
@@ -642,13 +678,59 @@ export async function decideNextAction(
             groundedReread: grounded?.readFiles?.length ?? 0,
           })}`
         );
-        if (grounded) {
-          // This is the final turn — no second read round is supported, so never
-          // let a re-requested `readFiles` leak through (it would loop the agent
-          // on reading instead of acting). Strip it; keep the grounded edits/command.
-          delete grounded.readFiles;
-          return grounded;
+        // The decision this read→act pass yields: the grounded pass-2 one if it
+        // parsed, else fall back to the pass-1 plan. No second read round exists,
+        // so strip any re-requested `readFiles` (it would loop on reading).
+        const candidate = grounded ?? decision;
+        delete candidate.readFiles;
+        // Healthy: it actually produced edits or a command — take it.
+        if (!isStalledDecision(candidate)) return candidate;
+        // STALLED — it read the files but returned neither edits nor a command
+        // (pass-2 stalled OR didn't parse). This is the exact loop that left the
+        // task on "planned only" for hours. One forcing turn: act, or block.
+        const forced = (await create({
+          ...params,
+          messages: [
+            { role: "user", content: userContent },
+            { role: "assistant", content: text },
+            { role: "user", content: buildReadFilesPrompt(files) },
+            { role: "assistant", content: ftext || "(no parseable decision)" },
+            { role: "user", content: buildForceActPrompt() },
+          ],
+        })) as { content: Array<{ type: string; text?: string }> };
+        const xtext = forced.content
+          .filter((b) => b.type === "text")
+          .map((b) => b.text ?? "")
+          .join("");
+        let xparsed: unknown = null;
+        try {
+          xparsed = JSON.parse(xtext);
+        } catch {
+          /* unparseable forcing turn — block below */
         }
+        const xdec = xparsed ? coerceDecision(xparsed) : null;
+        console.log(
+          `[agent-a2] ${JSON.stringify({
+            key: p.key,
+            forced: true,
+            forcedEdits: xdec?.edits?.length ?? 0,
+            forcedCommand: Boolean(xdec?.command),
+            forcedStatus: xdec?.task.status ?? null,
+          })}`
+        );
+        if (xdec && !isStalledDecision(xdec)) {
+          delete xdec.readFiles;
+          return xdec;
+        }
+        // Even forced, it produced no action: surface the stall HONESTLY
+        // (status=blocked) instead of a plan that spins on "planned only" — the
+        // founder then sees a real blocker to unstick, not a silent loop.
+        candidate.task.status = "blocked";
+        if (!/blocked|stuck/i.test(candidate.task.detail)) {
+          candidate.task.detail =
+            `${candidate.task.detail} — auto-blocked: agent kept re-planning without shipping edits.`.slice(0, 500);
+        }
+        return candidate;
       } else {
         console.log(
           `[agent-a2] ${JSON.stringify({ key: p.key, requested: decision.readFiles.length, readable: 0, note: "no files fetched" })}`
@@ -854,7 +936,31 @@ export async function applyDecision(
             ? "escalated"
             : "simulated";
         txSig = r.txSig ?? null;
-        note = `${r.executed ? "🟢 buyback executed" : r.simulated ? "🟡 buyback simulated" : "⚠️ buyback held"} ${act.amountSol ?? 0} SOL — ${r.reason}`.slice(0, 280);
+        // Name the token bought + how much of it came back (the Jupiter quote's
+        // outAmount, scaled by the mint's decimals) so the note says WHAT was
+        // bought, not just the SOL spent. Best-effort: omit on any failure.
+        let tokenOut = "";
+        if (r.expectedOut) {
+          try {
+            const { getMintDecimals } = await import("./solana");
+            const dec = await getMintDecimals(
+              p.mint,
+              p.network === "mainnet" ? "mainnet" : "devnet"
+            );
+            if (dec != null) {
+              const ui = Math.round(Number(r.expectedOut) / 10 ** dec);
+              tokenOut = ` ${r.executed ? "→" : "≈"} ${ui.toLocaleString("en-US")} ${p.ticker}`;
+            }
+          } catch {
+            /* decimals unreadable — keep the SOL-only note */
+          }
+        }
+        const head = r.executed
+          ? "🟢 buyback executed"
+          : r.simulated
+            ? "🟡 buyback simulated"
+            : "⚠️ buyback held";
+        note = `${head} ${act.amountSol ?? 0} SOL${tokenOut}${r.executed ? "" : ` — ${r.reason}`}`.slice(0, 280);
       } catch {
         /* exec unavailable — keep the routed decision note */
       }
@@ -1019,6 +1125,16 @@ export async function runAgentTick(
       const v = validateEdits(decision.edits);
       if (!v.ok) {
         decision.summary = `${decision.summary} — edits rejected: ${v.reason}`.slice(0, 280);
+        // Feed the rejection back as a FAILED check, so it lands in the task's
+        // episodic memory (last_outcome) — otherwise the agent only sees a vague
+        // "planned only" and retries the SAME disallowed file. Now it learns e.g.
+        // "disallowed path: lib/budget.ts" and can target an allowed file next tick.
+        verify = {
+          checkerId: "verifier:edit-validation",
+          checks: [
+            { kind: "test", name: "edit-validation", passed: false, detail: v.reason },
+          ],
+        };
       } else {
         const repoSlug = p.repo
           .replace(/^https?:\/\//, "")
@@ -1035,9 +1151,19 @@ export async function runAgentTick(
           authorEmail: "agent@looplabs.fun",
         });
         const { runInSandbox } = await import("./sandbox");
-        const result = await runInSandbox(script, "bash", {
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-        });
+        // The gate (clone → npm ci → tsc → vitest → push) needs minutes, but
+        // E2B's runCode defaults to ~60s — so it was silently timing out mid
+        // `npm ci` and never pushing. Give it a real budget, bounded so the run
+        // still fits the cron function's 300s cap (lib/sandbox adds +30s of
+        // sandbox lifetime on top). Tunable via env without a redeploy.
+        const handsTimeoutMs =
+          Number(process.env.AGENT_HANDS_TIMEOUT_MS) || 240_000;
+        const result = await runInSandbox(
+          script,
+          "bash",
+          { GITHUB_TOKEN: process.env.GITHUB_TOKEN },
+          { timeoutMs: handsTimeoutMs }
+        );
         const hands = parseHandsOutput(result.stdout);
         decision.summary = `${decision.summary} — ${hands.note}`.slice(0, 280);
         verify = {
