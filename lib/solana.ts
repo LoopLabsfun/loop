@@ -126,6 +126,17 @@ export async function getTokenSupplyUi(
   return res?.value?.uiAmount ?? null;
 }
 
+/** Decimals of an SPL mint (e.g. 6 for LOOP), or null on failure. Lets a raw
+ * token amount (a Jupiter quote's outAmount) be shown as a human uiAmount. */
+export async function getMintDecimals(
+  mint: string,
+  net: Network = DEFAULT_NETWORK
+): Promise<number | null> {
+  if (!KEY || !BASE58.test(mint)) return null;
+  const res = await rpc<{ value: { decimals: number } }>(net, "getTokenSupply", [mint]);
+  return typeof res?.value?.decimals === "number" ? res.value.decimals : null;
+}
+
 /**
  * SPL token balance (uiAmount) that `owner` holds of `mint`, summed across its
  * token accounts — or null if unconfigured / invalid / failed (0 when it holds

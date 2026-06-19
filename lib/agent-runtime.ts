@@ -854,7 +854,31 @@ export async function applyDecision(
             ? "escalated"
             : "simulated";
         txSig = r.txSig ?? null;
-        note = `${r.executed ? "🟢 buyback executed" : r.simulated ? "🟡 buyback simulated" : "⚠️ buyback held"} ${act.amountSol ?? 0} SOL — ${r.reason}`.slice(0, 280);
+        // Name the token bought + how much of it came back (the Jupiter quote's
+        // outAmount, scaled by the mint's decimals) so the note says WHAT was
+        // bought, not just the SOL spent. Best-effort: omit on any failure.
+        let tokenOut = "";
+        if (r.expectedOut) {
+          try {
+            const { getMintDecimals } = await import("./solana");
+            const dec = await getMintDecimals(
+              p.mint,
+              p.network === "mainnet" ? "mainnet" : "devnet"
+            );
+            if (dec != null) {
+              const ui = Math.round(Number(r.expectedOut) / 10 ** dec);
+              tokenOut = ` ${r.executed ? "→" : "≈"} ${ui.toLocaleString("en-US")} ${p.ticker}`;
+            }
+          } catch {
+            /* decimals unreadable — keep the SOL-only note */
+          }
+        }
+        const head = r.executed
+          ? "🟢 buyback executed"
+          : r.simulated
+            ? "🟡 buyback simulated"
+            : "⚠️ buyback held";
+        note = `${head} ${act.amountSol ?? 0} SOL${tokenOut}${r.executed ? "" : ` — ${r.reason}`}`.slice(0, 280);
       } catch {
         /* exec unavailable — keep the routed decision note */
       }
