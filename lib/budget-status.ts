@@ -10,6 +10,12 @@ export interface BudgetStatus {
   remaining: number;
   /** Percent of cap used, an integer-friendly number in [0, 100]. */
   pct: number;
+  /**
+   * True when the raw (unclamped) spend actually exceeded the cap. Because
+   * `spent` is clamped to the cap, pct=100 alone can't tell "exactly at cap"
+   * from a genuine over-spend — this flag lets the view flag the latter.
+   */
+  over: boolean;
 }
 
 function clampNonNegative(value: number): number {
@@ -25,11 +31,14 @@ function clampNonNegative(value: number): number {
  * - spent never exceeds cap
  * - remaining is never negative
  * - pct is in [0, 100]; a cap of 0 yields pct 0
+ * - over is true iff the floored spend exceeds the cap (the clamp hides this)
  */
 export function budgetStatus(spentInput: number, capInput: number): BudgetStatus {
   const cap = clampNonNegative(capInput);
-  const spent = Math.min(clampNonNegative(spentInput), cap);
+  const flooredSpent = clampNonNegative(spentInput);
+  const spent = Math.min(flooredSpent, cap);
   const remaining = Math.max(cap - spent, 0);
   const pct = cap === 0 ? 0 : Math.min(100, Math.max(0, (spent / cap) * 100));
-  return { spent, cap, remaining, pct };
+  const over = flooredSpent > cap;
+  return { spent, cap, remaining, pct, over };
 }
