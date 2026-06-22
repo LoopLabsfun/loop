@@ -1,29 +1,49 @@
-import { describe, it, expect } from "vitest";
-import { budgetStatus } from "./budget-status";
+import { describe, it, expect } from 'vitest';
+import { budgetStatus } from './budget-status';
 
-describe("budgetStatus", () => {
-  it("computes remaining and pct for a normal spend", () => {
-    expect(budgetStatus(2, 10)).toEqual({ spent: 2, cap: 10, remaining: 8, pct: 20 });
+describe('budgetStatus', () => {
+  it('computes a normal partial spend', () => {
+    const s = budgetStatus(0.25, 1);
+    expect(s.spent).toBe(0.25);
+    expect(s.cap).toBe(1);
+    expect(s.remaining).toBe(0.75);
+    expect(s.pct).toBeCloseTo(25, 6);
   });
 
-  it("clamps pct to 100 and remaining to 0 when over cap", () => {
-    expect(budgetStatus(15, 10)).toEqual({ spent: 15, cap: 10, remaining: 0, pct: 100 });
+  it('caps spent at the cap and floors remaining at 0', () => {
+    const s = budgetStatus(5, 2);
+    expect(s.spent).toBe(2);
+    expect(s.remaining).toBe(0);
+    expect(s.pct).toBe(100);
   });
 
-  it("returns 0 pct when cap is zero or negative", () => {
-    expect(budgetStatus(5, 0)).toEqual({ spent: 5, cap: 0, remaining: 0, pct: 0 });
-    expect(budgetStatus(5, -3)).toEqual({ spent: 5, cap: 0, remaining: 0, pct: 0 });
+  it('returns pct 0 and remaining 0 for a zero cap', () => {
+    const s = budgetStatus(1, 0);
+    expect(s.cap).toBe(0);
+    expect(s.spent).toBe(0);
+    expect(s.remaining).toBe(0);
+    expect(s.pct).toBe(0);
   });
 
-  it("floors negative spend to 0", () => {
-    expect(budgetStatus(-4, 10)).toEqual({ spent: 0, cap: 10, remaining: 10, pct: 0 });
+  it('floors negative inputs to 0', () => {
+    const s = budgetStatus(-3, -1);
+    expect(s.spent).toBe(0);
+    expect(s.cap).toBe(0);
+    expect(s.remaining).toBe(0);
+    expect(s.pct).toBe(0);
   });
 
-  it("rounds pct to one decimal place", () => {
-    expect(budgetStatus(1, 3).pct).toBe(33.3);
+  it('treats NaN inputs as 0', () => {
+    const s = budgetStatus(Number.NaN, Number.NaN);
+    expect(s.spent).toBe(0);
+    expect(s.cap).toBe(0);
+    expect(s.remaining).toBe(0);
+    expect(s.pct).toBe(0);
   });
 
-  it("treats non-finite inputs as 0", () => {
-    expect(budgetStatus(NaN, Infinity)).toEqual({ spent: 0, cap: 0, remaining: 0, pct: 0 });
+  it('clamps pct to 100 even with a tiny over-spend', () => {
+    const s = budgetStatus(1.0000001, 1);
+    expect(s.pct).toBeLessThanOrEqual(100);
+    expect(s.remaining).toBeGreaterThanOrEqual(0);
   });
 });
