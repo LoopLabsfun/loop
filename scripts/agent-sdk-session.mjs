@@ -17,6 +17,16 @@
 // Stdout:  SESSION_TURNS=<n>, SESSION_RESULT=ok|error|aborted, SESSION_NOTE=<…>.
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
+// The E2B sandbox runs commands as root, but Claude Code refuses
+// `--dangerously-skip-permissions` (which bypassPermissions maps to) under root
+// "for security reasons" → the subprocess exits 1. IS_SANDBOX=1 is the documented
+// escape hatch that tells Claude Code it's in an isolated sandbox, permitting it.
+// HOME must also be set so Claude Code can create its config dir (the E2B kernel
+// shell leaves HOME unset). Both are safe here: the sandbox is ephemeral + the
+// isolation boundary, and the git token is withheld from this process's env.
+process.env.IS_SANDBOX = "1";
+process.env.HOME ||= "/home/user";
+
 const brief = process.env.TASK_BRIEF?.trim();
 if (!brief) {
   console.log("SESSION_RESULT=error");
