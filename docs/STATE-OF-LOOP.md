@@ -216,15 +216,15 @@ tests → iterate to green → push) takes *minutes*, but a Vercel function caps
    (uploaded to the Production environment, `result: success`).
 3. **Set `TRIGGER_SECRET_KEY` in Vercel** (the enqueue side; typically synced by
    the Vercel↔Trigger integration) + flip `AGENT_BRAIN=sdk`.
-4. **Rebuild the warm E2B template.** A dry-run of the SDK-in-E2B session
+4. **Rebuild the warm E2B template.** A first dry-run of the SDK-in-E2B session
    (`scripts/verify-sdk-session.ts`, 2026-06-22) **timed out at 8 min**: the
-   `loop-agent` template's warm npm cache predates the Trigger.dev + Claude Agent
-   SDK additions (`fd547cb` changed ~1235 lockfile lines), so `npm ci` re-fetches
-   them cold and overruns short timeouts. The *mechanism* is sound — this just
-   confirms a full session needs (a) a **rebuilt** template
-   (`npx tsx scripts/e2b-template.ts`, ideally `E2B_TEMPLATE_NAME=loop-agent-sdk`
-   with the claude binary baked in) and (b) the **durable Trigger.dev host**
-   (25 min), not a short cron cap — which is exactly the path that's wired.
+   `loop-agent` template's warm npm cache predated the Trigger.dev + Claude Agent
+   SDK additions (`fd547cb` changed ~1235 lockfile lines), so `npm ci` re-fetched
+   them cold. ✅ **Fixed 2026-06-22** — the template was rebuilt
+   (`npx tsx scripts/e2b-template.ts`, warm cache now covers all 1718 packages,
+   build 2m32s). The *mechanism* is sound; a full session still wants the
+   **durable Trigger.dev host** (25 min), not a short cron cap — which is exactly
+   the path that's wired.
 
 > Uncommitted helper scripts present in the tree: `scripts/trigger-set-env.ts`,
 > `scripts/sweep-agent-wallet.ts`, `sdk-diag.ts` (an E2B probe that diagnosed the
