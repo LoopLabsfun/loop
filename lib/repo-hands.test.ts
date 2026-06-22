@@ -107,6 +107,34 @@ describe("buildHandsScript", () => {
     expect(script).toContain(b64);
     expect(script).toContain("base64 -d");
   });
+  it("clones onto the root disk ($HOME), never the /tmp tmpfs (ENOSPC guard)", () => {
+    // node_modules (~2.3G) overflows the E2B /tmp tmpfs (~2G); must clone on root.
+    expect(script).toContain('cd "${HOME:-/home/user}"');
+    expect(script).not.toContain("cd /tmp\n");
+    expect(script).not.toMatch(/clone[^\n]*\/tmp\/work/);
+  });
+  it("clones with enough depth for the pre-push rebase", () => {
+    expect(script).toContain("git clone --depth 20");
+    expect(script).not.toContain("git clone --depth 1 ");
+  });
+  it("keeps gate output off stdout so markers aren't dropped by the kernel", () => {
+    // Verbose npm/vitest output → log file; only markers + a tail reach stdout.
+    expect(script).toContain(">> /tmp/gate.log 2>&1");
+    expect(script).toContain("tail -n 25 /tmp/gate.log");
+  });
+  it("omits `next build` unless fullGate is set", () => {
+    expect(script).not.toContain("npx next build");
+    const full = buildHandsScript({
+      repoSlug: "LoopLabsfun/loop",
+      branch: "main",
+      edits,
+      commitMessage: "feat: add a",
+      authorName: "loop-agent",
+      authorEmail: "agent@agents.looplabs.fun",
+      fullGate: true,
+    });
+    expect(full).toContain("npx next build");
+  });
 });
 
 describe("parseHandsOutput", () => {

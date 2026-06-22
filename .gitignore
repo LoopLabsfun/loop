@@ -24,4 +24,7 @@ scripts/.vanity/
 # local project-row backups (restore source, not committed)
 scripts/.backup-*.json
 
+# E2B template build staging (root manifests staged into the build context, then cleaned)
+scripts/.e2b-build/
+
 .env.local.bak
