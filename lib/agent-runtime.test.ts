@@ -9,6 +9,7 @@ import {
   buildReadFilesPrompt,
   buildForceActPrompt,
   isStalledDecision,
+  isStructuralEditRejection,
   readLoopConfig,
   READ_ROUNDS_MAX,
   sdkHandsConfig,
@@ -472,6 +473,20 @@ describe("isStalledDecision (A2 stall guard)", () => {
   it("is false when the decision actually acts (edits or command)", () => {
     expect(isStalledDecision({ edits: [{ path: "lib/a.ts", contents: "x" }] })).toBe(false);
     expect(isStalledDecision({ command: { language: "python", code: "print(1)" } })).toBe(false);
+  });
+});
+
+describe("isStructuralEditRejection (denylist auto-block)", () => {
+  it("is true only for a denylisted (disallowed) path — the unshippable case", () => {
+    expect(isStructuralEditRejection("disallowed path: lib/budget.ts")).toBe(true);
+    expect(isStructuralEditRejection("disallowed path: .github/workflows/ci.yml")).toBe(true);
+    expect(isStructuralEditRejection("Disallowed Path: lib/verifier.ts")).toBe(true);
+  });
+  it("is false for transient rejections the agent can legitimately retry", () => {
+    expect(isStructuralEditRejection("too many files (20 > 12)")).toBe(false);
+    expect(isStructuralEditRejection("file too large: lib/a.ts (90000B)")).toBe(false);
+    expect(isStructuralEditRejection("duplicate path: lib/a.ts")).toBe(false);
+    expect(isStructuralEditRejection("accepted 2 file(s)")).toBe(false);
   });
 });
 
