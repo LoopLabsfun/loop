@@ -9,6 +9,8 @@ import {
   buildReadFilesPrompt,
   buildForceActPrompt,
   isStalledDecision,
+  readLoopConfig,
+  READ_ROUNDS_MAX,
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
@@ -363,6 +365,55 @@ describe("buildReadFilesPrompt (A2 pass 2)", () => {
     const s = buildReadFilesPrompt([{ path: "lib/a.ts", contents: "x" }]);
     expect(s).toMatch(/stall and will be rejected/i);
     expect(s).not.toMatch(/pick a DIFFERENT increment/i);
+  });
+  it("no-opts call is the LAST-turn variant (back-compat: reading is closed)", () => {
+    const s = buildReadFilesPrompt([{ path: "lib/a.ts", contents: "x" }]);
+    expect(s).toContain("This is your LAST turn");
+    expect(s).toContain("`readFiles` is IGNORED if you return it");
+    expect(s).not.toMatch(/more reading round/i);
+  });
+  it("with rounds left, invites another targeted read instead of forcing the LAST turn", () => {
+    const s = buildReadFilesPrompt([{ path: "lib/a.ts", contents: "x" }], {
+      roundsLeft: 2,
+    });
+    expect(s).toMatch(/2 more reading round/i);
+    expect(s).toMatch(/return\s+`readFiles` again/i);
+    expect(s).not.toContain("This is your LAST turn");
+    // still demands action when ready (no infinite reading)
+    expect(s).toMatch(/ACT now/);
+  });
+});
+
+describe("readLoopConfig (iterative read-loop budget)", () => {
+  it("defaults to the original single read→act behavior (1 round, 6 files)", () => {
+    expect(readLoopConfig({})).toEqual({ maxRounds: 1, maxFiles: 6 });
+  });
+  it("reads AGENT_READ_ROUNDS and derives a 6-files/round budget", () => {
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "4" })).toEqual({
+      maxRounds: 4,
+      maxFiles: 24,
+    });
+  });
+  it("clamps rounds to READ_ROUNDS_MAX and floors to ≥1 on junk", () => {
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "99" }).maxRounds).toBe(READ_ROUNDS_MAX);
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "0" }).maxRounds).toBe(1);
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "-3" }).maxRounds).toBe(1);
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "abc" }).maxRounds).toBe(1);
+  });
+  it("honors AGENT_READ_MAX_FILES but never above rounds*6", () => {
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "4", AGENT_READ_MAX_FILES: "10" }).maxFiles).toBe(10);
+    expect(readLoopConfig({ AGENT_READ_ROUNDS: "4", AGENT_READ_MAX_FILES: "1000" }).maxFiles).toBe(24);
+  });
+});
+
+describe("buildSystemPrompt — iterative reading guidance", () => {
+  it("stays single-round by default (no iterative-read instruction)", () => {
+    expect(buildSystemPrompt(project)).not.toMatch(/read ITERATIVELY/);
+  });
+  it("invites iterative reading only when more than one round is allowed", () => {
+    const s = buildSystemPrompt(project, undefined, { readRounds: 4 });
+    expect(s).toMatch(/read ITERATIVELY across up to 4 rounds/);
+    expect(s).toMatch(/don't over-read/i);
   });
 });
 

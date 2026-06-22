@@ -37,6 +37,46 @@ import {
 // only; the key never reaches the browser. Heavy SDK is imported dynamically.
 
 const AGENT_MODEL = "claude-opus-4-8";
+
+/**
+ * How deep the agent may EXPLORE the codebase before it acts (the "read loop").
+ *
+ * The brain reads files via the A2 path — but historically it got exactly ONE
+ * read round (read ≤6 files, then it MUST act), so on anything non-trivial it
+ * edited half-blind: it couldn't read a file, discover what it imports, and read
+ * that too. This config generalizes A2 into a bounded iterative loop
+ * (read → reflect → read more → edit), which is the single biggest lever on the
+ * agent's "intelligence" — far more than the model.
+ *
+ * Defaults preserve the OLD behavior exactly (`maxRounds: 1`), so the loop is a
+ * pure no-op until `AGENT_READ_ROUNDS` is set — same env-gated rollout as the
+ * other high-impact switches (AGENT_REPO_HANDS, AGENT_GATE_BUILD). Bounded hard
+ * because each round is another Opus call: on the every-2-minute cron, unbounded
+ * reading would multiply burn.
+ */
+export const READ_ROUNDS_MAX = 6;
+export interface ReadLoopConfig {
+  /** Max read→reflect rounds before the agent is forced to act. ≥1. */
+  maxRounds: number;
+  /** Hard cap on total files fetched across all rounds (bounds cost). */
+  maxFiles: number;
+}
+export function readLoopConfig(
+  env: Record<string, string | undefined> = process.env
+): ReadLoopConfig {
+  const rawRounds = Number(env.AGENT_READ_ROUNDS);
+  const maxRounds =
+    Number.isFinite(rawRounds) && rawRounds >= 1
+      ? Math.min(Math.floor(rawRounds), READ_ROUNDS_MAX)
+      : 1; // default: one round = the original single read→act behavior
+  // Default the file budget to 6/round (the original per-round cap), overridable.
+  const rawFiles = Number(env.AGENT_READ_MAX_FILES);
+  const maxFiles =
+    Number.isFinite(rawFiles) && rawFiles >= 1
+      ? Math.min(Math.floor(rawFiles), maxRounds * 6)
+      : maxRounds * 6;
+  return { maxRounds, maxFiles };
+}
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 const SANDBOX_LANGS: SandboxLanguage[] = ["python", "javascript", "bash"];
@@ -182,7 +222,7 @@ export function agentRuntimeConfigured(): boolean {
 export function buildSystemPrompt(
   p: Project,
   mandate: AgentMandate = defaultMandate(p),
-  opts: { canCommit?: boolean } = {}
+  opts: { canCommit?: boolean; readRounds?: number } = {}
 ): string {
   return [
     `You are the autonomous AI engineer that builds and grows the project "${p.name}" (${p.ticker}).`,
@@ -206,6 +246,11 @@ export function buildSystemPrompt(
         ]
       : []),
     `READ BEFORE YOU ACT — you can see the REAL code, not just guess: return "readFiles", up to 6 paths FROM THE FILE TREE you were shown, to get their actual current contents. Use it whenever your task touches an existing file — to confirm what's already there (so you don't "add" something that exists), and ALWAYS before writing "edits" to a file. When you return readFiles, OMIT "edits" this turn: you'll be handed the contents and then produce your final decision. Only a brand-new file may be written without reading it first. Never invent a file's contents.`,
+    ...(opts.readRounds && opts.readRounds > 1
+      ? [
+          `You may read ITERATIVELY across up to ${opts.readRounds} rounds: read a file, and if it imports or references other files you must understand to make the change correctly, return "readFiles" again for THOSE — then act. This is how you build a real mental model instead of guessing. But don't over-read: stop and return "edits" as soon as you understand enough; re-reading files you already have, or reading past the point of understanding, just burns cycles.`,
+        ]
+      : []),
     `ANTI-FIXATION — do not loop on one task: if you have already been "building" the SAME task across multiple cycles and you cannot verifiably ship it now, STOP re-submitting the same "still working on X". Either (a) ship it this cycle with a passing command, or (b) move on to a genuinely DIFFERENT next increment. Re-posting near-identical progress on the same task over and over is a failure.`,
     `Never invent fake metrics or claim work you didn't do.`,
     // Build-in-public voice: the agent WRITES its own posts. X is the broad,
@@ -353,19 +398,39 @@ export function buildUserPrompt(
  * them. Each file is fenced with its path so the agent can't confuse them.
  */
 export function buildReadFilesPrompt(
-  files: { path: string; contents: string }[]
+  files: { path: string; contents: string }[],
+  /**
+   * When `roundsLeft > 0` the agent may read MORE before acting (the iterative
+   * read loop): it can return `readFiles` again to pull files it discovered it
+   * needs, OR act now. Default 0 = the original single-round behavior (this is
+   * the LAST turn, act now) — so a no-opts call is byte-identical to before.
+   */
+  opts: { roundsLeft?: number } = {}
 ): string {
   const blocks = files
     .map((f) => `===== ${f.path} =====\n${f.contents}`)
     .join("\n\n");
+  const roundsLeft = opts.roundsLeft ?? 0;
+  const closing =
+    roundsLeft > 0
+      ? [
+          "Now decide your next step, grounded in the ACTUAL contents above. You",
+          `still have ${roundsLeft} more reading round(s): if — and ONLY if — you need`,
+          "to see other files these reference to make the change correctly, return",
+          "`readFiles` again (the SPECIFIC paths you now know you need). Otherwise do",
+          "NOT keep reading — ACT now with `edits`. Don't re-read what you already have.",
+        ]
+      : [
+          "Now return your FINAL decision (same JSON schema), grounded in the ACTUAL",
+          "contents above. This is your LAST turn — there is NO further reading round, so",
+          "`readFiles` is IGNORED if you return it. You have everything you need: ACT now.",
+        ];
   return [
     "Here are the CURRENT contents of the files you asked to read:",
     "",
     blocks,
     "",
-    "Now return your FINAL decision (same JSON schema), grounded in the ACTUAL",
-    "contents above. This is your LAST turn — there is NO further reading round, so",
-    "`readFiles` is IGNORED if you return it. You have everything you need: ACT now.",
+    ...closing,
     "For a code task you MUST return `edits` — FULL-FILE writes (preserve everything",
     "you are not deliberately changing; never re-add something that already exists).",
     "`edits` is the verifying check: the runtime applies them, runs the tests, and",
@@ -614,6 +679,7 @@ export async function decideNextAction(
     output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
     system: buildSystemPrompt(p, mandate, {
       canCommit: process.env.AGENT_REPO_HANDS === "1",
+      readRounds: readLoopConfig().maxRounds,
     }),
     messages: [{ role: "user", content: userContent }],
   };
@@ -645,97 +711,117 @@ export async function decideNextAction(
   if (decision.readFiles?.length) {
     try {
       const { getRepoFiles } = await import("./commits");
-      const files = await getRepoFiles(p.repo, decision.readFiles);
-      const readable = files.filter((f) => !f.contents.startsWith("(")).length;
-      if (files.length) {
-        const follow = (await create({
-          ...params,
-          messages: [
-            { role: "user", content: userContent },
-            { role: "assistant", content: text },
-            { role: "user", content: buildReadFilesPrompt(files) },
-          ],
-        })) as { content: Array<{ type: string; text?: string }> };
-        const ftext = follow.content
-          .filter((b) => b.type === "text")
-          .map((b) => b.text ?? "")
-          .join("");
-        let fparsed: unknown = null;
+      const cfg = readLoopConfig();
+      const textOf = (r: { content: Array<{ type: string; text?: string }> }) =>
+        r.content.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+
+      // Conversation accumulated across read rounds:
+      //   U(prompt) A(decision1) U(files1) A(decision2) U(files2) A(decision3) …
+      // so each round reflects on everything read so far (true iterative reading,
+      // not a one-shot guess). With cfg.maxRounds=1 (default) this runs exactly
+      // once — byte-identical to the original single read→act pass.
+      const convo: { role: "user" | "assistant"; content: string }[] = [
+        { role: "user", content: userContent },
+        { role: "assistant", content: text },
+      ];
+      let current = decision; // best decision so far (pass-1 fallback)
+      let filesRead = 0;
+      let round = 0;
+      let fetchedAny = false;
+
+      while (
+        current.readFiles?.length &&
+        round < cfg.maxRounds &&
+        filesRead < cfg.maxFiles
+      ) {
+        // getRepoFiles internally caps each call at 6 paths; the maxFiles budget
+        // caps the loop total so deep reading can't blow up Opus burn.
+        const want = current.readFiles.slice(0, cfg.maxFiles - filesRead);
+        const files = await getRepoFiles(p.repo, want);
+        if (!files.length) break;
+        fetchedAny = true;
+        filesRead += files.length;
+        round += 1;
+        const roundsLeft = cfg.maxRounds - round; // reads still allowed AFTER this turn
+        convo.push({ role: "user", content: buildReadFilesPrompt(files, { roundsLeft }) });
+        const follow = (await create({ ...params, messages: convo })) as {
+          content: Array<{ type: string; text?: string }>;
+        };
+        const ftext = textOf(follow);
+        convo.push({ role: "assistant", content: ftext || "(no parseable decision)" });
+        let grounded: AgentDecision | null = null;
         try {
-          fparsed = JSON.parse(ftext);
+          grounded = coerceDecision(JSON.parse(ftext));
         } catch {
-          /* keep pass-1 decision */
+          /* unparseable — keep the last good decision and stop reading */
         }
-        const grounded = fparsed ? coerceDecision(fparsed) : null;
-        // Diagnostic: surface what the read→act pass actually produced, so a
-        // "reads forever, never edits" loop is visible in `vercel logs`.
+        // Diagnostic: surface each round so a "reads forever, never edits" loop is
+        // visible in `vercel logs`.
         console.log(
           `[agent-a2] ${JSON.stringify({
             key: p.key,
-            requested: decision.readFiles.length,
-            readable,
+            round,
+            requested: want.length,
+            readable: files.filter((f) => !f.contents.startsWith("(")).length,
             groundedEdits: grounded?.edits?.length ?? 0,
             groundedReread: grounded?.readFiles?.length ?? 0,
           })}`
         );
-        // The decision this read→act pass yields: the grounded pass-2 one if it
-        // parsed, else fall back to the pass-1 plan. No second read round exists,
-        // so strip any re-requested `readFiles` (it would loop on reading).
-        const candidate = grounded ?? decision;
-        delete candidate.readFiles;
-        // Healthy: it actually produced edits or a command — take it.
-        if (!isStalledDecision(candidate)) return candidate;
-        // STALLED — it read the files but returned neither edits nor a command
-        // (pass-2 stalled OR didn't parse). This is the exact loop that left the
-        // task on "planned only" for hours. One forcing turn: act, or block.
-        const forced = (await create({
-          ...params,
-          messages: [
-            { role: "user", content: userContent },
-            { role: "assistant", content: text },
-            { role: "user", content: buildReadFilesPrompt(files) },
-            { role: "assistant", content: ftext || "(no parseable decision)" },
-            { role: "user", content: buildForceActPrompt() },
-          ],
-        })) as { content: Array<{ type: string; text?: string }> };
-        const xtext = forced.content
-          .filter((b) => b.type === "text")
-          .map((b) => b.text ?? "")
-          .join("");
-        let xparsed: unknown = null;
-        try {
-          xparsed = JSON.parse(xtext);
-        } catch {
-          /* unparseable forcing turn — block below */
-        }
-        const xdec = xparsed ? coerceDecision(xparsed) : null;
-        console.log(
-          `[agent-a2] ${JSON.stringify({
-            key: p.key,
-            forced: true,
-            forcedEdits: xdec?.edits?.length ?? 0,
-            forcedCommand: Boolean(xdec?.command),
-            forcedStatus: xdec?.task.status ?? null,
-          })}`
-        );
-        if (xdec && !isStalledDecision(xdec)) {
-          delete xdec.readFiles;
-          return xdec;
-        }
-        // Even forced, it produced no action: surface the stall HONESTLY
-        // (status=blocked) instead of a plan that spins on "planned only" — the
-        // founder then sees a real blocker to unstick, not a silent loop.
-        candidate.task.status = "blocked";
-        if (!/blocked|stuck/i.test(candidate.task.detail)) {
-          candidate.task.detail =
-            `${candidate.task.detail} — auto-blocked: agent kept re-planning without shipping edits.`.slice(0, 500);
-        }
-        return candidate;
-      } else {
+        if (!grounded) break;
+        current = grounded;
+      }
+
+      if (!fetchedAny) {
         console.log(
           `[agent-a2] ${JSON.stringify({ key: p.key, requested: decision.readFiles.length, readable: 0, note: "no files fetched" })}`
         );
+        return decision;
       }
+
+      // Reading done (acted, ran out of rounds, or hit the file budget). `current`
+      // is the latest grounded decision. No further read round exists, so strip any
+      // re-requested `readFiles` (it would otherwise loop on reading).
+      const candidate = current;
+      delete candidate.readFiles;
+      // Healthy: it produced edits or a command — take it.
+      if (!isStalledDecision(candidate)) return candidate;
+
+      // STALLED — it read the files but returned neither edits nor a command. This
+      // is the exact loop that left the task on "planned only" for hours. One
+      // forcing turn over the full read context: act, or honestly block.
+      convo.push({ role: "user", content: buildForceActPrompt() });
+      const forced = (await create({ ...params, messages: convo })) as {
+        content: Array<{ type: string; text?: string }>;
+      };
+      const xtext = textOf(forced);
+      let xdec: AgentDecision | null = null;
+      try {
+        xdec = coerceDecision(JSON.parse(xtext));
+      } catch {
+        /* unparseable forcing turn — block below */
+      }
+      console.log(
+        `[agent-a2] ${JSON.stringify({
+          key: p.key,
+          forced: true,
+          forcedEdits: xdec?.edits?.length ?? 0,
+          forcedCommand: Boolean(xdec?.command),
+          forcedStatus: xdec?.task.status ?? null,
+        })}`
+      );
+      if (xdec && !isStalledDecision(xdec)) {
+        delete xdec.readFiles;
+        return xdec;
+      }
+      // Even forced, it produced no action: surface the stall HONESTLY
+      // (status=blocked) instead of a plan that spins on "planned only" — the
+      // founder then sees a real blocker to unstick, not a silent loop.
+      candidate.task.status = "blocked";
+      if (!/blocked|stuck/i.test(candidate.task.detail)) {
+        candidate.task.detail =
+          `${candidate.task.detail} — auto-blocked: agent kept re-planning without shipping edits.`.slice(0, 500);
+      }
+      return candidate;
     } catch (e) {
       // Don't swallow silently: a failing pass-2 is exactly why the agent would
       // appear to "read forever". Log it; fall back to the pass-1 decision below.
