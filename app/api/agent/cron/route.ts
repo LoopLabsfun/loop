@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { runAgentTick, agentRuntimeConfigured } from "@/lib/agent-runtime";
+import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { canAffordTick } from "@/lib/budget";
 
 // Scheduler entrypoint: Vercel Cron hits this on a schedule (see vercel.json) and
@@ -35,11 +36,26 @@ export async function GET(req: Request) {
   const asleep = all.filter((p) => !canAffordTick(p).ok).map((p) => p.key);
   const projects = all.filter((p) => canAffordTick(p).ok).slice(0, MAX_PER_RUN);
 
+  // Brain mode: "legacy" runs the whole tick inline (decide + repo-hands edits, all
+  // inside this 300s function); "sdk" decides here but ENQUEUES the long-running
+  // SDK-in-E2B session on Trigger.dev (no 300s cap). Default legacy — unchanged.
+  const mode = brainMode();
+
   const results: { key: string; ok: boolean; summary?: string; error?: string }[] =
     [];
   for (const p of projects) {
     try {
       const state = await getAgentState(p);
+      if (mode === "sdk") {
+        // Durable path: decide + enqueue; the session + its persist happen later.
+        const r = await enqueueSdkSession(p, {
+          tasks: state.tasks,
+          directives: state.directives,
+        });
+        results.push({ key: p.key, ok: true, summary: r.note });
+        console.log(`[agent-sdk-enqueue] ${JSON.stringify({ key: p.key, ...r })}`);
+        continue;
+      }
       const decision = await runAgentTick(p, {
         tasks: state.tasks,
         directives: state.directives,
