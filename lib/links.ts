@@ -37,3 +37,14 @@ export const EXTERNAL_LINKS: readonly ExternalLink[] = [
     ariaLabel: "Loop on Telegram (opens in a new tab)",
   },
 ] as const;
+
+/**
+ * Look up a single external link by its stable key.
+ *
+ * Lets a component (e.g. the nav) render one specific link without inlining
+ * its own `find()` over EXTERNAL_LINKS — keeping the registry the single
+ * source of truth. Returns `undefined` for an unknown key.
+ */
+export function getExternalLink(key: string): ExternalLink | undefined {
+  return EXTERNAL_LINKS.find((link) => link.key === key);
+}

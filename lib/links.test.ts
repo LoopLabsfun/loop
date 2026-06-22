@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { EXTERNAL_LINKS } from "./links";
+import { EXTERNAL_LINKS, getExternalLink } from "./links";
 
 describe("EXTERNAL_LINKS", () => {
   it("is a non-empty list", () => {
@@ -39,5 +39,18 @@ describe("EXTERNAL_LINKS", () => {
     const gh = EXTERNAL_LINKS.find((l) => l.key === "github");
     expect(gh).toBeDefined();
     expect(gh!.href).toContain("github.com");
+  });
+});
+
+describe("getExternalLink", () => {
+  it("resolves every registered key to its exact entry", () => {
+    for (const link of EXTERNAL_LINKS) {
+      expect(getExternalLink(link.key)).toBe(link);
+    }
+  });
+
+  it("returns undefined for an unknown key", () => {
+    expect(getExternalLink("does-not-exist")).toBeUndefined();
+    expect(getExternalLink("")).toBeUndefined();
   });
 });
