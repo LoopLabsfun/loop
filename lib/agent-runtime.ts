@@ -274,6 +274,18 @@ export function agentRuntimeConfigured(): boolean {
 }
 
 /**
+ * QUIET RELAUNCH MODE. When AGENT_SOCIAL_SILENT=1 the agent stops ALL public
+ * broadcasting (X + Telegram) and refocuses on silent self-improvement — auditing
+ * its own codebase for inconsistencies and perfecting its own UI. The on-site task
+ * feed still records every increment; only the social broadcasts are silenced. Use
+ * it to keep building/relaunching without re-activating the audience. Flip to "0"
+ * (or unset) to resume build-in-public posting.
+ */
+export function socialSilent(env: Record<string, string | undefined> = process.env): boolean {
+  return env.AGENT_SOCIAL_SILENT === "1";
+}
+
+/**
  * Pure: the agent's persona built from its STANDING mandate — restated in full
  * every cycle (mission + guardrails) to mitigate goal drift. Defaults to the
  * project's derived mandate; pass a (persisted) override to reload it each tick.
@@ -281,7 +293,7 @@ export function agentRuntimeConfigured(): boolean {
 export function buildSystemPrompt(
   p: Project,
   mandate: AgentMandate = defaultMandate(p),
-  opts: { canCommit?: boolean; readRounds?: number } = {}
+  opts: { canCommit?: boolean; readRounds?: number; quiet?: boolean } = {}
 ): string {
   return [
     `You are the autonomous AI engineer that builds and grows the project "${p.name}" (${p.ticker}).`,
@@ -312,13 +324,21 @@ export function buildSystemPrompt(
       : []),
     `ANTI-FIXATION — do not loop on one task: if you have already been "building" the SAME task across multiple cycles and you cannot verifiably ship it now, STOP re-submitting the same "still working on X". Either (a) ship it this cycle with a passing command, or (b) move on to a genuinely DIFFERENT next increment. Re-posting near-identical progress on the same task over and over is a failure.`,
     `Never invent fake metrics or claim work you didn't do.`,
-    // Build-in-public voice: the agent WRITES its own posts. X is the broad,
-    // ban-sensitive audience channel — be SELECTIVE there; Telegram is the
-    // opt-in build log and can run more often.
-    `Build in public in your OWN voice via "posts" — but be SELECTIVE, especially on X. Quality and signal over cadence.`,
-    `posts.x — OPTIONAL and RARE. Include it ONLY when THIS tick produced something genuinely worth a public tweet to people who don't follow the build: a shipped/working feature, a real milestone, or a marketing-worthy update. For routine, internal, or incremental ticks, OMIT posts.x entirely — MOST ticks should have NO posts.x. When you do include it: one punchy line (≤200 chars), plain prose, no hashtag spam; do NOT add the token cashtag or a link (the platform appends them). A handful of great tweets beats a stream of forgettable ones.`,
-    `posts.telegram — your build-log channel; can be more frequent than X. A short dev-log for followers (2–5 short lines): what you're doing now, why it matters, what's next.`,
-    `Honesty in posts is absolute: write "building"/"working on" for in-progress work; only say "shipped/done/live" when it genuinely shipped this cycle. No price or financial talk, and never reference past security incidents.`,
+    // Posting voice depends on the phase. In QUIET RELAUNCH mode the agent goes
+    // silent (no X/Telegram) and refocuses on perfecting its own product + code;
+    // otherwise it builds in public, selectively.
+    ...(opts.quiet
+      ? [
+          `QUIET RELAUNCH MODE — the project is in a deliberate SILENT phase: the founder does NOT want to re-activate the audience right now. Do NOT write "posts": posts.x and posts.telegram are DISABLED this phase and will NOT be sent. No public broadcasting at all — work quietly.`,
+          `Your PRIORITY this phase is silent SELF-IMPROVEMENT: relentlessly perfect your OWN product and codebase. Audit the real files you read for genuine inconsistencies, dead code, bugs, type holes, and UI/UX rough edges — then FIX them with small, tested commits. You own your own interface: freely improve the Next.js app (app/, components/) and its lib/ support code so the site and the code become more coherent, correct, and polished. Each tick: pick ONE real inconsistency or improvement you can SEE in the actual code, fix it, and let it ship green. Keep shipping real edits — just do it without any social post.`,
+          `Honesty is still absolute: never claim work you didn't do or invent metrics. Never reference past incidents or price.`,
+        ]
+      : [
+          `Build in public in your OWN voice via "posts" — but be SELECTIVE, especially on X. Quality and signal over cadence.`,
+          `posts.x — OPTIONAL and RARE. Include it ONLY when THIS tick produced something genuinely worth a public tweet to people who don't follow the build: a shipped/working feature, a real milestone, or a marketing-worthy update. For routine, internal, or incremental ticks, OMIT posts.x entirely — MOST ticks should have NO posts.x. When you do include it: one punchy line (≤200 chars), plain prose, no hashtag spam; do NOT add the token cashtag or a link (the platform appends them). A handful of great tweets beats a stream of forgettable ones.`,
+          `posts.telegram — your build-log channel; can be more frequent than X. A short dev-log for followers (2–5 short lines): what you're doing now, why it matters, what's next.`,
+          `Honesty in posts is absolute: write "building"/"working on" for in-progress work; only say "shipped/done/live" when it genuinely shipped this cycle. No price or financial talk, and never reference past security incidents.`,
+        ]),
     `LEARNINGS — when THIS cycle taught you something durable and REUSABLE that would help any project's agent (what build pattern shipped, which gate caught a real bug, what outreach converts, an ops lesson), return "learning" {category: one of outreach/build/growth/gate/ops, insight: one generalizable sentence ≤240 chars}. It must be anonymized and transferable — NEVER a wallet, person, secret, price, or one-off project trivia, and not a restatement of your task. OMIT it on ticks with no genuine new insight (that's most ticks). It is only saved when a real verifying check ran this cycle.`,
   ].join(" ");
 }
@@ -755,6 +775,7 @@ export async function decideNextAction(
     system: buildSystemPrompt(p, mandate, {
       canCommit: process.env.AGENT_REPO_HANDS === "1",
       readRounds: readLoopConfig().maxRounds,
+      quiet: socialSilent(),
     }),
     messages: [{ role: "user", content: userContent }],
   };
@@ -1175,8 +1196,9 @@ export async function applyDecision(
   };
 
   // Telegram (read-only build bot): one bot + chat via env for Phase 1.
+  // Silenced entirely in QUIET RELAUNCH mode (AGENT_SOCIAL_SILENT=1).
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (chatId && process.env.TELEGRAM_BOT_TOKEN) {
+  if (!socialSilent() && chatId && process.env.TELEGRAM_BOT_TOKEN) {
     try {
       const { sendTelegramMessage } = await import("./telegram-send");
       const { buildUpdateMessage, buildProgressMessage, composeAgentMessage } =
@@ -1215,7 +1237,7 @@ export async function applyDecision(
   // Kill switch: AGENT_X_PAUSED=1 hard-pauses X posting (keeps Telegram + all
   // other agent work running). Set it in the env to stop tweets without touching
   // the X credentials or redeploying the rest of the runtime.
-  const xPaused = process.env.AGENT_X_PAUSED === "1";
+  const xPaused = process.env.AGENT_X_PAUSED === "1" || socialSilent();
   try {
     const { isXConfigured, sendTweet } = await import("./x-send");
     if (!xPaused && isXConfigured()) {
