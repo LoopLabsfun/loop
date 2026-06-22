@@ -272,6 +272,35 @@ Production when you want the agent to actually build a mental model before it ed
 This is the contained first step toward the full Claude-Agent-SDK in-sandbox loop
 (read/grep/edit/run, iterate to green) that the runtime ultimately wants.
 
+### 4. Claude Agent SDK hands — the real loop (`AGENT_SDK_HANDS`, Phase 1)
+
+The end of the line for "intelligence": instead of the brain emitting full-file
+`edits`, a **bounded Claude Agent SDK session runs INSIDE the E2B sandbox** and does
+the engineering itself — reads/greps/edits and **runs the tests**, iterating like
+Claude Code — then we gate + push. Decision: run it **in-budget on Vercel** (no
+Trigger.dev yet), so each session is time-boxed to fit the 300s cron. Phase 1 =
+dogfood the LOOP repo only.
+
+Pieces: `scripts/agent-sdk-session.mjs` (the headless `query()` runner, locked-down
+`allowedTools` + `permissionMode: bypassPermissions`), `lib/agent-sdk-hands.ts`
+(`buildSdkHandsScript`: clone → session → denylist-on-diff → gate → push), wired in
+`runAgentTick` as the precedence path for `feature`/`fix` tasks.
+
+Safety: the **session runs with NO `GITHUB_TOKEN`** in its env (captured + `unset`
+before it, re-used only for clone/push) so it can't push or exfiltrate; the **diff
+is denylist-checked** (same `DENY_PATH_PREFIXES` as repo-hands) before commit; the
+**independent gate** (tsc + tests, optional `next build`) still gates the push
+(maker≠checker). Bounded by `AGENT_SDK_MAX_TURNS` + a wall-clock kill, throttled by
+`AGENT_SDK_MIN_INTERVAL_MS` (~15 min) since a session is many model calls.
+
+Turn-on (after recharge): build the SDK template
+(`E2B_TEMPLATE_NAME=loop-agent-sdk npx tsx scripts/e2b-template.ts`) → dry-run
+(`E2B_TEMPLATE=loop-agent-sdk npx tsx scripts/verify-sdk-session.ts` — edits + gate
+green, never pushes, reports turns + wall time) → set `E2B_TEMPLATE=loop-agent-sdk`
++ `AGENT_SDK_MODEL` → `AGENT_SDK_HANDS=1` → confirm a real SDK-authored
+`feat(agent): …` lands green → watch cost. The full Trigger.dev durable-run version
+(sessions that finish a whole feature) is the next step if 240s proves too short.
+
 ---
 
 ## Cron cadence (Hobby vs. finer)

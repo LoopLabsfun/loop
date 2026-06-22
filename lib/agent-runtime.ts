@@ -77,6 +77,65 @@ export function readLoopConfig(
       : maxRounds * 6;
   return { maxRounds, maxFiles };
 }
+
+/**
+ * AGENT SDK HANDS (Phase 1) — config for delegating a code task's EXECUTION to a
+ * bounded Claude Agent SDK session inside the E2B sandbox (lib/agent-sdk-hands.ts),
+ * instead of the brain emitting full-file `edits`. Env-gated OFF; when on it takes
+ * precedence over the repo-hands edits path for code tasks (feature/fix).
+ */
+export interface SdkHandsConfig {
+  enabled: boolean;
+  model: string;
+  maxTurns: number;
+  wallMs: number;
+  timeoutMs: number;
+  minIntervalMs: number;
+}
+export function sdkHandsConfig(env: Record<string, string | undefined> = process.env): SdkHandsConfig {
+  const num = (v: string | undefined, d: number) =>
+    Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d;
+  // Sandbox lifetime sits under the 300s cron cap; the session wall-clock sits
+  // under THAT so the gate (tsc+tests) still gets to run after the session.
+  const timeoutMs = Math.min(num(env.AGENT_SDK_TIMEOUT_MS, 260_000), 285_000);
+  return {
+    enabled: env.AGENT_SDK_HANDS === "1",
+    model: env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-4-6", // cheap default; iteration compensates
+    maxTurns: Math.min(num(env.AGENT_SDK_MAX_TURNS, 24), 60),
+    wallMs: num(env.AGENT_SDK_WALL_MS, 150_000),
+    timeoutMs,
+    minIntervalMs: num(env.AGENT_SDK_MIN_INTERVAL_MS, 900_000), // ~15 min throttle
+  };
+}
+
+/**
+ * Pure, STATELESS throttle for the (expensive) SDK session: roughly once per
+ * `minIntervalMs`, without persisting a timestamp. Fires on the single tick whose
+ * epoch lands in the first `windowMs` of each interval bucket; `windowMs` is kept
+ * below the ~2-min cron period so only one tick per bucket qualifies. `0` interval
+ * = run every eligible tick. Approximate by design (cron jitter) — it's a cost
+ * guardrail, not a hard scheduler.
+ */
+export function sdkHandsDueNow(
+  now: number,
+  minIntervalMs: number,
+  windowMs = 100_000
+): boolean {
+  if (!minIntervalMs || minIntervalMs <= 0) return true;
+  return now % minIntervalMs < Math.min(windowMs, minIntervalMs);
+}
+
+/** Pure: the brief handed to the in-sandbox session (via the TASK_BRIEF env). */
+export function buildTaskBrief(task: { title: string; detail: string; category: TaskCategory }): string {
+  return [
+    `Task (${task.category}): ${task.title}`,
+    task.detail ? `\nDetails: ${task.detail}` : "",
+    `\n\nImplement the smallest real, correct change for this task in this repository.`,
+    `Read the relevant code first, make the edit, then run the tests (\`npx vitest run\`)`,
+    `and \`npx tsc --noEmit\` and fix until green. Keep it minimal and in the existing style.`,
+  ].join("");
+}
+
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 const SANDBOX_LANGS: SandboxLanguage[] = ["python", "javascript", "bash"];
@@ -1191,6 +1250,71 @@ export async function runAgentTick(
   // `command` below; without it, a self-declared "shipped" is held at "building".
   let verify: { checkerId: string; checks: VerifyCheck[] } | undefined;
 
+  // Agent SDK hands (env-gated OFF via AGENT_SDK_HANDS) — Phase 1, PRECEDENCE path
+  // for CODE tasks (feature/fix): instead of the brain emitting `edits`, delegate
+  // the engineering to a bounded Claude Agent SDK session inside the sandbox that
+  // reads/edits/runs the tests itself, then we denylist-check the diff + run the
+  // independent gate + push if green (lib/agent-sdk-hands.ts). Throttled (cost) and
+  // failure-safe — an empty/red/aborted session just doesn't push. Falls through to
+  // the repo-hands edits path when off.
+  const sdkCfg = sdkHandsConfig();
+  const sdkCodeTask =
+    decision.task.category === "feature" || decision.task.category === "fix";
+  if (
+    sdkCfg.enabled &&
+    sdkCodeTask &&
+    process.env.E2B_API_KEY &&
+    process.env.GITHUB_TOKEN &&
+    process.env.ANTHROPIC_API_KEY &&
+    sdkHandsDueNow(Date.now(), sdkCfg.minIntervalMs)
+  ) {
+    try {
+      const { buildSdkHandsScript } = await import("./agent-sdk-hands");
+      const { parseHandsOutput } = await import("./repo-hands");
+      const repoSlug = p.repo
+        .replace(/^https?:\/\//, "")
+        .replace(/^github\.com\//, "")
+        .replace(/\.git$/, "")
+        .replace(/\/$/, "");
+      const prefix = decision.task.category === "fix" ? "fix" : "feat";
+      const script = buildSdkHandsScript({
+        repoSlug,
+        branch: "main",
+        commitMessage: `${prefix}(agent): ${decision.task.title}\n\nCo-Authored-By: Loop Agent <agent@looplabs.fun>`,
+        authorName: "loop-agent",
+        authorEmail: "agent@looplabs.fun",
+        fullGate: process.env.AGENT_GATE_BUILD === "1",
+      });
+      const { runInSandbox } = await import("./sandbox");
+      const result = await runInSandbox(script, "bash", {
+        // ANTHROPIC_API_KEY powers the in-sandbox session; GITHUB_TOKEN is captured
+        // then `unset` before the session (see agent-sdk-hands.ts) so it can't push.
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        TASK_BRIEF: buildTaskBrief(decision.task),
+        AGENT_SDK_MODEL: sdkCfg.model,
+        AGENT_SDK_MAX_TURNS: String(sdkCfg.maxTurns),
+        AGENT_SDK_WALL_MS: String(sdkCfg.wallMs),
+      }, { timeoutMs: sdkCfg.timeoutMs });
+      const hands = parseHandsOutput(result.stdout);
+      decision.summary = `${decision.summary} — sdk-hands: ${hands.note}`.slice(0, 280);
+      verify = {
+        checkerId: "verifier:e2b-sdk-hands",
+        checks: [
+          { kind: "test", name: "e2b:sdk-hands", passed: hands.pushed, detail: hands.note },
+        ],
+      };
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : "sdk-hands failed";
+      decision.summary = `${decision.summary} — sdk-hands error: ${reason}`.slice(0, 280);
+      verify = {
+        checkerId: "verifier:e2b-sdk-hands",
+        checks: [{ kind: "test", name: "e2b:sdk-hands", passed: false, detail: reason }],
+      };
+      console.error(`[sdk-hands] ${JSON.stringify({ key: p.key, error: reason })}`);
+    }
+  }
+
   // Repo-hands (env-gated OFF via AGENT_REPO_HANDS): if the agent emitted real
   // file edits, apply them in a sandbox — clone → gate (install → typecheck →
   // tests) → push to main ONLY if every check is green (buildHandsScript). A
@@ -1198,7 +1322,9 @@ export async function runAgentTick(
   // its code lands green; a green gate that didn't push is NOT a ship. The
   // GITHUB_TOKEN is injected as sandbox env, never embedded in the script. This
   // path takes precedence over a plain `command` and never aborts the tick.
+  // Skipped when SDK hands already produced a ship signal this tick.
   if (
+    !verify &&
     process.env.AGENT_REPO_HANDS === "1" &&
     decision.edits?.length &&
     process.env.E2B_API_KEY &&
