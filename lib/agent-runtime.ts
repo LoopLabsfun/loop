@@ -513,6 +513,22 @@ export function isStalledDecision(
 }
 
 /**
+ * Pure: is a repo-hands edit-validation rejection STRUCTURAL — i.e. the task
+ * targets a denylisted safety-rail/secret/CI path and therefore can NEVER ship as
+ * scoped? Only `validateEdits`'s "disallowed path: …" reason qualifies; the other
+ * rejections ("too many files", "file too large", "duplicate path") are transient
+ * and the agent can legitimately retry against a different/smaller file.
+ *
+ * When true, the runtime blocks the task (instead of leaving it "building"), so
+ * the agent abandons it and moves to fresh work — closing the fixation loop where
+ * it re-picks the same disallowed file every cycle (e.g. a budget helper aimed at
+ * the protected `lib/budget.ts`, observed looping for days).
+ */
+export function isStructuralEditRejection(reason: string): boolean {
+  return /disallowed path/i.test(reason);
+}
+
+/**
  * Pass-3 FORCING turn. Pass-2 stalled (read the real files, then returned a plan
  * with no edits/command). The two-pass design assumes "read → act"; this closes
  * it: act now, or honestly BLOCK — never a third re-plan. Sent only on the stall
@@ -1347,6 +1363,20 @@ export async function runAgentTick(
             { kind: "test", name: "edit-validation", passed: false, detail: v.reason },
           ],
         };
+        // A STRUCTURAL rejection (the task targets a denylisted safety-rail path)
+        // can never ship as scoped — block it so the agent abandons it and moves
+        // on, instead of re-picking the same disallowed file every cycle (the
+        // observed budgetStatus → lib/budget.ts fixation loop). Transient
+        // rejections (too many/large/duplicate) stay "building" — those are
+        // legitimately retryable against a different or smaller file.
+        if (isStructuralEditRejection(v.reason)) {
+          decision.task.status = "blocked";
+          decision.task.detail =
+            `${decision.task.detail} — auto-blocked: ${v.reason} is a protected file the agent may not edit; this task can't ship as scoped — pick a different increment.`.slice(
+              0,
+              500
+            );
+        }
       } else {
         const repoSlug = p.repo
           .replace(/^https?:\/\//, "")
