@@ -43,6 +43,16 @@ describe("buildSdkHandsScript", () => {
     expect(idxUnset).toBeGreaterThan(idxCapture);
     expect(idxSession).toBeGreaterThan(idxUnset); // session runs AFTER the token is removed
   });
+  it("sets the git identity BEFORE the session (Claude Code's internal checkpointing needs an author)", () => {
+    // Regression guard: a fresh clone has no git identity, and the in-session
+    // Claude Code checkpointing commits during the run — so `git config` MUST
+    // precede the session, not just sit in the commit tail.
+    const idxConfig = script.indexOf("git config user.email");
+    const idxSession = script.indexOf("agent-sdk-session.mjs");
+    expect(idxConfig).toBeGreaterThanOrEqual(0);
+    expect(idxSession).toBeGreaterThan(idxConfig);
+    expect(script).toContain("git config user.email 'agent@looplabs.fun'");
+  });
   it("uses the captured token (\\${GH}) for clone + push, never the raw env var there", () => {
     expect(script).toContain('git clone --depth 20 --branch \'main\' "https://x-access-token:${GH}@github.com/LoopLabsfun/loop.git"');
     expect(script).toContain('git push "https://x-access-token:${GH}@github.com/LoopLabsfun/loop.git" \'main\'');

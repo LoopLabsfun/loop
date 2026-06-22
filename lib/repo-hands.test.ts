@@ -113,6 +113,16 @@ describe("buildHandsScript", () => {
     expect(script).not.toContain("cd /tmp\n");
     expect(script).not.toMatch(/clone[^\n]*\/tmp\/work/);
   });
+  it("sets the git identity right after the clone, before the writes/commit", () => {
+    // Regression guard: identity must be in place for EVERY git op (rebase,
+    // commit), not only the final commit — set it early, once.
+    const idxConfig = script.indexOf("git config user.email");
+    const idxWrite = script.indexOf("base64 -d"); // the file writes
+    const idxCommit = script.indexOf("git commit");
+    expect(idxConfig).toBeGreaterThanOrEqual(0);
+    expect(idxWrite).toBeGreaterThan(idxConfig);
+    expect(idxCommit).toBeGreaterThan(idxConfig);
+  });
   it("clones with enough depth for the pre-push rebase", () => {
     expect(script).toContain("git clone --depth 20");
     expect(script).not.toContain("git clone --depth 1 ");
