@@ -4,6 +4,7 @@ import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
 import { PrivyAuthProvider } from "@/lib/privy";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -56,6 +57,7 @@ export default function RootLayout({
           </PrivyAuthProvider>
         </NetworkProvider>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
