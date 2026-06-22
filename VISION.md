@@ -58,6 +58,14 @@ two things not yet delivering are **(a) the agent committing its own code** and
 The product's whole promise is "the agent builds the product." Until the agent
 commits code that auto-deploys, everything else is secondary.
 
+> **P0.0 — WAKE THE AGENT FIRST (founder, blocking everything below).** As of
+> 2026-06-22 the agent has been **asleep since June 19**: the treasury wallet
+> `7kyekHMcBuyMTz7xobZimbSrxNKJhJTZzWApri2tcmm9` holds **0 SOL**, so the budget
+> hard-stop skips every cron tick. *No switch below does anything while the
+> treasury is empty.* Fund the treasury with a little SOL (≈0.05–0.5) and/or set
+> `AGENT_CLAIM_FEES=1` to sweep accrued fees in. Then the agent wakes and P0.1+
+> become real. See [docs/STATE-OF-LOOP.md](docs/STATE-OF-LOOP.md) §6.
+
 1. **Land the first agent-authored commit on `main`.** Turn on the hands
    (`AGENT_REPO_HANDS=1` or `AGENT_SDK_HANDS=1`), confirm one real
    `feat(agent): …` lands green and auto-deploys. *(Activation; see roadmap §"Turning on the real hands".)*

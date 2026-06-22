@@ -245,6 +245,34 @@ tests → iterate to green → push) takes *minutes*, but a Vercel function caps
 action are *demonstrably live*. The **hands** (autonomous code commits) and the
 **durable Trigger path** are the parts not yet delivering.
 
+### ⚠️ Current status: the agent is ASLEEP (treasury empty)
+
+Verified 2026-06-22:
+- The cron heartbeat is **healthy** — `/api/agent/cron` returns `200` every 2 min.
+- But the agent has produced **nothing since 2026-06-19 02:39** (0 tasks in the
+  last 72h), and its last post/action are also from June 19.
+- Reason: the treasury wallet `7kyekHMcBuyMTz7xobZimbSrxNKJhJTZzWApri2tcmm9`
+  holds **0 SOL on-chain** (`burn_per_day` is `0.00 SOL/day`, so the wake
+  threshold is the `0.01 SOL` dust floor). The **budget hard-stop**
+  (`lib/budget.ts`) therefore returns `asleep`, the cron skips the project, and
+  no brain/hands run. **This is the design working as intended** ("empty treasury
+  ⇒ the agent sleeps"), not a bug.
+
+**Consequence — this is the real root cause behind "nothing is happening / the
+token is dead":** at ≈$1.9k mcap there is ~no trading → ~no creator fees → the
+treasury stays at 0 → the agent sleeps → no visible building → the token stays
+dead. It's a death spiral that **no env flip can break** (Trigger.dev,
+`AGENT_BRAIN=sdk`, `AGENT_REPO_HANDS` all no-op while the treasury is empty).
+
+**To break it, the founder must prime the pump (see [VISION.md](../VISION.md) P0):**
+1. **Fund the treasury** wallet with a little SOL (even ~0.05–0.5 SOL) → the
+   agent wakes on the next cron tick and resumes building. (Anthropic spend runs
+   on `ANTHROPIC_API_KEY` credits, separate from treasury SOL — the treasury
+   balance is the *permission-to-run* signal + the on-chain action budget.)
+2. And/or set `AGENT_CLAIM_FEES=1` so each cron sweeps any **accrued pump.fun
+   creator fees** (`earned_sol` shows ~0.055 recorded) into the treasury —
+   self-funding once there's fee flow.
+
 ### Vercel — project `loop`, team `loop-labs-fun`
 
 - Git-connected auto-deploy from `LoopLabsfun/loop` (org-owned, private), Node 24.x.
