@@ -28,6 +28,7 @@ export function Footer() {
           href="https://x.com/Looplabsfun"
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Loop on X (opens in a new tab)"
           className="cursor-pointer hover:text-ink transition-colors"
         >
           X ↗
@@ -36,6 +37,7 @@ export function Footer() {
           href="https://t.me/looplabs_fun"
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Loop on Telegram (opens in a new tab)"
           className="cursor-pointer hover:text-ink transition-colors"
         >
           Telegram ↗
