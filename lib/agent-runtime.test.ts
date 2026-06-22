@@ -11,6 +11,9 @@ import {
   isStalledDecision,
   readLoopConfig,
   READ_ROUNDS_MAX,
+  sdkHandsConfig,
+  sdkHandsDueNow,
+  buildTaskBrief,
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
@@ -403,6 +406,50 @@ describe("readLoopConfig (iterative read-loop budget)", () => {
   it("honors AGENT_READ_MAX_FILES but never above rounds*6", () => {
     expect(readLoopConfig({ AGENT_READ_ROUNDS: "4", AGENT_READ_MAX_FILES: "10" }).maxFiles).toBe(10);
     expect(readLoopConfig({ AGENT_READ_ROUNDS: "4", AGENT_READ_MAX_FILES: "1000" }).maxFiles).toBe(24);
+  });
+});
+
+describe("sdkHandsConfig (Agent SDK hands)", () => {
+  it("is OFF by default with safe bounded defaults", () => {
+    const c = sdkHandsConfig({});
+    expect(c.enabled).toBe(false);
+    expect(c.model).toBe("claude-sonnet-4-6"); // cheap default
+    expect(c.maxTurns).toBe(24);
+    expect(c.timeoutMs).toBeLessThanOrEqual(285_000); // under the 300s cron cap
+    expect(c.minIntervalMs).toBe(900_000);
+  });
+  it("enables on AGENT_SDK_HANDS=1 and honors overrides (clamped)", () => {
+    const c = sdkHandsConfig({
+      AGENT_SDK_HANDS: "1",
+      AGENT_SDK_MODEL: "claude-opus-4-8",
+      AGENT_SDK_MAX_TURNS: "999",
+      AGENT_SDK_TIMEOUT_MS: "999999",
+    });
+    expect(c.enabled).toBe(true);
+    expect(c.model).toBe("claude-opus-4-8");
+    expect(c.maxTurns).toBe(60); // clamped
+    expect(c.timeoutMs).toBe(285_000); // clamped under the cron cap
+  });
+});
+
+describe("sdkHandsDueNow (stateless cost throttle)", () => {
+  it("runs every tick when the interval is 0", () => {
+    expect(sdkHandsDueNow(123456, 0)).toBe(true);
+  });
+  it("fires only inside the first window of each interval bucket", () => {
+    const interval = 900_000; // 15m
+    expect(sdkHandsDueNow(interval * 4 + 5_000, interval)).toBe(true); // 5s into a bucket
+    expect(sdkHandsDueNow(interval * 4 + 500_000, interval)).toBe(false); // mid-bucket
+  });
+});
+
+describe("buildTaskBrief", () => {
+  it("packs the task into a self-contained engineering brief", () => {
+    const b = buildTaskBrief({ title: "Add a helper", detail: "in lib/x", category: "feature" });
+    expect(b).toContain("Task (feature): Add a helper");
+    expect(b).toContain("in lib/x");
+    expect(b).toMatch(/npx vitest run/);
+    expect(b).toMatch(/smallest real, correct change/);
   });
 });
 

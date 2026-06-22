@@ -51,6 +51,10 @@ export const DENY_PATH_PREFIXES = [
   "lib/directives.",
   "lib/console.",
   "lib/repo-hands.",
+  // The SDK-hands path + its in-sandbox session runner: the agent must not be
+  // able to rewrite the very hands/guardrails that execute and contain it.
+  "lib/agent-sdk-hands.",
+  "scripts/agent-sdk-session.",
 ];
 
 export interface EditValidation {
