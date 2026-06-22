@@ -20,6 +20,7 @@ export function Footer() {
           href="https://github.com/LoopLabsfun/loop"
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Loop on GitHub (opens in a new tab)"
           className="cursor-pointer hover:text-ink transition-colors"
         >
           GitHub ↗
