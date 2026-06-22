@@ -203,12 +203,16 @@ export function buildHandsScript(opts: HandsScriptOpts): string {
     `git clone --depth 20 "https://x-access-token:\${GITHUB_TOKEN}@github.com/${repoSlug}.git" agent-work || { echo "CLONE_FAILED"; exit 0; }`,
     `cd agent-work`,
     `git checkout ${shquote(branch)} 2>/dev/null || true`,
+    // Set the local git identity right after the clone (a fresh clone has none —
+    // nothing sets --global in the sandbox) so EVERY git op below has an author,
+    // not just the final commit. Local config, not a credential — safe this early.
+    `git config user.name ${shquote(authorName)}`,
+    `git config user.email ${shquote(authorEmail)}`,
     writes,
     ...gate,
     `echo "GATE_RESULT=$GATE_RESULT"`,
     `if [ "$GATE_RESULT" != "ok" ]; then echo "PUSHED=no"; exit 0; fi`,
-    `git config user.name ${shquote(authorName)}`,
-    `git config user.email ${shquote(authorEmail)}`,
+    // Git identity was already set right after the clone, above.
     `git add -A`,
     `git diff --cached --quiet && { echo "NO_CHANGES"; echo "PUSHED=no"; exit 0; }`,
     `git commit -m ${shquote(commitMessage)} || { echo "PUSHED=no"; exit 0; }`,

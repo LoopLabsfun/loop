@@ -83,6 +83,13 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `rm -rf agent-work`,
     `git clone --depth 20 --branch ${shquote(branch)} "https://x-access-token:\${GH}@github.com/${repoSlug}.git" agent-work || { echo "CLONE_FAILED"; echo "PUSHED=no"; exit 0; }`,
     `cd agent-work`,
+    // Set the local git identity NOW, before the session runs — not just before
+    // the final commit. A fresh clone in the sandbox has NO git identity (nothing
+    // sets --global), and Claude Code's internal git checkpointing tries to commit
+    // during the session → "tell me who you are" (git config --global user.email …).
+    // Local config (not --global), not a credential, so safe to set this early.
+    `git config user.name ${shquote(authorName)}`,
+    `git config user.email ${shquote(authorEmail)}`,
     `: > ${LOG}`,
     // Install deps so the SESSION can run the tests itself (warm cache).
     `npm ci --no-audit --no-fund >> ${LOG} 2>&1 || { echo "NPM_CI_FAILED"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; tail -n 20 ${LOG}; exit 0; }`,
@@ -107,9 +114,8 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
       ? [`echo "DRY_RUN=1"; echo "PUSHED=no"`]
       : [
           `if [ "$GATE_RESULT" != "ok" ]; then echo "PUSHED=no"; exit 0; fi`,
-          // ── Commit + push (token re-introduced only here). ──
-          `git config user.name ${shquote(authorName)}`,
-          `git config user.email ${shquote(authorEmail)}`,
+          // ── Commit + push (token re-introduced only here). Git identity was
+          //    already set right after the clone, above. ──
           `git add -A`,
           `git diff --cached --quiet && { echo "NO_CHANGES"; echo "PUSHED=no"; exit 0; }`,
           `git commit -m ${shquote(commitMessage)} || { echo "PUSHED=no"; exit 0; }`,
