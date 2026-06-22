@@ -20,6 +20,17 @@ export function sandboxConfigured(): boolean {
 }
 
 /**
+ * The custom **warm** E2B template to spawn (built by `scripts/e2b-template.ts`:
+ * code-interpreter base + git + a pre-warmed npm cache from this repo's
+ * lockfile). When set, the per-cycle repo-hands gate (clone → npm ci → tsc →
+ * tests) hits the cache instead of cold-installing on E2B's base image — which is
+ * what makes it fit the cron time budget. Unset ⇒ E2B's default base.
+ */
+export function sandboxTemplate(): string | undefined {
+  return process.env.E2B_TEMPLATE?.trim() || undefined;
+}
+
+/**
  * Strip terminal noise so summaries read clean when broadcast (Telegram, posts):
  * ANSI/CSI escape sequences (colors, cursor moves like `ESC[1G`), progress-spinner
  * braille glyphs, and other C0 control chars.
@@ -61,11 +72,18 @@ export async function runInSandbox(
   }
   const { Sandbox } = await import("@e2b/code-interpreter");
   const timeoutMs = opts?.timeoutMs;
-  const sbx = await Sandbox.create({
+  const createOpts = {
     ...(envs ? { envs } : {}),
     // Sandbox lifetime must outlast the run, or E2B reaps it mid-gate.
     ...(timeoutMs ? { timeoutMs: timeoutMs + 30_000 } : {}),
-  });
+  };
+  // Spawn the warm custom template when provisioned (E2B_TEMPLATE); otherwise
+  // E2B's default base. The template carries git + a pre-warmed npm cache so the
+  // repo-hands gate fits the cron budget instead of cold-installing every cycle.
+  const template = sandboxTemplate();
+  const sbx = template
+    ? await Sandbox.create(template, createOpts)
+    : await Sandbox.create(createOpts);
   try {
     const exec = await sbx.runCode(code, {
       language,

@@ -204,6 +204,61 @@ failure modes — they are the gate for turning the simulated seam live:
 
 ---
 
+## Turning on the real hands (runbook)
+
+The agent's brain, the E2B sandbox, GitHub and the service-role key are all wired
+and live — but in prod the **real hands are still off**, so the agent plans/posts
+but has never committed code. The `*/2` cron was also **deregistered** (`5008eb8`)
+to stop burning quota while the gate couldn't ship; this work restores it. Three
+things switch the hands on; all are cheap and gated.
+
+### 1. Build the warm E2B template (one-time, repeat on big lockfile changes)
+
+Without a custom template the per-cycle gate cold-`npm ci`s on E2B's base image
+and blows the cron budget. `scripts/e2b-template.ts` bakes a template
+(`loop-agent`) on the **code-interpreter** base + git + a **warm npm cache** from
+`package-lock.json`:
+
+```
+set -a; source .env.local; set +a
+npx tsx scripts/e2b-template.ts          # builds + publishes "loop-agent"
+```
+
+Verify it end-to-end (clone → npm ci → tsc → vitest, no push):
+
+```
+E2B_TEMPLATE=loop-agent NODE_OPTIONS="--conditions=react-server" \
+  npx tsx scripts/verify-e2b-gate.ts     # expect GATE_RESULT=ok, ~130s total
+```
+
+Gotchas baked into the code (don't regress them): the gate clones onto
+`/home/user` **not `/tmp`** (tmpfs is ~2G; `node_modules` is ~2.3G → ENOSPC); the
+template copies `.npmrc` so `legacy-peer-deps=true` lets `npm ci` resolve; the
+sandbox run uses a raised `timeoutMs` (the gate far exceeds E2B's ~60s default);
+and step output is redirected to a log so the Jupyter kernel's IOPub rate-limit
+can't drop the `GATE_RESULT`/`PUSHED` markers.
+
+### 2. Flip the switches (locally, then Vercel Production)
+
+| Env | Effect |
+|---|---|
+| `E2B_TEMPLATE=loop-agent` | the gate runs in the warm template (fast `npm ci`) |
+| `AGENT_REPO_HANDS=1` | the agent's `edits` are applied + **pushed to main if green** |
+| `AGENT_GATE_BUILD=1` *(optional)* | also run `next build` in the gate (catches route breakage; needs the warm template's headroom) |
+| `AGENT_CLAIM_FEES=1` *(optional)* | sweep pump.fun creator fees → treasury each cron (self-funding loop) |
+
+Plus a funded `ANTHROPIC_API_KEY` (recharge credits) and the restored `*/2` cron
+(this PR). Recommended order: build + verify the template → set `E2B_TEMPLATE` →
+watch one green dry-run → set `AGENT_REPO_HANDS=1` → confirm a real
+`feat(agent): …` commit lands → then optionally `AGENT_GATE_BUILD` /
+`AGENT_CLAIM_FEES`.
+
+> Budget note: a full real-commit gate is ~130s, so with `MAX_PER_RUN=3` only
+> ~one repo-hands commit fits per cron tick — fine while LOOP is the sole funded
+> project; revisit (parallelise / raise `maxDuration`) as funded projects grow.
+
+---
+
 ## Cron cadence (Hobby vs. finer)
 
 Vercel **Hobby** allows **one daily cron only**, so `vercel.json` runs the agent

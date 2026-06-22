@@ -125,6 +125,13 @@ export interface HandsScriptOpts {
   commitMessage: string;
   authorName: string;
   authorEmail: string;
+  /**
+   * Add `next build` to the gate (catches route/build breakage that typecheck +
+   * unit tests miss). Off by default because it's the heaviest step — only worth
+   * it on the warm template, where the cache leaves time budget. Toggled by
+   * AGENT_GATE_BUILD=1 in the runtime.
+   */
+  fullGate?: boolean;
 }
 
 /**
@@ -136,7 +143,8 @@ export interface HandsScriptOpts {
  * markers: GATE_RESULT=ok|fail, PUSHED=yes|no, COMMIT_SHA=<sha>.
  */
 export function buildHandsScript(opts: HandsScriptOpts): string {
-  const { repoSlug, branch, edits, commitMessage, authorName, authorEmail } = opts;
+  const { repoSlug, branch, edits, commitMessage, authorName, authorEmail, fullGate } =
+    opts;
   const writes = edits
     .map((e) => {
       const b64 = Buffer.from(e.contents, "utf8").toString("base64");
@@ -148,22 +156,51 @@ export function buildHandsScript(opts: HandsScriptOpts): string {
     })
     .join("\n");
 
-  // Reduced gate (skip the heavy `next build`) so it fits the cron time budget:
-  // install → typecheck → tests. Any non-zero exit flips GATE_RESULT=fail and
-  // skips the push — a red tree is never pushed.
+  // The gate: install → typecheck → tests, and (opt-in) `next build`. Any
+  // non-zero exit flips GATE_RESULT=fail and skips the push — a red tree is
+  // never pushed. `next build` is gated behind fullGate because it's the
+  // heaviest step; the warm E2B template (cached npm install) is what buys the
+  // time budget to run it.
+  //
+  // Each step's (verbose) output is redirected to a log file: npm ci + vitest
+  // flood stdout, which makes the E2B/Jupyter kernel hit its IOPub rate limit and
+  // DROP lines — including the parseable markers (GATE_RESULT/PUSHED/COMMIT_SHA)
+  // that decide whether the task ships. Keeping stdout tiny (only a short failure
+  // tail + the markers) makes parsing reliable.
+  const LOG = "/tmp/gate.log";
+  const step = (cmd: string) =>
+    `if [ "$GATE_RESULT" = "ok" ]; then ${cmd} >> ${LOG} 2>&1 || GATE_RESULT=fail; fi`;
+  const gate = [
+    `GATE_RESULT=ok`,
+    `: > ${LOG}`,
+    step(`npm ci --no-audit --no-fund`),
+    step(`npx tsc --noEmit`),
+    step(`npx vitest run --reporter=dot`),
+    ...(fullGate ? [step(`npx next build`)] : []),
+    // On failure, surface a short tail so the build log says WHY it didn't ship.
+    `if [ "$GATE_RESULT" != "ok" ]; then echo "----- gate tail -----"; tail -n 25 ${LOG}; echo "---------------------"; fi`,
+  ];
+
+  // --depth 20 (not 1): a shallow-of-1 clone makes `git pull --rebase` before the
+  // push fail when main advanced; 20 commits of history is enough headroom at
+  // negligible clone cost.
+  //
+  // Clone onto the ROOT disk ($HOME → ~17G free), NOT /tmp: on the E2B image /tmp
+  // is a RAM-backed tmpfs (~2G) and this repo's node_modules is ~2.3G, so `npm ci`
+  // there ENOSPC-fails and the gate never goes green.
   return [
     `set -uo pipefail`,
     `export GIT_TERMINAL_PROMPT=0`,
-    `cd /tmp`,
-    `rm -rf work`,
-    `git clone --depth 1 "https://x-access-token:\${GITHUB_TOKEN}@github.com/${repoSlug}.git" work || { echo "CLONE_FAILED"; exit 0; }`,
-    `cd work`,
+    // `${HOME:-/home/user}`: nounset-safe (set -u would abort on a bare $HOME if
+    // the kernel shell didn't export it); /home/user is the E2B sandbox user home.
+    // The `\${` escape keeps JS from interpolating — bash receives the literal.
+    `cd "\${HOME:-/home/user}"`,
+    `rm -rf agent-work`,
+    `git clone --depth 20 "https://x-access-token:\${GITHUB_TOKEN}@github.com/${repoSlug}.git" agent-work || { echo "CLONE_FAILED"; exit 0; }`,
+    `cd agent-work`,
     `git checkout ${shquote(branch)} 2>/dev/null || true`,
     writes,
-    `GATE_RESULT=ok`,
-    `npm ci --no-audit --no-fund || GATE_RESULT=fail`,
-    `if [ "$GATE_RESULT" = "ok" ]; then npx tsc --noEmit || GATE_RESULT=fail; fi`,
-    `if [ "$GATE_RESULT" = "ok" ]; then npx vitest run --reporter=dot || GATE_RESULT=fail; fi`,
+    ...gate,
     `echo "GATE_RESULT=$GATE_RESULT"`,
     `if [ "$GATE_RESULT" != "ok" ]; then echo "PUSHED=no"; exit 0; fi`,
     `git config user.name ${shquote(authorName)}`,

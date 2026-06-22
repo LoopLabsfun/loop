@@ -1149,6 +1149,10 @@ export async function runAgentTick(
           commitMessage: `${prefix}(agent): ${decision.task.title}\n\nCo-Authored-By: Loop Agent <agent@looplabs.fun>`,
           authorName: "loop-agent",
           authorEmail: "agent@looplabs.fun",
+          // Opt-in `next build` in the gate (catches route/build breakage tsc +
+          // unit tests miss). Worth it on the warm template, where the cached
+          // npm install leaves time budget. AGENT_GATE_BUILD=1 to enable.
+          fullGate: process.env.AGENT_GATE_BUILD === "1",
         });
         const { runInSandbox } = await import("./sandbox");
         // The gate (clone → npm ci → tsc → vitest → push) needs minutes, but
