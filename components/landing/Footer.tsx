@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
+import { EXTERNAL_LINKS } from "@/lib/links";
 
 export function Footer() {
   const year = new Date().getFullYear();
@@ -16,33 +17,18 @@ export function Footer() {
         <Link href="/legal/terms" className="cursor-pointer hover:text-ink transition-colors">Terms</Link>
         <Link href="/legal/privacy" className="cursor-pointer hover:text-ink transition-colors">Privacy</Link>
         <Link href="/legal/disclaimer" className="cursor-pointer hover:text-ink transition-colors">Risk</Link>
-        <a
-          href="https://github.com/LoopLabsfun/loop"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Loop on GitHub (opens in a new tab)"
-          className="cursor-pointer hover:text-ink transition-colors"
-        >
-          GitHub ↗
-        </a>
-        <a
-          href="https://x.com/Looplabsfun"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Loop on X (opens in a new tab)"
-          className="cursor-pointer hover:text-ink transition-colors"
-        >
-          X ↗
-        </a>
-        <a
-          href="https://t.me/looplabs_fun"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Loop on Telegram (opens in a new tab)"
-          className="cursor-pointer hover:text-ink transition-colors"
-        >
-          Telegram ↗
-        </a>
+        {EXTERNAL_LINKS.map((link) => (
+          <a
+            key={link.key}
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={link.ariaLabel}
+            className="cursor-pointer hover:text-ink transition-colors"
+          >
+            {link.label} ↗
+          </a>
+        ))}
         <span className="font-mono text-[12px] text-pos">
           ● All systems operational
         </span>
