@@ -257,6 +257,21 @@ watch one green dry-run → set `AGENT_REPO_HANDS=1` → confirm a real
 > ~one repo-hands commit fits per cron tick — fine while LOOP is the sole funded
 > project; revisit (parallelise / raise `maxDuration`) as funded projects grow.
 
+### 3. Make the brain explore, not guess (`AGENT_READ_ROUNDS`)
+
+Once the hands ship, the ceiling on quality is the *brain*. The agent reads real
+files before editing (the A2 path), but historically got exactly ONE read round
+(≤6 files, then it MUST act) — so on anything non-trivial it edited half-blind: it
+couldn't read a file, see what it imports, and read that too. `AGENT_READ_ROUNDS=N`
+turns that single pass into a bounded **iterative read loop** (read → reflect →
+read more → edit), which is the single biggest lever on the agent's "intelligence"
+— more than the model. Bounded hard (cap 6 rounds, `AGENT_READ_MAX_FILES` total)
+because each round is another Opus call. Unset/`1` = the original single-round
+behavior, so it's a safe, env-gated rollout: set `AGENT_READ_ROUNDS=4` in Vercel
+Production when you want the agent to actually build a mental model before it edits.
+This is the contained first step toward the full Claude-Agent-SDK in-sandbox loop
+(read/grep/edit/run, iterate to green) that the runtime ultimately wants.
+
 ---
 
 ## Cron cadence (Hobby vs. finer)
