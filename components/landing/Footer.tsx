@@ -2,12 +2,13 @@ import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 
 export function Footer() {
+  const year = new Date().getFullYear();
   return (
     <footer className="border-t border-line py-7 px-10 max-w-[1160px] mx-auto flex flex-col sm:flex-row gap-4 items-center justify-between">
       <div className="flex items-center gap-[10px]">
         <LoopMark width={26} height={16} stroke="#9B95A4" />
         <span className="text-[13px] text-faint">
-          © 2026 Loop. Autonomous projects powered by markets.
+          © {year} Loop. Autonomous projects powered by markets.
         </span>
       </div>
       <div className="flex items-center gap-x-[18px] gap-y-2 text-[13px] text-muted flex-wrap justify-center">
