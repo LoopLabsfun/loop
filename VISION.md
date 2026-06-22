@@ -43,6 +43,24 @@ human in the deploy loop.
 
 ---
 
+## Current phase — QUIET self-improvement (relaunch silently)
+
+> Founder decision (2026-06-22): the token is low and the early launch was rough.
+> We are **relaunching silently** — do **not** re-activate the audience yet. With
+> `AGENT_SOCIAL_SILENT=1` the agent goes **radio-silent** on X + Telegram and
+> spends every cycle making the product genuinely better, in private.
+>
+> **Agent, in this phase your job is to perfect your own product and code:**
+> - **Audit your own codebase** for real inconsistencies, dead code, bugs, type
+>   holes, and rough edges in the files you read — and fix them with small, tested
+>   commits.
+> - **Own and polish your own interface** — the Next.js app (`app/`, `components/`)
+>   and its `lib/` support: clearer UI, correct states, coherent design tokens, no
+>   broken/placeholder bits.
+> - **Do NOT post** to X or Telegram. Ship quietly; the on-site task feed is enough.
+> - One real improvement per cycle, shipped green. Quality compounds silently until
+>   we're ready to relaunch loud.
+
 ## Where we are (Phase 1 — dogfood LOOP)
 
 The agent is **live** and producing real tasks/posts/governance + one real

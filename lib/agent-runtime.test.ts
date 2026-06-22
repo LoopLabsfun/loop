@@ -10,6 +10,7 @@ import {
   buildForceActPrompt,
   isStalledDecision,
   isStructuralEditRejection,
+  socialSilent,
   readLoopConfig,
   READ_ROUNDS_MAX,
   sdkHandsConfig,
@@ -473,6 +474,22 @@ describe("isStalledDecision (A2 stall guard)", () => {
   it("is false when the decision actually acts (edits or command)", () => {
     expect(isStalledDecision({ edits: [{ path: "lib/a.ts", contents: "x" }] })).toBe(false);
     expect(isStalledDecision({ command: { language: "python", code: "print(1)" } })).toBe(false);
+  });
+});
+
+describe("socialSilent (quiet relaunch mode)", () => {
+  it("is true only when AGENT_SOCIAL_SILENT === '1'", () => {
+    expect(socialSilent({ AGENT_SOCIAL_SILENT: "1" })).toBe(true);
+    expect(socialSilent({ AGENT_SOCIAL_SILENT: "0" })).toBe(false);
+    expect(socialSilent({})).toBe(false);
+  });
+  it("flips the system prompt to silent self-improvement (no posting)", () => {
+    const loud = buildSystemPrompt(project, undefined, { quiet: false });
+    const quiet = buildSystemPrompt(project, undefined, { quiet: true });
+    expect(loud).toMatch(/Build in public/i);
+    expect(quiet).not.toMatch(/Build in public/i);
+    expect(quiet).toMatch(/QUIET RELAUNCH MODE/);
+    expect(quiet).toMatch(/SELF-IMPROVEMENT|perfect your OWN/i);
   });
 });
 
