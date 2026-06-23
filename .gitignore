@@ -1,0 +1,56 @@
+/node_modules
+/.next
+/out
+/build
+next-env.d.ts
+.DS_Store
+*.tsbuildinfo
+.env*.local
+/loop-handoff
+Loop.fun-handoff*.zip
+.vercel
+
+# Claude Code local/runtime files (launch.json is intentionally tracked)
+.claude/settings.local.json
+
+# Devnet test keypair (persisted across mint-proof runs; never commit a secret key)
+scripts/.devnet-keypair.json
+.claude/scheduled_tasks.lock
+
+# Pre-ground vanity mint keypairs (secret keys — never commit)
+scripts/.vanity-pool/
+scripts/.vanity/
+
+# local project-row backups (restore source, not committed)
+scripts/.backup-*.json
+
+# E2B template build staging (root manifests staged into the build context, then cleaned)
+scripts/.e2b-build/
+
+# Operational/infra scripts — kept LOCAL only, never in the public repo. They
+# expose internal infra wiring (custody/buyback, mint + launch providers, vanity
+# pool, E2B template, social/telegram auth, env sync). No secrets (all read from
+# env), but the wiring itself stays private. Harmless marketing/diag scripts stay tracked.
+scripts/run-buyback.ts
+scripts/sweep-agent-wallet.ts
+scripts/provision-agent-wallet.ts
+scripts/x-auth.ts
+scripts/x-test.ts
+scripts/setup-telegram-group.ts
+scripts/post-telegram-bounty.ts
+scripts/clean-channel.ts
+scripts/devnet-mint-loop.cjs
+scripts/devnet-mint-proof.cjs
+scripts/mint-vanity-proof.cjs
+scripts/mainnet-launch-loop.ts
+scripts/mainnet-launch-preflight.ts
+scripts/mainnet-smoke-launch.ts
+scripts/e2e-launch.ts
+scripts/e2b-template.ts
+scripts/sync-vercel-env.sh
+scripts/build-vanity-pool.cjs
+scripts/ingest-vanity-pool.cjs
+scripts/trigger-set-env.ts
+scripts/post-github-thread.ts
+
+.env.local.bak

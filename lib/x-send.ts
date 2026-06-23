@@ -1,0 +1,109 @@
+import "server-only";
+
+import type { Project } from "./types";
+import { oauth1Header, type OAuth1Creds } from "./oauth1";
+import { buildLaunchTweet, type LaunchTweetOptions } from "./x-recap";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// X (TWITTER) SEND PATH — posts a tweet via the X API v2 (POST /2/tweets) using
+// OAuth 1.0a User Context. The app lives on the Go Disrupt developer account
+// (the consumer key/secret), but the access token/secret authorize a specific
+// USER (@looplabsfun) — so tweets appear on @looplabsfun. Get those user tokens
+// once with `scripts/x-auth.ts` (PIN flow, sign in as @looplabsfun).
+//
+// Server-only: the 4 secrets never reach the browser. No-op (skipped) when
+// unconfigured, so the app/runtime work uninterrupted until X is set up.
+// OAuth 1.0a (not OAuth 2.0) on purpose: the user tokens don't expire, so a
+// single-account bot needs no refresh dance.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TWEET_URL = "https://api.twitter.com/2/tweets";
+
+export function isXConfigured(): boolean {
+  return Boolean(
+    process.env.X_API_KEY &&
+      process.env.X_API_SECRET &&
+      process.env.X_ACCESS_TOKEN &&
+      process.env.X_ACCESS_SECRET
+  );
+}
+
+export interface TweetResult {
+  ok: boolean;
+  id?: string;
+  /** True when no X keys are configured — nothing was attempted. */
+  skipped?: boolean;
+  error?: string;
+}
+
+/**
+ * Post a tweet to @looplabsfun (the account whose access tokens are configured).
+ * Returns a result rather than throwing, so a failed post never breaks the
+ * cycle that triggered it. No-op (skipped) when X isn't configured.
+ */
+export async function sendTweet(text: string): Promise<TweetResult> {
+  if (!isXConfigured()) return { ok: false, skipped: true };
+  const creds: OAuth1Creds = {
+    consumerKey: process.env.X_API_KEY!,
+    consumerSecret: process.env.X_API_SECRET!,
+    token: process.env.X_ACCESS_TOKEN!,
+    tokenSecret: process.env.X_ACCESS_SECRET!,
+  };
+  try {
+    const res = await fetch(TWEET_URL, {
+      method: "POST",
+      headers: {
+        Authorization: oauth1Header("POST", TWEET_URL, creds),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+      cache: "no-store",
+    });
+    const json = (await res.json().catch(() => null)) as {
+      data?: { id?: string };
+      detail?: string;
+      title?: string;
+    } | null;
+    if (res.ok && json?.data?.id) return { ok: true, id: json.data.id };
+    return {
+      ok: false,
+      error: json?.detail || json?.title || `HTTP ${res.status}`,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}
+
+/**
+ * Verify the configured X credentials by calling GET /2/users/me. Returns the
+ * HTTP status (200 = valid) or null when unconfigured — diagnostics only, never
+ * exposes the keys. Distinguishes "wrong/truncated creds" (401/403) from a
+ * post-specific failure (200 here but POST fails).
+ */
+export async function verifyXCredentials(): Promise<number | null> {
+  if (!isXConfigured()) return null;
+  const creds: OAuth1Creds = {
+    consumerKey: process.env.X_API_KEY!,
+    consumerSecret: process.env.X_API_SECRET!,
+    token: process.env.X_ACCESS_TOKEN!,
+    tokenSecret: process.env.X_ACCESS_SECRET!,
+  };
+  const url = "https://api.twitter.com/2/users/me";
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: oauth1Header("GET", url, creds) },
+      cache: "no-store",
+    });
+    return res.status;
+  } catch {
+    return null;
+  }
+}
+
+/** Compose + post a project's launch recap. No-op when X isn't configured. */
+export async function sendLaunchRecap(
+  p: Project,
+  opts?: LaunchTweetOptions
+): Promise<TweetResult> {
+  return sendTweet(buildLaunchTweet(p, opts));
+}

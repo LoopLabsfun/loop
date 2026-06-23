@@ -1,0 +1,1312 @@
+"use client";
+
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { LoopMark } from "../LoopMark";
+import { Chart } from "./Chart";
+import { useWallet } from "@/lib/wallet";
+import { useNetwork } from "@/lib/network";
+import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
+import { useLiveTreasury } from "@/lib/useLiveTreasury";
+import { buildSwapTx } from "@/lib/pump";
+import { AgentFeed } from "./AgentFeed";
+import { AgentOperator } from "./AgentOperator";
+import { ProjectWallet } from "./ProjectWallet";
+import { AgentFace } from "./AgentFace";
+import { AgentEngine } from "../AgentEngine";
+import { InspectorDrawer } from "./InspectorDrawer";
+import { InspectorProvider, useInspector } from "@/lib/inspector";
+import type { AgentState } from "@/lib/agent-data";
+import type { ComputeSummary } from "@/lib/anthropic-cost";
+import type { ChatMsg } from "@/lib/chat";
+import type { Candle, Holder, MarketStats, Project, Trade } from "@/lib/types";
+import { fmtPrice, shortAge, explorerUrl, explorerTx, shortAddr, usd, compactUsd } from "@/lib/format";
+import { infraBreakdown, parseSolPerDay, type CostKey } from "@/lib/economics";
+import {
+  loopLedger,
+  withCompute,
+  ledgerSummary,
+  runwayMonths,
+  type LedgerEntry,
+  type Cadence,
+} from "@/lib/ledger";
+import { agentRunState, canAffordTick } from "@/lib/budget";
+import { splitForProject } from "@/lib/fees";
+import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
+import { TREASURY_EXITS } from "@/lib/governance";
+
+export interface LiveMarket {
+  stats: MarketStats | null;
+  candles: Candle[];
+  trades: Trade[];
+  holders: Holder[];
+}
+
+export function TokenPage({
+  project: p,
+  market,
+  agentSol,
+  solUsd,
+  commits,
+  matchCommits,
+  agentState,
+  chat,
+  compute,
+  visitors,
+}: {
+  project: Project;
+  market: LiveMarket;
+  agentSol?: number | null;
+  solUsd: number;
+  commits: { hash: string; msg: string }[];
+  /** Wider commit window to link shipped LIVE-LOG rows to their commit. */
+  matchCommits?: { hash: string; msg: string }[];
+  agentState?: AgentState;
+  chat?: ChatMsg[];
+  /** Real Claude API spend + remaining credit (official project only), or null. */
+  compute?: ComputeSummary | null;
+  /** Total Vercel visitors since launch, or null when unconfigured. */
+  visitors?: number | null;
+}) {
+  // Real commits from the repo only — no static sample (empty state otherwise).
+  const commitFeed = commits;
+  const wallet = useWallet();
+  const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch } =
+    useLiveMarket(p.mint, {
+      stats: market.stats,
+      candles: market.candles,
+      trades: market.trades,
+    });
+
+  // Pre-launch (no mint) ⇒ no market: render honest "no market yet" states.
+  // Live price + 24h change come straight from the market stats; the candle
+  // series drives only the chart.
+  const last = stats?.priceUsd ?? 0;
+  const change = stats?.priceChange24h ?? 0;
+
+  return (
+    <InspectorProvider project={p}>
+      <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
+
+      <main>
+      {/* Header */}
+      <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5 flex items-center justify-between gap-6 flex-wrap">
+        <div className="flex items-center gap-4">
+          <div className="w-[60px] h-[60px] rounded-[14px] border border-line-2 bg-accent-tint flex items-center justify-center">
+            <LoopMark width={36} height={22} stroke="var(--accent)" />
+          </div>
+          <div>
+            <div className="flex items-center gap-[10px] flex-wrap">
+              <h1 className="font-display font-bold text-[26px] tracking-[-0.02em] m-0">
+                {p.name}
+              </h1>
+              <span className="font-mono text-[13px] text-accent-text">{p.ticker}</span>
+              {p.official && (
+                <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] bg-accent text-white">
+                  OFFICIAL
+                </span>
+              )}
+              {p.network === "devnet" && (
+                <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">
+                  devnet
+                </span>
+              )}
+              <AgentStatusBadge project={p} />
+            </div>
+            <p className="text-[13.5px] text-muted mt-[5px] mb-0">{p.description}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-7">
+          <div>
+            <div className="font-display font-bold text-[32px] tracking-[-0.02em] tabular-nums">
+              {preLaunch ? "—" : fmtPrice(last)}
+            </div>
+            {preLaunch ? (
+              <div className="font-mono text-[13px] text-faint">not launched</div>
+            ) : (
+              <div
+                className="font-mono text-[13px]"
+                style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}
+              >
+                {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pl-7 border-l border-line-2">
+            {/* Live market values (DexScreener) when launched; fall back to the
+                stored snapshot only pre-launch so nothing reads as stale/fake. */}
+            <HeaderStat
+              label="Market Cap"
+              value={stats ? compactUsd(stats.marketCap) : p.marketCap}
+              help="Token price × circulating supply — the market's live valuation of the project. It's also what the agent's mascot reacts to."
+            />
+            <HeaderStat
+              label="Liquidity"
+              value={stats ? compactUsd(stats.liquidityUsd) : p.liquidity}
+              help="Value pooled for trading. Deeper liquidity = lower slippage when you buy or sell."
+            />
+            <HeaderStat
+              label="Holders"
+              value={p.holders}
+              help="Distinct wallets holding the token. Click a wallet in the holders list to inspect it on-chain."
+            />
+            <HeaderStat
+              label="24h Volume"
+              value={stats ? compactUsd(stats.volume24hUsd) : p.volume24h}
+              help="Total traded value over the last 24 hours — how active the market is right now."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Main grid */}
+      <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-4 items-start">
+        {/* Left column */}
+        <div className="flex flex-col gap-4">
+          {/* Agent — one feed: ask the agent ($LOOP-metered, answers in the side
+              panel) AND steer it (directives/proposals/votes). */}
+          <AgentFeed
+            project={p}
+            directives={agentState?.directives}
+            chat={chat}
+            tasks={agentState?.tasks}
+          />
+          {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
+          <AgentOperator
+            project={p}
+            tasks={agentState?.tasks}
+            inbox={agentState?.inbox}
+            social={agentState?.social}
+            summaries={agentState?.summaries}
+            metrics={{ visitors, holders: p.holders }}
+          />
+          {/* Project Wallet — the agent's on-chain positions (buyback/burn/airdrop) */}
+          <ProjectWallet project={p} actions={agentState?.actions} agentSol={agentSol} />
+          {/* Chart */}
+          <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
+            {preLaunch || candles.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="font-display font-semibold text-[15px] text-ink mb-1">
+                  No market yet
+                </div>
+                <div className="text-[12.5px] text-muted max-w-[380px] mx-auto">
+                  {preLaunch
+                    ? `${p.ticker} isn't minted yet. The price chart appears once the token launches on-chain and trading begins.`
+                    : `No candle data for ${p.ticker} yet — the chart fills in as ${p.ticker} trades.`}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-[14px]">
+                  <Segmented<Timeframe>
+                    value={tf}
+                    onChange={changeTf}
+                    options={["1H", "4H", "1D"]}
+                  />
+                  <Segmented
+                    value={mode}
+                    onChange={setMode}
+                    options={["candles", "line"]}
+                    labels={{ candles: "Candles", line: "Line" }}
+                  />
+                </div>
+                <Chart candles={candles} mode={mode} />
+                <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
+                  <span>
+                    {tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : "4h candles"}
+                  </span>
+                  <span className="inline-flex items-center gap-[6px]">
+                    <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+                    live · updates every 20s
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Trades */}
+          <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-[18px]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-display font-semibold text-[15px]">Recent Trades</span>
+              {!preLaunch && trades.length > 0 && (
+                <span className="inline-flex items-center gap-[6px] font-mono text-[11px] text-faint">
+                  <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+                  live
+                </span>
+              )}
+            </div>
+            {preLaunch || trades.length === 0 ? (
+              <div className="text-[12.5px] text-faint text-center py-8">
+                {preLaunch
+                  ? `No trades yet — trading opens when ${p.ticker} launches on-chain.`
+                  : `No recent trades for ${p.ticker}.`}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
+                  <span>ACCOUNT</span>
+                  <span>TYPE</span>
+                  <span>SOL</span>
+                  <span>TOKENS</span>
+                  <span className="text-right">AGE</span>
+                </div>
+                {trades.map((t, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
+                  >
+                    <span className="text-muted">{t.addr}</span>
+                    <span style={{ color: t.side === "BUY" ? "var(--pos)" : "var(--neg)" }}>
+                      {t.side}
+                    </span>
+                    <span>{t.sol}</span>
+                    <span className="text-muted">{t.tokens}</span>
+                    <span className="text-faint text-right">{shortAge(t.ageSeconds)} ago</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          {/* Agent activity — shared loop-engine terminal (same as the home). */}
+          <AgentEngine
+            repo={p.repo}
+            label={p.ticker}
+            commits={commitFeed}
+            matchCommits={matchCommits}
+            tasks={agentState?.tasks}
+            live={agentState?.live}
+          />
+        </div>
+
+        {/* Right column */}
+        <div className="flex flex-col gap-4">
+          {/* The agent's mascot, above the trade panel — reacts live to the tape. */}
+          <div className="bg-surface border border-line-2 rounded-[16px] p-[14px] flex items-center justify-center">
+            <AgentFace
+              project={p}
+              tasks={agentState?.tasks}
+              size="lg"
+              market={{ changePct: change }}
+            />
+          </div>
+          <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
+          <BondingCurve curve={p.curve} graduated={stats?.graduated} />
+          <TreasuryStats project={p} solUsd={solUsd} compute={compute} />
+          <FeesCustodyCard project={p} preLaunch={preLaunch} />
+          <TopHolders holders={market.holders} network={p.network ?? "mainnet"} preLaunch={preLaunch} />
+
+        </div>
+      </section>
+      </main>
+
+      <footer className="border-t border-line py-[22px] px-8 max-w-[1280px] mx-auto flex items-center justify-between">
+        <span className="text-[12.5px] text-faint">© 2026 Loop · {p.network ?? "mainnet"}</span>
+        <AgentStatusBadge project={p} />
+      </footer>
+
+      {/* Right-side detail drawer — opens when any element calls inspect() */}
+      <InspectorDrawer />
+    </InspectorProvider>
+  );
+}
+
+function ShareButton() {
+  const [copied, setCopied] = useState(false);
+
+  const onShare = async () => {
+    const url = typeof window === "undefined" ? "" : window.location.href;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ url });
+        return;
+      } catch {
+        // user cancelled the share sheet — fall through to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — nothing more we can do
+    }
+  };
+
+  return (
+    <button
+      onClick={onShare}
+      aria-label="Share this project"
+      className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M8.7 13.5l6.6 3.8M15.3 6.7L8.7 10.5M18 7a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM9 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM18 17a3 3 0 1 0-6 0 3 3 0 0 0 6 0z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className={copied ? "text-pos" : undefined}>
+        {copied ? "Copied" : "Share"}
+      </span>
+    </button>
+  );
+}
+
+function TokenNav({
+  ticker,
+  walletLabel,
+  connected,
+  onToggle,
+}: {
+  ticker: string;
+  walletLabel: string;
+  connected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <nav className="sticky top-0 z-50 flex items-center justify-between gap-2 px-4 sm:px-8 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
+      <div className="flex items-center gap-[10px] sm:gap-[14px] min-w-0">
+        <Link href="/" className="flex items-center gap-[10px] text-ink flex-none">
+          <LoopMark width={30} height={18} />
+          <span className="font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
+        </Link>
+        <span className="text-line-hover">/</span>
+        <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
+      </div>
+      <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
+        <ShareButton />
+        <Link
+          href="/"
+          className="hidden sm:inline-block text-[13.5px] text-muted hover:text-ink transition-colors px-[14px] py-[9px]"
+        >
+          ← All projects
+        </Link>
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
+        >
+          {connected && <span className="w-[7px] h-[7px] rounded-full bg-pos-bright inline-block" />}
+          {walletLabel}
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+function HeaderStat({
+  label,
+  value,
+  help,
+}: {
+  label: string;
+  value: string;
+  help?: string;
+}) {
+  const { inspect } = useInspector();
+  return (
+    <button
+      onClick={() => inspect({ kind: "stat", stat: { label, value, help } })}
+      title={`Inspect ${label}`}
+      className="text-left hover:opacity-80 transition-opacity"
+    >
+      <div className="text-[11px] text-faint mb-[3px]">{label}</div>
+      <div className="font-mono text-[14px]">{value}</div>
+    </button>
+  );
+}
+
+// Honest agent status — reflects the real budget gate (the cron skips a project
+// whose treasury can't afford a cycle), not a hardcoded "active".
+function AgentStatusBadge({ project: p }: { project: Project }) {
+  const state = agentRunState(p);
+  if (state === "pre-launch") {
+    return <span className="font-mono text-[11.5px] text-faint">● pre-launch</span>;
+  }
+  if (state === "asleep") {
+    const b = canAffordTick(p);
+    return (
+      <span
+        className="font-mono text-[11.5px] text-warn"
+        title={`Agent asleep — treasury ${b.treasurySol} SOL, needs ${b.needSol.toFixed(
+          3
+        )} SOL to run a cycle. Fund the project treasury (not the agent wallet) to wake it.`}
+      >
+        ● asleep · treasury empty
+      </span>
+    );
+  }
+  return <span className="font-mono text-[11.5px] text-pos">● agent active</span>;
+}
+
+function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  labels,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: T[];
+  labels?: Record<string, string>;
+}) {
+  return (
+    <div className="flex gap-1 bg-surface-3 rounded-[9px] p-[3px]">
+      {options.map((opt) => {
+        const active = value === opt;
+        return (
+          <button
+            key={opt}
+            onClick={() => onChange(opt)}
+            className={`font-mono text-[12px] px-[14px] py-[6px] rounded-[7px] transition-colors ${
+              active ? "bg-ink text-white" : "bg-transparent text-muted"
+            }`}
+          >
+            {labels?.[opt] ?? opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SwapCard({
+  project: p,
+  lastPrice,
+  solUsd,
+  preLaunch,
+}: {
+  project: Project;
+  lastPrice: number;
+  solUsd: number;
+  preLaunch?: boolean;
+}) {
+  const wallet = useWallet();
+  const { network, setNetwork } = useNetwork();
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [amt, setAmt] = useState("1.0");
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
+    "idle"
+  );
+  const [sig, setSig] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const sym = p.ticker.slice(1);
+  const buy = side === "buy";
+  const amtN = parseFloat(amt) || 0;
+  const projectNet = p.network ?? "mainnet";
+  const wrongNet = network !== projectNet;
+
+  // Live wallet balance for the active side (SOL when buying, the token when
+  // selling) so we can show it and fill a "Max". Re-read when the side, wallet,
+  // network, or a settled swap changes. Leave a little SOL for tx fees on a Max
+  // buy so the swap can still pay its fee.
+  const SOL_FEE_BUFFER = 0.01;
+  const [bal, setBal] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!wallet.connected || !wallet.address || wrongNet || !p.mint) {
+      setBal(null);
+      return;
+    }
+    void (async () => {
+      const v = buy
+        ? await wallet.getSolBalance()
+        : await wallet.getSplBalance(p.mint!);
+      if (!cancelled) setBal(v);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.connected, wallet.address, buy, wrongNet, p.mint, status]);
+
+  const setMax = () => {
+    if (bal == null) return;
+    const max = buy ? Math.max(0, bal - SOL_FEE_BUFFER) : bal;
+    setAmt(buy ? max.toFixed(3) : String(Math.floor(max)));
+  };
+
+  // Pre-launch: no token to trade yet. Show an honest disabled state instead of
+  // a simulated swap. To donate to the treasury, the Fund card is used instead.
+  if (preLaunch) {
+    return (
+      <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+        <div className="font-display font-semibold text-[15px] mb-1">
+          Trade {p.ticker}
+        </div>
+        <div className="text-[12.5px] text-muted leading-[1.5] mb-3">
+          Trading opens when {p.ticker} is minted on-chain. You can already fund
+          the treasury below to extend the agent&apos;s runway.
+        </div>
+        <button
+          disabled
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] bg-surface-3 text-faint cursor-not-allowed"
+        >
+          Trading opens at launch
+        </button>
+      </div>
+    );
+  }
+
+  const est = buy
+    ? Math.round((amtN * solUsd) / lastPrice).toLocaleString("en-US") + " " + sym
+    : ((amtN * lastPrice) / solUsd).toFixed(3) + " SOL";
+
+  const quicks: [string, string][] = buy
+    ? [["0.1", "0.1"], ["0.5", "0.5"], ["1", "1"], ["5", "5"]]
+    : [["1000", "1K"], ["10000", "10K"], ["100000", "100K"], ["500000", "500K"]];
+
+  const doSwap = async () => {
+    if (!wallet.connected || !wallet.address) {
+      wallet.connect();
+      return;
+    }
+    if (wrongNet || !p.mint || amtN <= 0 || status === "sending") return;
+    setStatus("sending");
+    setErr(null);
+    setSig(null);
+    try {
+      const txBytes = await buildSwapTx({
+        publicKey: wallet.address,
+        action: side,
+        mint: p.mint,
+        amount: amtN,
+      });
+      const s = await wallet.sendSwapTx(txBytes);
+      setSig(s);
+      setStatus("done");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Swap failed";
+      setErr(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="grid grid-cols-2 gap-1 bg-surface-3 rounded-[10px] p-[3px] mb-[14px]">
+        <button
+          onClick={() => {
+            setSide("buy");
+            setAmt("1.0");
+          }}
+          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
+            buy ? "bg-[oklch(0.55_0.15_150)] text-white" : "text-muted"
+          }`}
+        >
+          Buy
+        </button>
+        <button
+          onClick={() => {
+            setSide("sell");
+            setAmt("10000");
+          }}
+          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
+            !buy ? "bg-[oklch(0.55_0.17_25)] text-white" : "text-muted"
+          }`}
+        >
+          Sell
+        </button>
+      </div>
+
+      <div className="flex items-baseline justify-between mb-[6px]">
+        <label className="text-[12px] text-muted">
+          {buy ? "Amount in SOL" : `Amount in ${sym}`}
+        </label>
+        {wallet.connected && !wrongNet && bal != null && (
+          <span className="font-mono text-[11px] text-faint">
+            {buy
+              ? `${bal.toFixed(3)} SOL`
+              : `${Math.floor(bal).toLocaleString("en-US")} ${sym}`}{" "}
+            ·{" "}
+            <button
+              onClick={setMax}
+              className="text-accent-text hover:text-accent-d transition-colors"
+            >
+              Max
+            </button>
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 border border-line-3 rounded-[10px] p-1 pl-[14px] mb-[10px]">
+        <input
+          value={amt}
+          onChange={(e) => setAmt(e.target.value)}
+          className="flex-1 border-0 outline-none font-mono text-[16px] py-2 bg-transparent min-w-0"
+        />
+        <span className="font-mono text-[12px] text-faint px-[10px] py-2 bg-surface-3 rounded-[7px]">
+          {buy ? "SOL" : sym}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-4 gap-[6px] mb-3">
+        {quicks.map(([v, label]) => (
+          <button
+            key={label}
+            onClick={() => setAmt(v)}
+            className="font-mono text-[11.5px] py-[6px] border border-line-3 rounded-[7px] bg-surface text-muted hover:border-line-hover transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex justify-between text-[12.5px] text-muted mb-[14px]">
+        <span>You receive</span>
+        <span className="font-mono text-ink">{est}</span>
+      </div>
+
+      {wrongNet ? (
+        <button
+          onClick={() => setNetwork(projectNet)}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] border border-warn text-warn"
+        >
+          Switch to {projectNet} to trade
+        </button>
+      ) : (
+        <button
+          onClick={doSwap}
+          disabled={status === "sending" || (wallet.connected && amtN <= 0)}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] text-white transition-opacity disabled:opacity-60"
+          style={{
+            background: wallet.connected
+              ? buy
+                ? "oklch(0.55 0.15 150)"
+                : "oklch(0.55 0.17 25)"
+              : "#16131A",
+          }}
+        >
+          {!wallet.connected
+            ? "Connect Wallet"
+            : status === "sending"
+            ? "Confirm in wallet…"
+            : buy
+            ? `Buy ${p.ticker}`
+            : `Sell ${p.ticker}`}
+        </button>
+      )}
+
+      {status === "done" && sig && (
+        <a
+          href={explorerTx(sig, projectNet)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-[10px] block font-mono text-[11.5px] text-pos bg-[oklch(0.97_0.03_150)] border border-[oklch(0.9_0.06_150)] rounded-[8px] px-3 py-[9px] animate-fadeIn"
+        >
+          ✓ Swap sent · {shortAddr(sig)} ↗
+        </a>
+      )}
+      {status === "error" && err && (
+        <div className="mt-[10px] font-mono text-[11.5px] text-neg bg-[oklch(0.97_0.03_25)] border border-[oklch(0.9_0.06_25)] rounded-[8px] px-3 py-[9px] animate-fadeIn">
+          {err}
+        </div>
+      )}
+      <div className="mt-[10px] text-[11px] text-faint text-center">
+        Swaps route through pump.fun · 1% of every trade funds the treasury
+      </div>
+      {p.mint && (
+        <a
+          href={`https://pump.fun/coin/${p.mint}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-[6px] block text-center font-mono text-[11px] text-accent-text hover:text-accent-d transition-colors"
+        >
+          or trade on pump.fun ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
+function BondingCurve({
+  curve,
+  graduated: graduatedLive,
+}: {
+  curve: number;
+  /** Live graduation from DexScreener; overrides the stored curve snapshot. */
+  graduated?: boolean;
+}) {
+  // Trust the live on-chain signal first: a graduated token reads 100% regardless
+  // of the stale stored `curve`. Fall back to the snapshot only when there's no
+  // live market read yet.
+  const graduated = graduatedLive ?? curve >= 1;
+  const pct = graduated ? 100 : Math.min(100, Math.round(curve * 100));
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="flex justify-between items-baseline mb-[10px]">
+        <span className="font-display font-semibold text-[14.5px]">Bonding Curve</span>
+        <span className="font-mono text-[12.5px] text-accent-text">
+          {graduated ? "graduated" : `${pct}%`}
+        </span>
+      </div>
+      <div className="h-[10px] rounded-full bg-[#F0EEF3] overflow-hidden mb-[10px]">
+        <div
+          className="h-full rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.15_285),oklch(0.47_0.21_285))]"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="text-[12px] text-muted leading-[1.5]">
+        {graduated
+          ? "Curve complete — liquidity migrated off the pump.fun curve. Trading is fully open."
+          : "Graduates once the bonding curve fills. Every buy moves the curve forward."}
+      </div>
+    </div>
+  );
+}
+
+function FeesCustodyCard({
+  project: p,
+  preLaunch,
+}: {
+  project: Project;
+  preLaunch: boolean;
+}) {
+  const wallet = useWallet();
+  const split = splitForProject(p);
+  // The dev-fees claim is founder-only: visible just to the connected wallet
+  // that matches the project's verified creator. Everyone else sees the split +
+  // agent wallet (public) and a neutral note — no personal "Your dev-fees".
+  const isCreator = !!(
+    wallet.connected &&
+    wallet.address &&
+    p.creatorWallet &&
+    wallet.address === p.creatorWallet
+  );
+  // No fees can have accrued before launch; once the ledger table is live this
+  // reads the project's real swept-and-unclaimed founder balance. Honest 0 now.
+  const founderClaimable = claimable(ZERO_TOTALS, ZERO_TOTALS).founderSol;
+  const net = p.network === "devnet" ? "devnet" : "mainnet";
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="font-display font-semibold text-[14.5px] mb-3">
+        Creator Fees &amp; Custody
+      </div>
+      <div className="flex flex-col gap-[10px] text-[13px]">
+        {/* Split */}
+        <div className="flex justify-between">
+          <span className="text-muted">Fee split</span>
+          <span className="font-mono" title="founder / agent / platform">
+            {split.founderPct} / {split.agentPct} / {split.platformPct}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <SplitChip label="Founder" pct={split.founderPct} tone="ink" />
+          <SplitChip label="Agent" pct={split.agentPct} tone="accent" />
+          <SplitChip label="Platform" pct={split.platformPct} tone="muted" />
+        </div>
+
+        {/* Agent wallet (external custody) */}
+        <div className="flex justify-between border-t border-line-4 pt-[10px]">
+          <span className="text-muted">Agent wallet</span>
+          {p.agentWallet ? (
+            <a
+              href={explorerUrl(p.agentWallet, net)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-accent-text hover:text-accent-d transition-colors"
+            >
+              {shortAddr(p.agentWallet)} ↗
+            </a>
+          ) : (
+            <span className="font-mono text-faint">provisioning…</span>
+          )}
+        </div>
+
+        {/* Dev-fees claim — founder-only */}
+        {isCreator ? (
+          <>
+            <div className="flex justify-between border-t border-line-4 pt-[10px]">
+              <span className="text-muted">Your dev-fees</span>
+              <span className="font-mono">{founderClaimable.toFixed(4)} SOL</span>
+            </div>
+            <button
+              disabled
+              title={
+                preLaunch
+                  ? "Dev-fees accrue from trading once the token is live."
+                  : "Nothing to claim yet — fees accrue as the token trades."
+              }
+              className="mt-1 w-full font-display font-semibold text-[13.5px] py-[10px] rounded-[10px] border border-line-3 bg-surface-2 text-faint cursor-not-allowed"
+            >
+              Claim dev-fees
+            </button>
+            <p className="text-[11.5px] text-faint leading-[1.45]">
+              The agent auto-claims creator fees on pump.fun; Loop custodies them
+              and your founder share becomes claimable here.
+              {preLaunch ? " 0 before launch." : ""}
+            </p>
+          </>
+        ) : (
+          <p className="text-[11.5px] text-faint leading-[1.45] border-t border-line-4 pt-[10px]">
+            Creator fees route automatically per the split above. The founder
+            share is claimable by the project&apos;s creator wallet; the agent
+            share funds this project&apos;s own operations.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SplitChip({
+  label,
+  pct,
+  tone,
+}: {
+  label: string;
+  pct: number;
+  tone: "ink" | "accent" | "muted";
+}) {
+  const color =
+    tone === "accent" ? "text-accent-text" : tone === "muted" ? "text-faint" : "text-ink";
+  return (
+    <div className="bg-surface-2 rounded-[9px] px-2 py-[7px] text-center">
+      <div className={`font-mono font-semibold text-[13px] ${color}`}>{pct}%</div>
+      <div className="text-[10.5px] text-faint mt-[1px]">{label}</div>
+    </div>
+  );
+}
+
+function TreasuryStats({
+  project: p,
+  solUsd,
+  compute,
+}: {
+  project: Project;
+  solUsd: number;
+  compute?: ComputeSummary | null;
+}) {
+  // Poll the live on-chain balance + total $ value (SOL + the project token the
+  // treasury holds — for LOOP that token value dwarfs the small SOL line) + the
+  // real recent SOL inflows (claims).
+  const { balance, tokenUi, valueUsd, tokenPriceUsd, claims, live } = useLiveTreasury(
+    p.key,
+    p.treasurySol
+  );
+  const { inspect } = useInspector();
+  const sym = p.ticker.replace(/^\$/, "");
+  const compact = (n: number) =>
+    new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(
+      Math.max(0, n)
+    );
+  // Fall back to SOL-only value before the live read lands.
+  const totalUsd = valueUsd || balance * solUsd;
+  // Honest runway derived from the live balance + metered burn. Pre-launch shows
+  // "pre-launch"; once launched, runway = balance / daily burn (days), or "—"
+  // while burn isn't metered yet (burn 0 ⇒ no real spend to divide by). Never
+  // the stale DB string on a live token.
+  const burnPerDay = parseSolPerDay(p.burnPerDay);
+  // Burn rate denominated in the PROJECT token (not SOL), at the live token price.
+  const loopPerDay = tokenPriceUsd > 0 ? (burnPerDay * solUsd) / tokenPriceUsd : 0;
+  const runwayLabel = !p.mint
+    ? "pre-launch"
+    : burnPerDay > 0
+    ? `${Math.floor(balance / burnPerDay)}d`
+    : "—";
+  const rows: [string, React.ReactNode, boolean?][] = [
+    // Balance led by $LOOP — the reserve the treasury actually holds — with the
+    // small spendable SOL line below it.
+    ...(tokenUi && tokenUi > 0
+      ? ([[
+          `${sym} balance`,
+          <span key="loopbal" className="inline-flex items-center gap-[6px]">
+            {live && (
+              <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
+            )}
+            {compact(tokenUi)} {sym}
+          </span>,
+        ]] as [string, React.ReactNode][])
+      : []),
+    ["SOL (ops)", `${balance.toFixed(2)} SOL`],
+    ["Total earned", `${p.earnedSol.toFixed(2)} SOL`],
+    [
+      "Burn rate",
+      tokenPriceUsd > 0 ? `${compact(loopPerDay)} ${sym}/day` : p.burnPerDay,
+    ],
+    ["Runway", runwayLabel, true],
+  ];
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="font-display font-semibold text-[14.5px] mb-3">
+        Project Treasury
+      </div>
+      {/* Total value headline — SOL + token holdings, in $, so the treasury
+          doesn't read as "tiny" from the SOL line alone. */}
+      <div className="mb-3 pb-3 border-b border-line-4">
+        <div className="text-[11px] text-faint">Total value</div>
+        <div className="font-display font-bold text-[24px] tracking-[-0.02em] tabular-nums inline-flex items-center gap-[7px]">
+          {live && (
+            <span className="w-[7px] h-[7px] rounded-full bg-pos-bright animate-pulseFast" />
+          )}
+          ${usd(totalUsd)}
+        </div>
+        <div className="text-[11.5px] text-faint mt-[1px]">
+          {balance.toFixed(2)} SOL
+          {tokenUi && tokenUi > 0
+            ? ` + ${Math.round(tokenUi).toLocaleString("en-US")} ${sym}`
+            : ""}
+        </div>
+      </div>
+      <div className="flex flex-col gap-[10px] text-[13px]">
+        {rows.map(([label, value, pos]) => (
+          <div key={String(label)} className="flex justify-between">
+            <span className="text-muted">{label}</span>
+            <span className={`font-mono ${pos ? "text-pos" : ""}`}>{value}</span>
+          </div>
+        ))}
+        {claims.length > 0 && (
+          <div className="border-t border-line-4 pt-[10px] flex flex-col gap-[8px]">
+            <span className="text-muted text-[12px]">Recent claims · on-chain</span>
+            {claims.slice(0, 4).map((c) => (
+              <button
+                key={c.sig}
+                onClick={() => inspect({ kind: "claim", claim: c })}
+                title="Inspect this inflow"
+                className="flex justify-between font-mono text-[12px] text-left hover:opacity-80 transition-opacity"
+              >
+                <span className="text-faint">{shortAge(Math.floor(Date.now() / 1000) - c.at)} ago</span>
+                <span className="text-pos">+{c.sol.toFixed(3)} SOL</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <InfraCosts project={p} solUsd={solUsd} compute={compute} />
+        <div className="flex justify-between border-t border-line-4 pt-[10px]">
+          <span className="text-muted">Supply</span>
+          <span className="font-mono">{p.supply}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted">Rewards → Loop</span>
+          <span className="font-mono">5%</span>
+        </div>
+        <TreasuryExits />
+        {(p.mint || p.treasuryWallet) && (
+          <div className="flex flex-col gap-[10px] border-t border-line-4 pt-[10px]">
+            {p.mint && (
+              <div className="flex justify-between">
+                <span className="text-muted">Mint</span>
+                <a
+                  href={explorerUrl(p.mint, p.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-accent-text hover:text-accent-d transition-colors"
+                >
+                  {shortAddr(p.mint)} ↗
+                </a>
+              </div>
+            )}
+            {p.treasuryWallet && (
+              <div className="flex justify-between">
+                <span className="text-muted">Treasury</span>
+                <a
+                  href={explorerUrl(p.treasuryWallet, p.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-accent-text hover:text-accent-d transition-colors"
+                >
+                  {shortAddr(p.treasuryWallet)} ↗
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// No-stuck-funds guarantee, made visible: the three governed exits a buyer
+// should know about before sending SOL. Rendered from lib/governance.ts's
+// TREASURY_EXITS so the UI and the runtime share one source of truth.
+function TreasuryExits() {
+  return (
+    <div className="flex flex-col gap-[8px] border-t border-line-4 pt-[10px]">
+      <div className="flex items-center justify-between">
+        <span className="text-muted">Governed · no stuck funds</span>
+        <span
+          className="w-[6px] h-[6px] rounded-full bg-pos-bright"
+          title="Treasury is a governed vault — SOL can always exit"
+        />
+      </div>
+      {TREASURY_EXITS.map((e) => (
+        <div key={e.kind} className="flex items-start gap-[7px]">
+          <span
+            className={`mt-[5px] w-[5px] h-[5px] rounded-[2px] flex-none ${
+              e.needsVote ? "bg-accent" : "bg-pos"
+            }`}
+          />
+          <div className="leading-[1.4]">
+            <span className="text-body">{e.label}</span>
+            {e.needsVote && (
+              <span className="ml-[6px] font-mono text-[10.5px] text-accent-text">
+                vote-gated
+              </span>
+            )}
+            <div className="text-[11.5px] text-faint">{e.detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Violet ramp (lightest = cheapest slice) so the allocation bar stays on-brand.
+const INFRA_COLOR: Record<CostKey, string> = {
+  compute: "oklch(0.47 0.21 285)",
+  email: "oklch(0.58 0.18 285)",
+  social: "oklch(0.68 0.13 285)",
+  hosting: "oklch(0.78 0.08 285)",
+};
+
+// What the agent's daily burn actually pays for, itemised and tied to fees. The
+// Compute line shows the REAL Claude API spend (Anthropic Admin Cost API) since
+// launch when available — not a modeled estimate — and a remaining-credit line.
+function InfraCosts({
+  project: p,
+  solUsd,
+  compute,
+}: {
+  project: Project;
+  solUsd: number;
+  compute?: ComputeSummary | null;
+}) {
+  const infra = infraBreakdown(p, solUsd);
+  const usdMo = (n: number) => "$" + Math.round(n).toLocaleString("en-US") + "/mo";
+  const money = (n: number) =>
+    "$" +
+    n.toLocaleString("en-US", {
+      minimumFractionDigits: n < 100 ? 2 : 0,
+      maximumFractionDigits: 2,
+    });
+  const sinceLabel = compute
+    ? new Date(compute.sinceISO).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : "";
+  return (
+    <div className="border-t border-line-4 pt-[12px]">
+      <div className="flex items-center justify-between mb-[9px]">
+        <span className="text-muted text-[13px]">Infra costs · funded by fees</span>
+        <span className="font-mono text-[10.5px] text-accent-text bg-accent-tint px-[7px] py-[2px] rounded-[5px]">
+          {infra.tier}
+        </span>
+      </div>
+      <div className="flex h-[7px] rounded-full overflow-hidden mb-[10px]">
+        {infra.items.map((i) => (
+          <div
+            key={i.key}
+            style={{ width: `${i.share * 100}%`, background: INFRA_COLOR[i.key] }}
+            title={`${i.label} · ${Math.round(i.share * 100)}% · ${usdMo(i.usdPerMonth)}`}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-[7px]">
+        {infra.items.map((i) => {
+          // Compute shows REAL cumulative Claude spend (cumulative "total"), not a
+          // /mo estimate, when the Admin Cost API is wired; others stay modeled.
+          const real = i.key === "compute" && compute;
+          return (
+            <div
+              key={i.key}
+              className="flex items-center justify-between gap-2"
+              title={
+                real
+                  ? `Real Claude API spend since ${sinceLabel} (Anthropic Admin Cost API)`
+                  : i.detail
+              }
+            >
+              <span className="inline-flex items-center gap-[6px] min-w-0">
+                <span
+                  className="w-[7px] h-[7px] rounded-full flex-none"
+                  style={{ background: INFRA_COLOR[i.key] }}
+                />
+                <span className="text-muted text-[12px] truncate">{i.label}</span>
+              </span>
+              <span className="font-mono text-[11.5px] text-ink whitespace-nowrap">
+                {real ? (
+                  <>
+                    {money(compute!.spentUsd)}{" "}
+                    <span className="text-faint text-[10px]">total</span>
+                  </>
+                ) : (
+                  usdMo(i.usdPerMonth)
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Real Claude API ledger: cumulative spend since launch + remaining credit
+          (a configured starting credit − measured spend). Only when wired. */}
+      {compute && (
+        <div className="mt-[10px] flex items-center justify-between gap-2 rounded-[8px] border border-line-4 bg-surface-2 px-3 py-2">
+          <span className="text-muted text-[12px]">Claude API · since {sinceLabel}</span>
+          <span className="font-mono text-[11.5px] whitespace-nowrap">
+            <span className="text-ink">{money(compute.spentUsd)} spent</span>
+            {compute.remainingUsd != null && (
+              <>
+                {" · "}
+                <span className="text-pos">{money(compute.remainingUsd)} left</span>
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* The REAL carnet de comptes — only LOOP itself carries named bills the
+          platform actually pays. Other projects show the modeled bar above. */}
+      {p.official && <ExpenseLedger project={p} solUsd={solUsd} compute={compute} />}
+
+      <div className="text-[11px] text-faint mt-[10px] leading-[1.5]">
+        Trading fees + creator rewards top up the treasury — no payroll, the agent
+        pays its own bills while it&apos;s funded.
+      </div>
+    </div>
+  );
+}
+
+// The real expense ledger: named bills (Claude metered + the fixed subscriptions
+// and one-offs from lib/ledger.ts), rolled up into spend-to-date, monthly burn,
+// and treasury runway. This is the honest accounting view — past AND projected.
+const CADENCE_LABEL: Record<Cadence, string> = {
+  metered: "metered",
+  monthly: "/mo",
+  once: "one-off",
+};
+
+function ExpenseLedger({
+  project: p,
+  solUsd,
+  compute,
+}: {
+  project: Project;
+  solUsd: number;
+  compute?: ComputeSummary | null;
+}) {
+  const entries: LedgerEntry[] = withCompute(loopLedger(), compute?.spentUsd ?? null);
+  const sum = ledgerSummary(entries);
+  // Runway uses spendable SOL only — illiquid treasury-held tokens are never
+  // folded into the buffer (mirrors the treasury card's rule).
+  const treasuryUsd = (p.treasurySol ?? 0) * solUsd;
+  const runway = runwayMonths(treasuryUsd, sum.projectedMonthlyUsd);
+  const money = (n: number) =>
+    "$" +
+    n.toLocaleString("en-US", {
+      minimumFractionDigits: n > 0 && n < 100 ? 2 : 0,
+      maximumFractionDigits: n < 100 ? 2 : 0,
+    });
+  const runwayLabel = !Number.isFinite(runway)
+    ? "∞"
+    : runway >= 12
+      ? `${(runway / 12).toFixed(1)}y`
+      : `${runway.toFixed(runway < 2 ? 1 : 0)}mo`;
+
+  return (
+    <div className="mt-[12px] rounded-[10px] border border-line-4 bg-surface-2 px-3 py-[11px]">
+      <div className="flex items-center justify-between mb-[8px]">
+        <span className="text-muted text-[12px] font-medium">Ledger · real bills</span>
+        <span className="font-mono text-[10px] text-faint">USD</span>
+      </div>
+
+      <div className="flex flex-col gap-[6px]">
+        {entries.map((e) => (
+          <div key={e.id} className="flex items-center justify-between gap-2" title={e.note}>
+            <span className="inline-flex items-center gap-[6px] min-w-0">
+              <span className="text-muted text-[12px] truncate">{e.label}</span>
+              <span className="font-mono text-[9.5px] text-faint border border-line-4 rounded-[4px] px-[4px] py-[1px] flex-none">
+                {CADENCE_LABEL[e.cadence]}
+              </span>
+            </span>
+            <span className="font-mono text-[11.5px] text-ink whitespace-nowrap">
+              {e.cadence === "metered" && (compute?.spentUsd ?? 0) === 0 ? (
+                <span className="text-faint">—</span>
+              ) : (
+                money(e.usd)
+              )}
+              {e.currency === "USDC" && <span className="text-faint text-[9.5px]"> USDC</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Roll-up: spent-to-date · forward monthly burn · runway off the treasury */}
+      <div className="grid grid-cols-3 gap-2 mt-[10px] pt-[9px] border-t border-line-4">
+        <LedgerStat label="Spent to date" value={money(sum.spentToDateUsd)} />
+        <LedgerStat label="Burn / mo" value={money(sum.projectedMonthlyUsd)} />
+        <LedgerStat
+          label="Runway"
+          value={runwayLabel}
+          tone={Number.isFinite(runway) && runway < 1 ? "warn" : "pos"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function LedgerStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "pos" | "warn";
+}) {
+  return (
+    <div className="flex flex-col gap-[2px]">
+      <span className="text-faint text-[10px]">{label}</span>
+      <span
+        className={`font-mono text-[12.5px] ${
+          tone === "warn" ? "text-warn" : tone === "pos" ? "text-pos" : "text-ink"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function TopHolders({
+  holders,
+  network,
+  preLaunch,
+}: {
+  holders: Holder[];
+  network: "mainnet" | "devnet";
+  preLaunch?: boolean;
+}) {
+  const { inspect } = useInspector();
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="font-display font-semibold text-[14.5px] mb-3">Top Holders</div>
+      {preLaunch || holders.length === 0 ? (
+        <div className="text-[12.5px] text-faint py-2">
+          {preLaunch
+            ? "No holders yet — the holder list appears once the token is minted and trading begins."
+            : "Holder data is loading…"}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-[10px]">
+          {holders.map((h) => (
+            <button
+              key={h.address}
+              onClick={() => inspect({ kind: "holder", holder: h })}
+              title="Inspect this holder"
+              className="flex items-center justify-between font-mono text-[12.5px] w-full text-left hover:opacity-80 transition-opacity"
+            >
+              <span className="text-muted truncate">
+                {h.name ? (
+                  <span className="text-ink">{h.name}</span>
+                ) : (
+                  shortAddr(h.address)
+                )}
+              </span>
+              <span className="tabular-nums">{(h.share * 100).toFixed(2)}%</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
