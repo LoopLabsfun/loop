@@ -16,6 +16,7 @@ import {
 } from "./learnings";
 import { getTopLearnings, recordLearning } from "./agent-data";
 import { buildShipTweet } from "./x-recap";
+import { tokensToUsd, type TokenUsage } from "./anthropic-cost";
 import {
   evaluateAction,
   walletFor,
@@ -858,7 +859,7 @@ export function routeAction(action: AgentAction, spentTodaySol = 0): RoutedActio
 export async function decideNextAction(
   p: Project,
   state: { tasks: AgentTask[]; directives: FeedItem[] }
-): Promise<AgentDecision> {
+): Promise<{ decision: AgentDecision; costUsd: number }> {
   if (!agentRuntimeConfigured()) {
     throw new Error("Agent runtime selected but ANTHROPIC_API_KEY is not set.");
   }
@@ -913,6 +914,7 @@ export async function decideNextAction(
 
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
+  let costUsd = 0;
   const userContent = buildUserPrompt(
     state.tasks,
     state.directives,
@@ -965,7 +967,9 @@ export async function decideNextAction(
   const create = (client.messages.create as any).bind(client.messages);
   const res = (await create(params)) as {
     content: Array<{ type: string; text?: string }>;
+    usage?: TokenUsage;
   };
+  costUsd += tokensToUsd(res.usage, AGENT_MODEL);
 
   const text = res.content
     .filter((b) => b.type === "text")
@@ -1042,7 +1046,9 @@ export async function decideNextAction(
         pushCachedUserTurn(buildReadFilesPrompt(files, { roundsLeft }));
         const follow = (await create({ ...params, messages: convo })) as {
           content: Array<{ type: string; text?: string }>;
+          usage?: TokenUsage;
         };
+        costUsd += tokensToUsd(follow.usage, AGENT_MODEL);
         const ftext = textOf(follow);
         convo.push({ role: "assistant", content: ftext || "(no parseable decision)" });
         let grounded: AgentDecision | null = null;
@@ -1071,7 +1077,7 @@ export async function decideNextAction(
         console.log(
           `[agent-a2] ${JSON.stringify({ key: p.key, requested: decision.readFiles.length, readable: 0, note: "no files fetched" })}`
         );
-        return decision;
+        return { decision, costUsd };
       }
 
       // Reading done (acted, ran out of rounds, or hit the file budget). `current`
@@ -1080,7 +1086,7 @@ export async function decideNextAction(
       const candidate = current;
       delete candidate.readFiles;
       // Healthy: it produced edits or a command — take it.
-      if (!isStalledDecision(candidate)) return candidate;
+      if (!isStalledDecision(candidate)) return { decision: candidate, costUsd };
 
       // STALLED — it read the files but returned neither edits nor a command. This
       // is the exact loop that left the task on "planned only" for hours. One
@@ -1088,7 +1094,9 @@ export async function decideNextAction(
       pushCachedUserTurn(buildForceActPrompt());
       const forced = (await create({ ...params, messages: convo })) as {
         content: Array<{ type: string; text?: string }>;
+        usage?: TokenUsage;
       };
+      costUsd += tokensToUsd(forced.usage, AGENT_MODEL);
       const xtext = textOf(forced);
       let xdec: AgentDecision | null = null;
       try {
@@ -1107,7 +1115,7 @@ export async function decideNextAction(
       );
       if (xdec && !isStalledDecision(xdec)) {
         delete xdec.readFiles;
-        return xdec;
+        return { decision: xdec, costUsd };
       }
       // Even forced, it produced no action: surface the stall HONESTLY
       // (status=blocked) instead of a plan that spins on "planned only" — the
@@ -1117,7 +1125,7 @@ export async function decideNextAction(
         candidate.task.detail =
           `${candidate.task.detail} — auto-blocked: agent kept re-planning without shipping edits.`.slice(0, 500);
       }
-      return candidate;
+      return { decision: candidate, costUsd };
     } catch (e) {
       // Don't swallow silently: a failing pass-2 is exactly why the agent would
       // appear to "read forever". Log it; fall back to the pass-1 decision below.
@@ -1126,7 +1134,7 @@ export async function decideNextAction(
       );
     }
   }
-  return decision;
+  return { decision, costUsd };
 }
 
 /** Default throttle for "still building" updates between any two posts. */
@@ -1582,7 +1590,7 @@ export async function runAgentTick(
   p: Project,
   state: { tasks: AgentTask[]; directives: FeedItem[] }
 ): Promise<AgentDecision> {
-  const decision = await decideNextAction(p, state);
+  const { decision, costUsd: tickCostUsd } = await decideNextAction(p, state);
 
   // The objective verifier signal for this cycle (maker ≠ checker, A1): a sandbox
   // run distinct from the agent. Set by repo-hands (a real push) or a plain
@@ -1812,6 +1820,16 @@ export async function runAgentTick(
   }
 
   await applyDecision(p, decision, verify);
+  if (tickCostUsd > 0) {
+    try {
+      const { getComputeLedger, saveComputeLedger } = await import("./compute-ledger-store");
+      const { recordSpend } = await import("./compute-rail");
+      const ledger = await getComputeLedger(p.key);
+      await saveComputeLedger(p.key, recordSpend(ledger, tickCostUsd));
+    } catch {
+      /* ledger write failure must never abort the tick */
+    }
+  }
   return decision;
 }
 
@@ -1862,6 +1880,7 @@ export async function answerOpenChats(p: Project, max = 3): Promise<number> {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic();
     let answered = 0;
+    let chatCostUsd = 0;
     for (const r of rows) {
       try {
         const msg = await client.messages.create({
@@ -1879,6 +1898,7 @@ export async function answerOpenChats(p: Project, max = 3): Promise<number> {
             },
           ],
         });
+        chatCostUsd += tokensToUsd(msg.usage as TokenUsage, model);
         const blocks = (msg.content ?? []) as Array<{ type: string; text?: string }>;
         const text = blocks
           .map((b) => (b.type === "text" ? b.text ?? "" : ""))
@@ -1898,6 +1918,16 @@ export async function answerOpenChats(p: Project, max = 3): Promise<number> {
         if (!error) answered++;
       } catch {
         /* one bad answer never aborts the rest */
+      }
+    }
+    if (chatCostUsd > 0) {
+      try {
+        const { getComputeLedger, saveComputeLedger } = await import("./compute-ledger-store");
+        const { recordSpend } = await import("./compute-rail");
+        const ledger = await getComputeLedger(p.key);
+        await saveComputeLedger(p.key, recordSpend(ledger, chatCostUsd));
+      } catch {
+        /* ledger write failure must never abort chat answers */
       }
     }
     return answered;

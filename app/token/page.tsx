@@ -7,6 +7,7 @@ import { getSolUsd } from "@/lib/price";
 import { getRecentCommits } from "@/lib/commits";
 import { getAgentState, getChat } from "@/lib/agent-data";
 import { anthropicComputeSummary } from "@/lib/anthropic-cost";
+import { getComputeLedger } from "@/lib/compute-ledger-store";
 import { getVercelVisitorsTotal } from "@/lib/vercel-analytics";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export default async function TokenRoute({
   if (!base) notFound();
   // Compute (Claude spend) is org-wide and visitors are site-wide, so both are
   // only meaningful on the official project; fetch them only there.
-  const [view, solUsd, commitsAll, agentState, chat, compute, visitors] =
+  const [view, solUsd, commitsAll, agentState, chat, computeApi, computeLedger, visitors] =
     await Promise.all([
       getTokenView(base),
       getSolUsd(),
@@ -58,8 +59,24 @@ export default async function TokenRoute({
       getAgentState(base),
       getChat(base.key),
       base.official ? anthropicComputeSummary() : Promise.resolve(null),
+      base.official ? getComputeLedger(base.key) : Promise.resolve(null),
       base.official ? getVercelVisitorsTotal(SINCE_ISO) : Promise.resolve(null),
     ]);
+  // Prefer the Admin Cost API; fall back to the metered compute_ledger row
+  // (populated by the agent runtime after every tick).
+  const compute =
+    computeApi ??
+    (computeLedger && computeLedger.consumedUsd > 0
+      ? {
+          spentUsd: computeLedger.consumedUsd,
+          sinceISO: SINCE_ISO,
+          startingCreditUsd: computeLedger.creditedUsd > 0 ? computeLedger.creditedUsd : null,
+          remainingUsd:
+            computeLedger.creditedUsd > 0
+              ? Math.max(0, computeLedger.creditedUsd - computeLedger.consumedUsd)
+              : null,
+        }
+      : null);
   return (
     <TokenPage
       project={view.project}
