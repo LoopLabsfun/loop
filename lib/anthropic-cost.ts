@@ -47,6 +47,37 @@ export interface ComputeSummary {
   remainingUsd: number | null;
 }
 
+/** Shape of the `usage` block returned by every Messages API response. */
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+// Prices in USD per 1 M tokens (input / output / cacheWrite / cacheRead).
+// cacheWrite = 1.25× input; cacheRead = 0.1× input.
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
+  "claude-opus-4-8":           { input: 5.00, output: 25.00, cacheWrite: 6.25, cacheRead: 0.50 },
+  "claude-opus-4-7":           { input: 5.00, output: 25.00, cacheWrite: 6.25, cacheRead: 0.50 },
+  "claude-opus-4-6":           { input: 5.00, output: 25.00, cacheWrite: 6.25, cacheRead: 0.50 },
+  "claude-sonnet-4-6":         { input: 3.00, output: 15.00, cacheWrite: 3.75, cacheRead: 0.30 },
+  "claude-haiku-4-5-20251001": { input: 1.00, output:  5.00, cacheWrite: 1.25, cacheRead: 0.10 },
+  "claude-haiku-4-5":          { input: 1.00, output:  5.00, cacheWrite: 1.25, cacheRead: 0.10 },
+};
+
+/** Convert a Messages API usage block to USD. Falls back to Opus pricing for unknown models. */
+export function tokensToUsd(usage: TokenUsage | null | undefined, model: string): number {
+  if (!usage) return 0;
+  const p = MODEL_PRICING[model] ?? MODEL_PRICING["claude-opus-4-8"]!;
+  return (
+    (usage.input_tokens / 1_000_000) * p.input +
+    (usage.output_tokens / 1_000_000) * p.output +
+    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) * p.cacheWrite +
+    ((usage.cache_read_input_tokens ?? 0) / 1_000_000) * p.cacheRead
+  );
+}
+
 interface CostResult {
   amount?: string;
   currency?: string;

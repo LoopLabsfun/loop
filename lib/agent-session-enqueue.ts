@@ -63,7 +63,7 @@ export async function enqueueSdkSession(
   state: { tasks: AgentTask[]; directives: FeedItem[] },
   opts: { dryRun?: boolean } = {}
 ): Promise<{ enqueued: boolean; runId?: string; note: string }> {
-  const decision = await decideNextAction(p, state);
+  const { decision } = await decideNextAction(p, state);
 
   if (!CODE_CATEGORIES.includes(decision.task.category)) {
     await applyDecision(p, decision); // outreach/ops: no sandbox needed
