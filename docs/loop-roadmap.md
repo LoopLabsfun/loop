@@ -313,7 +313,7 @@ For a finer cadence **without upgrading to Pro**, point an external scheduler at
 the same endpoint — it's protected by `CRON_SECRET`:
 
 ```
-curl -fsS https://loop-fun-nine.vercel.app/api/agent/cron \
+curl -fsS https://looplabs.fun/api/agent/cron \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
