@@ -1,0 +1,56 @@
+# Drives the autonomous agent on a finer cadence than Vercel Hobby allows.
+#
+# Vercel Hobby permits a single DAILY cron (see vercel.json), which is too slow
+# for a live token with holders watching the build log. GitHub Actions `schedule`
+# is free and runs at 5-min granularity (GitHub's floor), hitting the same
+# protected endpoint — the daily Vercel cron stays as a backstop. The endpoint is
+# bounded per run (MAX_PER_RUN) and budget-gated (empty treasury ⇒ the project
+# sleeps), so a tighter cadence can't run away on cost.
+#
+# Founder setup (one-time, in repo Settings → Secrets and variables → Actions):
+#   - secret  CRON_SECRET   — same value as the Vercel CRON_SECRET env var
+#   - variable AGENT_CRON_URL — e.g. https://www.looplabs.fun/api/agent/cron
+# If either is unset the job no-ops cleanly instead of failing the workflow.
+
+name: agent-cron
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's minimum). GitHub heavily throttles/delays
+    # scheduled runs under load — this is a best-effort cadence that in practice
+    # lands every ~5–15 min, NOT a hard guarantee; the Vercel daily cron backstops
+    # it. For a firm sub-5-min heartbeat, drive /api/agent/cron from Vercel Pro
+    # cron or an external scheduler instead.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # allow a manual tick from the Actions tab
+
+concurrency:
+  # Never overlap ticks: a slow run is skipped, not stacked.
+  group: agent-cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Tick funded projects
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          AGENT_CRON_URL: ${{ vars.AGENT_CRON_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$AGENT_CRON_URL" ]; then
+            echo "CRON_SECRET secret or AGENT_CRON_URL variable not set — skipping."
+            exit 0
+          fi
+          echo "Ticking $AGENT_CRON_URL"
+          code=$(curl -fsS -o /tmp/tick.json -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$AGENT_CRON_URL") || true
+          echo "HTTP $code"
+          cat /tmp/tick.json 2>/dev/null || true
+          # A 503 means the runtime isn't configured yet (no ANTHROPIC_API_KEY) —
+          # that's an expected idle state, not a CI failure. Only hard-fail on 5xx
+          # that isn't 503, or on a transport error (empty code).
+          if [ -z "$code" ]; then echo "transport error"; exit 1; fi
+          if [ "$code" -ge 500 ] && [ "$code" -ne 503 ]; then exit 1; fi
