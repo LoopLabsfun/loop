@@ -31,6 +31,17 @@ function endpoint(net: Network): string {
   return `https://${host}.helius-rpc.com/?api-key=${KEY}`;
 }
 
+/**
+ * The Helius JSON-RPC URL for a cluster (with the server-only key), or null when
+ * unconfigured. Used by the `/api/rpc` proxy so the browser wallet adapter can
+ * make RPC calls (blockhash, simulate, send, confirm) through OUR server instead
+ * of the public `api.mainnet-beta.solana.com` endpoint, which 403s browser reads.
+ * Server-only — the returned URL embeds the key, so never send it to the client.
+ */
+export function heliusRpcUrl(net: Network): string | null {
+  return KEY ? endpoint(net) : null;
+}
+
 // Minimal JSON-RPC helper (same fetch path as getSolBalance). Returns the
 // `result` field, or null on any failure. Server-only — never ships the key.
 async function rpc<T>(net: Network, method: string, params: unknown): Promise<T | null> {

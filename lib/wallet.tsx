@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import {
   clusterApiUrl,
+  Connection,
   LAMPORTS_PER_SOL,
   PublicKey,
   SystemProgram,
@@ -45,6 +46,37 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+// Confirm a signature by POLLING getSignatureStatuses over HTTP. We can't use the
+// usual `connection.confirmTransaction` because it relies on a WebSocket
+// (signatureSubscribe), and our RPC goes through the same-origin `/api/rpc`
+// proxy, which only serves HTTP (no WS upgrade). Best-effort: resolves as soon as
+// the tx is confirmed, and never throws — the signature is already submitted, so
+// confirmation is just for the settled-state UI (paid actions are re-verified
+// on-chain server-side regardless).
+async function confirmByPolling(
+  connection: Connection,
+  signature: string,
+  timeoutMs = 30000
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const { value } = await connection.getSignatureStatuses([signature]);
+      const st = value?.[0];
+      if (st?.err) return; // failed on-chain — stop waiting (explorer is the truth)
+      if (
+        st?.confirmationStatus === "confirmed" ||
+        st?.confirmationStatus === "finalized"
+      ) {
+        return;
+      }
+    } catch {
+      /* transient RPC hiccup — keep polling until the timeout */
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
 // The wallet-adapter providers are typed as React 17-era FCs whose `children`
 // typing conflicts with @types/react 18.3. Cast to sidestep the false positive.
 const CP = ConnectionProvider as unknown as React.FC<
@@ -69,10 +101,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network === "devnet"
         ? process.env.NEXT_PUBLIC_SOLANA_RPC_DEVNET
         : process.env.NEXT_PUBLIC_SOLANA_RPC;
-    return (
-      override ||
-      clusterApiUrl(network === "devnet" ? "devnet" : "mainnet-beta")
-    );
+    if (override) return override;
+    // Default to the same-origin server proxy → Helius (the key stays
+    // server-side). The public clusterApiUrl 403s browser requests, so it's only
+    // a last-resort SSR fallback before `window` is available.
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_SITE_URL;
+    return origin
+      ? `${origin}/api/rpc?cluster=${network}`
+      : clusterApiUrl(network === "devnet" ? "devnet" : "mainnet-beta");
   }, [network]);
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
@@ -182,17 +221,9 @@ export function useWallet(): WalletState {
       SystemProgram.transfer({ fromPubkey: publicKey, toPubkey, lamports })
     );
     const signature = await sendTransaction(tx, connection);
-    // Best-effort confirmation so the UI can show a settled state; the tx is
-    // already submitted, so a failed poll here is non-fatal.
-    try {
-      const latest = await connection.getLatestBlockhash();
-      await connection.confirmTransaction(
-        { signature, ...latest },
-        "confirmed"
-      );
-    } catch {
-      /* confirmation polling failed — the signature is still valid */
-    }
+    // Best-effort confirmation (HTTP polling, no WS) so the UI can show a settled
+    // state; the tx is already submitted, so this never blocks the result.
+    await confirmByPolling(connection, signature);
     return signature;
   };
 
@@ -202,12 +233,7 @@ export function useWallet(): WalletState {
     }
     const tx = VersionedTransaction.deserialize(txBytes);
     const signature = await sendTransaction(tx, connection);
-    try {
-      const latest = await connection.getLatestBlockhash();
-      await connection.confirmTransaction({ signature, ...latest }, "confirmed");
-    } catch {
-      /* confirmation polling failed — the signature is still valid */
-    }
+    await confirmByPolling(connection, signature);
     return signature;
   };
 
@@ -246,12 +272,7 @@ export function useWallet(): WalletState {
     }
     tx.add(createTransferInstruction(fromAta, toAta, publicKey, amount));
     const signature = await sendTransaction(tx, connection);
-    try {
-      const latest = await connection.getLatestBlockhash();
-      await connection.confirmTransaction({ signature, ...latest }, "confirmed");
-    } catch {
-      /* confirmation polling failed — the signature is still valid */
-    }
+    await confirmByPolling(connection, signature);
     return signature;
   };
 
