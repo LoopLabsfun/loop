@@ -1,0 +1,14 @@
+name = "loop-email-inbound"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The app endpoint that records inbound agent mail. Override per environment if
+# you point a staging Worker at a preview deployment.
+[vars]
+INBOUND_URL = "https://looplabs.fun/api/email/inbound"
+# FORWARD_TO = "contact@looplabs.fun"   # optional: also CC a human mailbox
+
+# EMAIL_INBOUND_SECRET is a SECRET, not a var — set it with:
+#   wrangler secret put EMAIL_INBOUND_SECRET
+# It must equal the app's EMAIL_INBOUND_SECRET (already set in Vercel).
