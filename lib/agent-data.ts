@@ -341,16 +341,33 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         lastOutcome: r.last_outcome ?? undefined,
       }));
 
-    const inbox: InboxMessage[] = ((e.data as EmailRow[] | null) ?? []).map(
-      (r) => ({
+    const emailRows = (e.data as EmailRow[] | null) ?? [];
+    // Latest outbound timestamp per party — an inbound is "answered" when the
+    // agent has already emailed that sender AFTER it arrived. Lets the runtime
+    // surface only UNANSWERED inbound so it never re-replies to the same message.
+    const lastOutTo = new Map<string, number>();
+    for (const r of emailRows) {
+      if (r.direction !== "in") {
+        const t = new Date(r.created_at).getTime();
+        const prev = lastOutTo.get(r.party) ?? 0;
+        if (t > prev) lastOutTo.set(r.party, t);
+      }
+    }
+    const inbox: InboxMessage[] = emailRows.map((r) => {
+      const isIn = r.direction === "in";
+      const answered =
+        isIn &&
+        (lastOutTo.get(r.party) ?? 0) >= new Date(r.created_at).getTime();
+      return {
         id: `m${r.id}`,
-        direction: r.direction === "in" ? "in" : "out",
+        direction: isIn ? "in" : "out",
         party: r.party,
         subject: r.subject,
         preview: r.preview,
         at: rel(r.created_at),
-      })
-    );
+        ...(isIn ? { answered } : {}),
+      };
+    });
 
     const social: SocialPost[] = ((s.data as PostRow[] | null) ?? []).map(
       (r) => ({

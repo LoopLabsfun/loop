@@ -45,6 +45,12 @@ export interface InboxMessage {
   subject: string;
   preview: string;
   at: string;
+  /**
+   * Inbound only: true when the agent has already sent an `out` email to this
+   * `party` AFTER this message arrived (i.e. it's been answered). The runtime
+   * surfaces only UNANSWERED inbound to the agent so it never re-replies.
+   */
+  answered?: boolean;
 }
 
 export interface SocialPost {

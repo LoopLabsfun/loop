@@ -54,3 +54,6 @@ scripts/trigger-set-env.ts
 scripts/post-github-thread.ts
 
 .env.local.bak
+
+# Cloudflare email worker deps
+workers/email-inbound/node_modules/

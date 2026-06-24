@@ -10,7 +10,7 @@ import "server-only";
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Project } from "./types";
-import type { AgentTask, TaskCategory } from "./agent";
+import type { AgentTask, InboxMessage, TaskCategory } from "./agent";
 import type { FeedItem } from "./console";
 import {
   decideNextAction,
@@ -60,13 +60,18 @@ const CODE_CATEGORIES: TaskCategory[] = ["feature", "fix"];
  */
 export async function enqueueSdkSession(
   p: Project,
-  state: { tasks: AgentTask[]; directives: FeedItem[] },
+  state: { tasks: AgentTask[]; directives: FeedItem[]; inbox?: InboxMessage[] },
   opts: { dryRun?: boolean } = {}
 ): Promise<{ enqueued: boolean; runId?: string; note: string }> {
   const { decision } = await decideNextAction(p, state);
 
   if (!CODE_CATEGORIES.includes(decision.task.category)) {
-    await applyDecision(p, decision); // outreach/ops: no sandbox needed
+    // outreach/ops: no sandbox needed. Pass the reply allow-list so an
+    // `emailReply` is mailed only to a real unanswered-inbound sender.
+    const inboundParties = (state.inbox ?? [])
+      .filter((m) => m.direction === "in" && !m.answered)
+      .map((m) => m.party);
+    await applyDecision(p, decision, undefined, { inboundParties });
     return { enqueued: false, note: `non-code (${decision.task.category}) — applied inline` };
   }
 

@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     const decision = await runAgentTick(project, {
       tasks: state.tasks,
       directives: state.directives,
+      inbox: state.inbox,
     });
     // Non-secret diagnostics: which delivery channels the prod runtime actually
     // sees configured (booleans only — never the keys themselves).
