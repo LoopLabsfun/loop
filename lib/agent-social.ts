@@ -23,7 +23,7 @@ import "server-only";
 
 import type { Project } from "./types";
 import { tokensToUsd, type TokenUsage } from "./anthropic-cost";
-import { agentRuntimeConfigured, chatModel, socialSilent } from "./agent-runtime";
+import { agentRuntimeConfigured, chatModel, loadMandate, socialSilent } from "./agent-runtime";
 
 /** What the agent may author this cycle. Both optional — empty = stay silent. */
 export interface SocialAuthor {
@@ -66,12 +66,20 @@ export interface SocialWork {
 
 export function buildSocialSystemPrompt(
   p: Project,
-  opts: { warmup: boolean; plan?: string | null }
+  opts: { warmup: boolean; plan?: string | null; mission?: string | null }
 ): string {
   const cashtag = p.ticker.startsWith("$") ? p.ticker : `$${p.ticker}`;
+  const mission = (opts.mission || p.description || "").trim();
   const rails = [
-    `You are the autonomous agent building ${p.name} in public — its engineer AND its growth voice.`,
+    `You are the autonomous agent building ${p.name} (${cashtag}) in public — its engineer AND its growth voice.`,
+    // GROUNDING — the agent's only source of truth for what the product IS. Without
+    // this the model invents a thesis (it once described Loop as an "on-chain
+    // execution layer", which it is not). Describe ONLY what's stated here.
+    mission
+      ? `WHAT ${p.name} IS — your ONLY source of truth for the product: ${mission}`
+      : `WHAT ${p.name} IS: a product you build autonomously, funded by its market.`,
     `HARD RAILS (never break):`,
+    `• Describe ONLY what ${p.name} actually is per the line above + the real work below. NEVER invent a product category, thesis, feature, or claim it does not have.`,
     `• The product is called "Loop"; the only URL is looplabs.fun. NEVER write "loop.fun".`,
     `• At most ONE cashtag per post, and only ${cashtag}. Never mention any other ticker.`,
     `• NO price, market-cap, financial, or trading talk. No promises of returns.`,
@@ -153,11 +161,16 @@ export async function authorSocial(
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic();
     const model = chatModel();
+    // Ground the prompt in the agent's real mandate (founder override or the
+    // project description) so it never invents a product thesis. Fail-safe.
+    const mission = await loadMandate(p)
+      .then((m) => m.mission)
+      .catch(() => p.description);
     const params = {
       model,
       max_tokens: 1400,
       output_config: { format: { type: "json_schema", schema: SOCIAL_SCHEMA } },
-      system: buildSocialSystemPrompt(p, opts),
+      system: buildSocialSystemPrompt(p, { ...opts, mission }),
       messages: [{ role: "user", content: buildSocialUserPrompt(work) }],
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
