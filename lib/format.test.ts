@@ -3,6 +3,8 @@ import {
   usd,
   sol,
   fmtPrice,
+  compactUsd,
+  compactNum,
   countdown,
   shortAge,
   nowStamp,
@@ -32,6 +34,36 @@ describe("fmtPrice", () => {
   });
   it("uses 6 decimals below 0.01", () => {
     expect(fmtPrice(0.00029)).toBe("$0.000290");
+  });
+});
+
+describe("compactUsd", () => {
+  it("formats typical values", () => {
+    expect(compactUsd(0)).toBe("—");
+    expect(compactUsd(500)).toBe("$500");
+    expect(compactUsd(1234)).toBe("$1.2K");
+    expect(compactUsd(6_900_000)).toBe("$6.9M");
+  });
+  it("promotes K→M at the 999_999 boundary (rounding carry)", () => {
+    expect(compactUsd(999_999)).toBe("$1.0M");
+  });
+  it("promotes M→B at the 999_999_999 boundary (rounding carry)", () => {
+    expect(compactUsd(999_999_999)).toBe("$1.0B");
+  });
+});
+
+describe("compactNum", () => {
+  it("formats typical values", () => {
+    expect(compactNum(0)).toBe("0");
+    expect(compactNum(42)).toBe("42");
+    expect(compactNum(1234)).toBe("1.2K");
+    expect(compactNum(1_000_000)).toBe("1.0M");
+  });
+  it("promotes K→M at the 999_999 boundary (rounding carry)", () => {
+    expect(compactNum(999_999)).toBe("1.0M");
+  });
+  it("promotes M→B at the 999_999_999 boundary (rounding carry)", () => {
+    expect(compactNum(999_999_999)).toBe("1.0B");
   });
 });
 
