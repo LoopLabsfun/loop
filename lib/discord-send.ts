@@ -6,6 +6,7 @@ import {
   buildDiscordLaunch,
   type DiscordPayload,
 } from "./discord";
+import { isDiscordBotConfigured, findChannelId, postToChannel } from "./discord-bot";
 import type { BuildUpdate, LaunchAnnouncement } from "./telegram";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +60,28 @@ export async function sendDiscordMessage(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "network error" };
   }
+}
+
+/**
+ * Deliver a build-log payload to Discord, preferring the BOT (posts to the
+ * #build-log channel) over the read-only webhook. The bot path lets the agent
+ * also manage the server + read messages; the webhook stays a valid fallback for
+ * a webhook-only setup. No-ops (skipped) when neither is configured.
+ *
+ * Channel resolution: DISCORD_BUILDLOG_CHANNEL_ID if set, else resolved by the
+ * "build-log" name. Falls back to the webhook when the bot is configured but no
+ * build-log channel can be found.
+ */
+export async function deliverBuildLog(payload: DiscordPayload): Promise<DiscordResult> {
+  if (isDiscordBotConfigured()) {
+    const channelId =
+      process.env.DISCORD_BUILDLOG_CHANNEL_ID || (await findChannelId("build-log"));
+    if (channelId) {
+      const r = await postToChannel(channelId, payload);
+      return { ok: r.ok, skipped: r.skipped, error: r.error };
+    }
+  }
+  return sendDiscordMessage(payload);
 }
 
 /**

@@ -141,13 +141,32 @@ comment on table public.agent_emails is 'Agent email inbox (sent/received). Writ
 create table if not exists public.agent_posts (
   id bigint generated always as identity primary key,
   project_key text not null references public.projects(key) on delete cascade,
-  platform text not null default 'telegram' check (platform in ('twitter','reddit','telegram','farcaster')),
+  platform text not null default 'telegram' check (platform in ('twitter','reddit','telegram','farcaster','discord')),
   body text not null,
   likes integer not null default 0,
   replies integer not null default 0,
   created_at timestamptz not null default now()
 );
 comment on table public.agent_posts is 'Social posts the agent published. Written by the runtime (service_role); publicly readable.';
+
+-- Community messages the agent READS for memory (the inbound side of Discord —
+-- the counterpart of agent_posts' outbound). Polled from #general/#ideas each
+-- tick via lib/discord-read.ts and surfaced into the decision context as
+-- untrusted DATA. NOT publicly readable (community chatter may carry PII):
+-- RLS on with no public policy, so only the service_role can read/write it.
+create table if not exists public.discord_messages (
+  id bigint generated always as identity primary key,
+  project_key text not null references public.projects(key) on delete cascade,
+  channel_id text not null,
+  channel_name text,
+  message_id text not null,
+  author_id text,
+  author_name text,
+  content text not null,
+  created_at timestamptz not null default now(),
+  unique (project_key, message_id)
+);
+comment on table public.discord_messages is 'Discord community messages the agent ingests for memory. Written + read by the runtime (service_role) only; not publicly readable.';
 
 create table if not exists public.agent_escalations (
   id bigint generated always as identity primary key,
@@ -184,12 +203,14 @@ create policy "agent_social_plan public read" on public.agent_social_plan for se
 create index if not exists agent_tasks_project_idx      on public.agent_tasks      (project_key, created_at desc);
 create index if not exists agent_emails_project_idx     on public.agent_emails     (project_key, created_at desc);
 create index if not exists agent_posts_project_idx      on public.agent_posts      (project_key, created_at desc);
+create index if not exists discord_messages_cursor_idx   on public.discord_messages (project_key, channel_id, message_id desc);
 create index if not exists agent_escalations_project_idx on public.agent_escalations(project_key, created_at desc);
 create index if not exists agent_actions_project_idx    on public.agent_actions    (project_key, created_at desc);
 
 alter table public.agent_tasks      enable row level security;
 alter table public.agent_emails     enable row level security;
 alter table public.agent_posts      enable row level security;
+alter table public.discord_messages enable row level security; -- service_role only (no public policy)
 alter table public.agent_escalations enable row level security;
 alter table public.agent_actions    enable row level security;
 

@@ -115,6 +115,16 @@ export async function GET(req: Request) {
       } catch (e) {
         console.error(`[agent-digest] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
       }
+      // Listen to Discord: pull new #general/#ideas messages into memory BEFORE
+      // the brain runs, so the decision (legacy) or the SDK brief sees the freshest
+      // community chatter. Failure-safe + no-op when the bot isn't configured.
+      try {
+        const { pollDiscordCommunity } = await import("@/lib/discord-read");
+        const n = await pollDiscordCommunity(p.key);
+        if (n) console.log(`[agent-discord-read] ${JSON.stringify({ key: p.key, newMessages: n })}`);
+      } catch (e) {
+        console.error(`[agent-discord-read] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+      }
       if (mode === "sdk") {
         // Durable path: decide + enqueue; the session + its persist happen later.
         const r = await enqueueSdkSession(p, {
