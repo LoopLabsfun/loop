@@ -93,10 +93,18 @@ describe("countdown", () => {
 });
 
 describe("shortAge", () => {
-  it("renders seconds, minutes, then hours", () => {
+  it("renders seconds, minutes, hours, then days", () => {
     expect(shortAge(45)).toBe("45s");
     expect(shortAge(120)).toBe("2m");
     expect(shortAge(3 * 3600 + 5)).toBe("3h");
+    expect(shortAge(24 * 3600)).toBe("1d");
+    expect(shortAge(72 * 3600)).toBe("3d");
+  });
+  it("clamps non-finite and negative input to 0s", () => {
+    expect(shortAge(-1)).toBe("0s");
+    expect(shortAge(NaN)).toBe("0s");
+    expect(shortAge(Infinity)).toBe("0s");
+    expect(shortAge(-Infinity)).toBe("0s");
   });
 });
 
