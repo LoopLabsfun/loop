@@ -623,8 +623,12 @@ export function buildUserPrompt(
       d.exec !== "refused" &&
       d.exec !== "done"
   );
+  // The founder's explicit 'todo' (creator-wallet-gated, so always founder intent)
+  // is the build-next queue — on an adopted proposal OR a directive (the founder's
+  // own instruction). Rank it top, then other adopted proposals, then the rest.
+  // ('done'/'refused' were already dropped by the `safe` filter above.)
   const adoptedRank = (d: FeedItem) =>
-    d.status === "adopted" ? (d.exec === "todo" ? 2 : 1) : 0;
+    d.exec === "todo" ? 2 : d.status === "adopted" ? 1 : 0;
   const ordered = [...safe].sort((x, y) => adoptedRank(y) - adoptedRank(x));
   const directiveLines = ordered.length
     ? ordered
@@ -634,11 +638,11 @@ export function buildUserPrompt(
             ? `verified ${d.by ?? "holder"}`
             : "unverified holder";
           const tag =
-            d.status === "adopted"
-              ? d.exec === "todo"
-                ? "FOUNDER-QUEUED (adopted by vote) — build this next"
-                : "ADOPTED BY HOLDER VOTE — prioritize"
-              : `${d.kind} · ${who}`;
+            d.exec === "todo"
+              ? "FOUNDER-QUEUED — build this next"
+              : d.status === "adopted"
+                ? "ADOPTED BY HOLDER VOTE — prioritize"
+                : `${d.kind} · ${who}`;
           return `- (${tag}) ${d.text}`;
         })
         .join("\n")

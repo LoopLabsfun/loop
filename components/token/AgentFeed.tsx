@@ -731,6 +731,66 @@ const EXEC_META: Record<
   refused: { label: "Refused", glyph: "✕", cls: "text-neg", active: "bg-neg text-white border-neg" },
 };
 
+/**
+ * Founder execution-triage (Done / To-do / Refused) — the single source of truth
+ * for both adopted proposals AND directives (the founder's own instruction). The
+ * founder decides what happens next: 'todo' is the agent's build-next queue,
+ * 'done'/'refused' drop the item from the agent's steering. Everyone sees the set
+ * state; only the founder gets the buttons.
+ */
+function ExecTriage({
+  item,
+  role,
+  onExec,
+}: {
+  item: FeedItem;
+  role: ConsoleRole;
+  onExec: (id: string, exec: "todo" | "done" | "refused") => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-line-4 flex-wrap">
+      {item.exec ? (
+        <span className={`font-mono text-[10.5px] ${EXEC_META[item.exec].cls}`}>
+          {EXEC_META[item.exec].glyph} {EXEC_META[item.exec].label.toUpperCase()}
+          {item.exec === "todo" && (
+            <span className="text-faint"> · agent&apos;s queue</span>
+          )}
+        </span>
+      ) : (
+        <span className="font-mono text-[10.5px] text-faint">awaiting triage</span>
+      )}
+      {role === "founder" && (
+        <span className="ml-auto flex items-center gap-1">
+          {(["done", "todo", "refused"] as const).map((e) => {
+            const m = EXEC_META[e];
+            const on = item.exec === e;
+            return (
+              <button
+                key={e}
+                onClick={() => onExec(item.id, e)}
+                title={
+                  e === "done"
+                    ? "Mark as already done"
+                    : e === "todo"
+                      ? "Queue for the agent to build next"
+                      : "Refuse this"
+                }
+                className={`font-mono text-[10.5px] px-2 py-[3px] rounded-[7px] border transition-colors ${
+                  on
+                    ? m.active
+                    : "border-line-3 bg-surface text-muted hover:border-line-hover"
+                }`}
+              >
+                {m.glyph} {m.label}
+              </button>
+            );
+          })}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function FeedRow({
   item,
   sym,
@@ -809,9 +869,6 @@ function FeedRow({
             {label}
           </span>
           <span className="flex items-center gap-2">
-            {canDone && (
-              <DoneButton id={item.id} kind={item.kind} onResolve={onResolve} />
-            )}
             {canHide && <HideButton id={item.id} onHide={onHide} />}
             <span className="font-mono text-[10.5px] text-faint">{item.at}</span>
           </span>
@@ -831,6 +888,11 @@ function FeedRow({
               <span className="text-faint">· unverified</span>
             )}
           </div>
+        )}
+        {/* A directive is the founder's own instruction — let them triage it the
+            same way as an adopted proposal (To-do queues it for the agent). */}
+        {(isFounderRow || item.exec) && (
+          <ExecTriage item={item} role={role} onExec={onExec} />
         )}
       </div>
     );
@@ -910,48 +972,9 @@ function FeedRow({
         </div>
         {/* Founder execution-triage — only once the proposal is adopted. The vote
             decides adoption; the founder decides what happens to it next. */}
-        {adopted && (
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-line-4 flex-wrap">
-            {item.exec ? (
-              <span className={`font-mono text-[10.5px] ${EXEC_META[item.exec].cls}`}>
-                {EXEC_META[item.exec].glyph} {EXEC_META[item.exec].label.toUpperCase()}
-                {item.exec === "todo" && (
-                  <span className="text-faint"> · agent&apos;s queue</span>
-                )}
-              </span>
-            ) : (
-              <span className="font-mono text-[10.5px] text-faint">awaiting triage</span>
-            )}
-            {role === "founder" && (
-              <span className="ml-auto flex items-center gap-1">
-                {(["done", "todo", "refused"] as const).map((e) => {
-                  const m = EXEC_META[e];
-                  const on = item.exec === e;
-                  return (
-                    <button
-                      key={e}
-                      onClick={() => onExec(item.id, e)}
-                      title={
-                        e === "done"
-                          ? "Mark as already done"
-                          : e === "todo"
-                            ? "Queue for the agent to build next"
-                            : "Refuse this proposal"
-                      }
-                      className={`font-mono text-[10.5px] px-2 py-[3px] rounded-[7px] border transition-colors ${
-                        on
-                          ? m.active
-                          : "border-line-3 bg-surface text-muted hover:border-line-hover"
-                      }`}
-                    >
-                      {m.glyph} {m.label}
-                    </button>
-                  );
-                })}
-              </span>
-            )}
-          </div>
-        )}
+        {/* Founder execution-triage — once the proposal is adopted, the founder
+            decides what happens to it next (the vote only decides adoption). */}
+        {adopted && <ExecTriage item={item} role={role} onExec={onExec} />}
       </div>
     );
   }
