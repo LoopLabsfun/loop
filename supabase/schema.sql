@@ -164,6 +164,20 @@ create table if not exists public.agent_actions (
 );
 comment on table public.agent_actions is 'Streamed agent action log (console feed). Written by the runtime (service_role); publicly readable.';
 
+-- One social content-strategy plan per project. The agent authors it the first time
+-- public posting is enabled (social warm-up); X/Telegram broadcasting is GATED on a
+-- row existing here, so the agent prepares a real strategy before it ever posts.
+create table if not exists public.agent_social_plan (
+  project_key text primary key references public.projects(key) on delete cascade,
+  plan text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+comment on table public.agent_social_plan is 'Per-project social content plan the agent authors before it may post (social warm-up gate). Written by the runtime (service_role); publicly readable.';
+create index if not exists agent_social_plan_project_idx on public.agent_social_plan (project_key);
+alter table public.agent_social_plan enable row level security;
+create policy "agent_social_plan public read" on public.agent_social_plan for select to public using (true);
+
 create index if not exists agent_tasks_project_idx      on public.agent_tasks      (project_key, created_at desc);
 create index if not exists agent_emails_project_idx     on public.agent_emails     (project_key, created_at desc);
 create index if not exists agent_posts_project_idx      on public.agent_posts      (project_key, created_at desc);
