@@ -45,6 +45,14 @@ describe("countdown", () => {
     expect(countdown(600)).toBe("10:00");
     expect(countdown(3599)).toBe("59:59");
   });
+  it("clamps negative inputs to 00:00", () => {
+    expect(countdown(-1)).toBe("00:00");
+    expect(countdown(-60)).toBe("00:00");
+  });
+  it("floors fractional seconds", () => {
+    expect(countdown(5.9)).toBe("00:05");
+    expect(countdown(65.99)).toBe("01:05");
+  });
 });
 
 describe("shortAge", () => {
