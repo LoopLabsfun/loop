@@ -17,6 +17,10 @@ export const AGENT_EMAIL_DOMAIN = "agents.looplabs.fun";
 export const SUBJECT_MAX = 200;
 export const PREVIEW_MAX = 280;
 export const PARTY_MAX = 200;
+/** Full-body cap — generous enough for a real email, bounded so a hostile webhook
+ *  can't bloat the table. The list still shows the short `preview`; the body is
+ *  only rendered in the inspector panel. */
+export const BODY_MAX = 8000;
 
 /** A raw inbound webhook payload (provider-agnostic; the worker maps to this). */
 export interface InboundPayload {
@@ -56,12 +60,25 @@ export interface InboundEmailInsert {
   party: string;
   subject: string;
   preview: string;
+  /** Full body (newlines preserved), for the inspector panel. */
+  body: string;
 }
 
 /** Collapse whitespace and clamp to `max`, never returning null/undefined. */
 function clamp(s: string | null | undefined, max: number): string {
   return String(s ?? "")
     .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+/** Like `clamp`, but PRESERVES line breaks (collapses only horizontal runs and
+ *  caps blank-line spans) so the stored body keeps paragraph structure. */
+function clampBody(s: string | null | undefined, max: number): string {
+  return String(s ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim()
     .slice(0, max);
 }
@@ -81,6 +98,7 @@ export function inboundRow(
     party: clamp(p.from ? bareAddress(String(p.from)) : "", PARTY_MAX) || "unknown",
     subject: clamp(p.subject, SUBJECT_MAX) || "(no subject)",
     preview: clamp(p.text, PREVIEW_MAX),
+    body: clampBody(p.text, BODY_MAX),
   };
 }
 
@@ -99,5 +117,6 @@ export function outboundRow(
     party: clamp(bareAddress(String(p.to)), PARTY_MAX) || "unknown",
     subject: clamp(p.subject, SUBJECT_MAX) || "(no subject)",
     preview: clamp(p.text, PREVIEW_MAX),
+    body: clampBody(p.text, BODY_MAX),
   };
 }

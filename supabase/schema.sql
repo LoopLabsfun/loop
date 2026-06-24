@@ -131,6 +131,9 @@ create table if not exists public.agent_emails (
   party text not null,
   subject text not null,
   preview text not null default '',
+  -- Full message body (newlines preserved), rendered in the inspector panel. The
+  -- list row still shows the short `preview`. Nullable: legacy rows predate it.
+  body text,
   created_at timestamptz not null default now()
 );
 comment on table public.agent_emails is 'Agent email inbox (sent/received). Written by the inbound webhook + send path (service_role); publicly readable.';

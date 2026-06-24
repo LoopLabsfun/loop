@@ -43,7 +43,14 @@ export interface InboxMessage {
   /** counterpart address/handle */
   party: string;
   subject: string;
+  /** Short, whitespace-collapsed snippet for the list row. */
   preview: string;
+  /**
+   * Full message body (newlines preserved), shown in the inspector panel. Absent
+   * on legacy rows stored before the `body` column existed — the panel falls back
+   * to `preview` then.
+   */
+  body?: string;
   at: string;
   /**
    * Inbound only: true when the agent has already sent an `out` email to this

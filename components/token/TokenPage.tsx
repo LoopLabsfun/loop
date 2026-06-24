@@ -164,9 +164,11 @@ export function TokenPage({
       </section>
 
       {/* Main grid */}
-      <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-4 items-start">
-        {/* Left column */}
-        <div className="flex flex-col gap-4">
+      <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px] gap-4 items-start">
+        {/* Left column — min-w-0 + the minmax(0,1fr) track above let long
+            unbreakable content (e.g. an email preview) truncate inside the column
+            instead of forcing it wider than the viewport. */}
+        <div className="flex flex-col gap-4 min-w-0">
           {/* Agent — one feed: ask the agent ($LOOP-metered, answers in the side
               panel) AND steer it (directives/proposals/votes). */}
           <AgentFeed

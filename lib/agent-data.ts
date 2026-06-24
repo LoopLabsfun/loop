@@ -144,6 +144,7 @@ interface EmailRow {
   party: string;
   subject: string;
   preview: string;
+  body: string | null;
   created_at: string;
 }
 interface PostRow {
@@ -364,6 +365,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         party: r.party,
         subject: r.subject,
         preview: r.preview,
+        ...(r.body ? { body: r.body } : {}),
         at: rel(r.created_at),
         ...(isIn ? { answered } : {}),
       };

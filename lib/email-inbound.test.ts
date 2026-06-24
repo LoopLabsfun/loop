@@ -43,6 +43,7 @@ describe("inboundRow", () => {
       party: "jane@acme.com",
       subject: "Re: partnership",
       preview: "Hey — let's talk.",
+      body: "Hey — let's talk.",
     });
   });
   it("clamps subject + preview and collapses whitespace (no table bloat)", () => {
@@ -54,6 +55,9 @@ describe("inboundRow", () => {
     expect(row.subject.length).toBe(SUBJECT_MAX);
     expect(row.preview.length).toBeLessThanOrEqual(PREVIEW_MAX);
     expect(row.preview).not.toMatch(/\s{2,}/);
+    // body keeps paragraph breaks that the preview collapses, and stays bounded.
+    expect(row.body).toMatch(/\n/);
+    expect(row.body.length).toBeLessThanOrEqual(8000);
   });
   it("supplies safe fallbacks for missing fields", () => {
     const row = inboundRow("loop", {});
@@ -76,6 +80,7 @@ describe("outboundRow", () => {
       party: "founder@acme.com",
       subject: "Intro from LOOP",
       preview: "gm — quick intro.",
+      body: "gm — quick intro.",
     });
   });
   it("clamps + collapses like the inbound row", () => {
