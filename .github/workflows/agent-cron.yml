@@ -16,12 +16,14 @@ name: agent-cron
 
 on:
   schedule:
-    # Every 5 minutes (GitHub's minimum). GitHub heavily throttles/delays
-    # scheduled runs under load — this is a best-effort cadence that in practice
-    # lands every ~5–15 min, NOT a hard guarantee; the Vercel daily cron backstops
-    # it. For a firm sub-5-min heartbeat, drive /api/agent/cron from Vercel Pro
-    # cron or an external scheduler instead.
-    - cron: "*/5 * * * *"
+    # Every 30 minutes. This is the SOLE heartbeat (the Vercel cron was removed).
+    # The real spend throttle is the CODE cooldown (lib/agent-tick-throttle.ts,
+    # AGENT_TICK_COOLDOWN_MIN, default 60) — the cron just has to fire often enough
+    # to notice when that cooldown expires. */30 keeps per-fire overhead low (each
+    # fire runs governance + a mainnet creator-fee claim), while the cooldown bounds
+    # the Claude-credit burn rate. GitHub throttles scheduled runs, so effective
+    # cadence is ~30–45 min. AGENT_PAUSED (env + redeploy) is the instant hard stop.
+    - cron: "*/30 * * * *"
   workflow_dispatch: {} # allow a manual tick from the Actions tab
 
 concurrency:
