@@ -31,6 +31,7 @@ import {
   type Cadence,
 } from "@/lib/ledger";
 import { agentRunState, canAffordTick } from "@/lib/budget";
+import { boostTierFor, BOOST_TIERS } from "@/lib/stake";
 import { splitForProject } from "@/lib/fees";
 import { claimable, ZERO_FEE_LEDGER, type FeeLedger } from "@/lib/fee-ledger";
 import { TREASURY_EXITS } from "@/lib/governance";
@@ -295,6 +296,7 @@ export function TokenPage({
           </div>
           <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
+          {p.official && <BoostTierCard project={p} preLaunch={preLaunch} />}
           <TreasuryStats project={p} solUsd={solUsd} compute={compute} />
           <FeesCustodyCard project={p} preLaunch={preLaunch} feeLedger={feeLedger} />
           <TopHolders holders={market.holders} network={p.network ?? "mainnet"} preLaunch={preLaunch} />
@@ -755,6 +757,107 @@ function BondingCurve({
           ? "Curve complete — liquidity migrated off the pump.fun curve. Trading is fully open."
           : "Graduates once the bonding curve fills. Every buy moves the curve forward."}
       </div>
+    </div>
+  );
+}
+
+// Holder boost: a wallet's $LOOP balance unlocks which model the agent runs on
+// its behalf (and its governance weight). Reads the connected wallet's live
+// balance of the platform token (p.mint on the official project) and shows the
+// current tier + progress to the next. Official project only (where p.mint == $LOOP).
+function BoostTierCard({
+  project: p,
+  preLaunch,
+}: {
+  project: Project;
+  preLaunch?: boolean;
+}) {
+  const wallet = useWallet();
+  const { network } = useNetwork();
+  const projectNet = p.network ?? "mainnet";
+  const wrongNet = network !== projectNet;
+  const [bal, setBal] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!wallet.connected || !wallet.address || wrongNet || !p.mint) {
+      setBal(null);
+      return;
+    }
+    void (async () => {
+      const v = await wallet.getSplBalance(p.mint!);
+      if (!cancelled) setBal(v);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.connected, wallet.address, wrongNet, p.mint]);
+
+  const { current, next, toNext } = boostTierFor(bal);
+  const connected = wallet.connected && !wrongNet && bal != null;
+  const compact = (n: number) =>
+    new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="flex items-baseline justify-between mb-[10px]">
+        <span className="font-display font-semibold text-[14.5px]">Holder Boost</span>
+        {connected && (
+          <span className="font-mono text-[12px] text-accent-text">
+            {current ? current.name : "base"}
+          </span>
+        )}
+      </div>
+      <p className="text-[12px] text-muted leading-[1.5] mb-3">
+        Hold {p.ticker} — the agent works on the model your balance unlocks, and your
+        governance weight scales with it.
+      </p>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {BOOST_TIERS.map((t) => {
+          const active = current?.name === t.name;
+          return (
+            <div
+              key={t.name}
+              className={`rounded-[9px] px-2 py-[8px] text-center border ${
+                active ? "border-accent bg-accent-tint" : "border-line-4 bg-surface-2"
+              }`}
+              title={`Hold ${t.min.toLocaleString("en-US")} ${p.ticker} → ${t.name}`}
+            >
+              <div
+                className={`font-mono font-semibold text-[12.5px] ${
+                  active ? "text-accent-text" : "text-ink"
+                }`}
+              >
+                {t.name}
+              </div>
+              <div className="text-[10.5px] text-faint mt-[1px]">
+                {compact(t.min)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {connected ? (
+        <div className="flex justify-between text-[12.5px] border-t border-line-4 pt-[10px]">
+          <span className="text-muted">You hold</span>
+          <span className="font-mono">
+            {compact(bal ?? 0)} {p.ticker.replace(/^\$/, "")}
+            {next && (
+              <span className="text-faint">
+                {" "}
+                · {compact(toNext)} → {next.name}
+              </span>
+            )}
+          </span>
+        </div>
+      ) : (
+        <div className="text-[11.5px] text-faint border-t border-line-4 pt-[10px]">
+          {preLaunch
+            ? `${p.ticker} isn't tradable yet — boost tiers activate at launch.`
+            : "Connect your wallet to see your boost tier."}
+        </div>
+      )}
     </div>
   );
 }
