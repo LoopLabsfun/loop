@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
-import { getAgentState, resolveDueProposals } from "@/lib/agent-data";
+import { getAgentState, resolveDueProposals, isAgentActive } from "@/lib/agent-data";
+import { tickCooldownMs } from "@/lib/agent-tick-throttle";
 import {
   runAgentTick,
   agentRuntimeConfigured,
@@ -71,6 +72,13 @@ export async function GET(req: Request) {
   // SDK-in-E2B session on Trigger.dev (no 300s cap). Default legacy — unchanged.
   const mode = brainMode();
 
+  // Spend-rate guardrail: the minimum gap between expensive ticks. The cron can
+  // fire every ~5 min (GitHub Actions is the sole heartbeat and its schedule
+  // can't be changed by the agent's token), and each tick can run a brain
+  // decision + enqueue a real SDK session with no per-session cooldown — so this
+  // bounds the Claude-credit burn rate. AGENT_PAUSED stays the instant hard stop.
+  const cooldownMs = tickCooldownMs();
+
   // Build-path preflight: log which path is live and whether it can actually ship
   // code. A misconfig (sdk without TRIGGER_SECRET_KEY, or legacy missing E2B/token)
   // otherwise stalls every code task at "building" silently — this turns that into
@@ -88,6 +96,16 @@ export async function GET(req: Request) {
   for (const p of projects) {
     try {
       const state = await getAgentState(p);
+      // Cooldown: skip the expensive brain work if this project already ticked
+      // within the window (the agent writes a task row on every tick + at SDK
+      // enqueue, so isAgentActive is an accurate "ticked recently" signal). The
+      // free governance pass above still runs on every fire.
+      if (cooldownMs > 0 && (await isAgentActive(p.key, cooldownMs))) {
+        const mins = Math.round(cooldownMs / 60_000);
+        results.push({ key: p.key, ok: true, summary: `cooldown · ticked <${mins}min ago, skipped` });
+        console.log(`[agent-cooldown] ${JSON.stringify({ key: p.key, cooldownMin: mins })}`);
+        continue;
+      }
       // Daily founder recap (once per UTC day, official projects only) — runs in
       // both brain modes since the SDK path returns early below. Self-guarding +
       // failure-safe, so it never affects the tick.
