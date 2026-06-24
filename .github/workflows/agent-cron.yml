@@ -25,6 +25,11 @@ on:
     # fire runs governance + a mainnet creator-fee claim), while the cooldown bounds
     # the Claude-credit burn rate. GitHub throttles scheduled runs, so effective
     # cadence is ~30–45 min. AGENT_PAUSED (env + redeploy) is the instant hard stop.
+    #
+    # NOTE: re-enabling a disabled workflow does NOT re-register its `schedule`
+    # trigger — GitHub only re-registers on a push that modifies this file on the
+    # default branch. Re-armed 2026-06-25 after schedule runs silently stopped on
+    # 2026-06-18 (the workflow was disabled, then re-enabled via the UI alone).
     - cron: "*/30 * * * *"
   workflow_dispatch: {} # allow a manual tick from the Actions tab
 
