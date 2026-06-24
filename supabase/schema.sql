@@ -304,6 +304,36 @@ create policy "anon can submit a safe directive (prototype)" on public.directive
     and loop_paid = 0
   );
 
+-- ── stakes (stake-to-participate) ────────────────────────────────────────────
+-- A holder stakes $LOOP to unlock steering the agent (ask / propose) WITHOUT a
+-- per-message on-chain transfer — that transfer is what Phantom/Blowfish flagged
+-- as a scam on a new domain+token, while a signed message moves no funds. A stake
+-- is an ed25519-signed commitment; v1 takes NO custody (the $LOOP stays in the
+-- holder's wallet, and submitStakeAction + the participation gate re-read the live
+-- on-chain balance, so a stake can't be gamed by staking then dumping). Locked
+-- custody + the yield split (founder/agent/platform) are v2/v3. Written
+-- service_role only; publicly readable.
+create table if not exists public.stakes (
+  id uuid primary key default gen_random_uuid(),
+  project_key text not null references public.projects(key) on delete cascade,
+  wallet text not null check (char_length(wallet) between 1 and 64),
+  amount double precision not null check (amount >= 0),
+  -- The signed commitment that authorized this row (kept for audit), bounded.
+  message text check (message is null or char_length(message) <= 500),
+  signature text check (signature is null or char_length(signature) <= 200),
+  -- Only the latest stake per (project, wallet) is active; a superseded row is
+  -- deactivated (kept for history) when a newer stake lands.
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index if not exists stakes_project_wallet_active_idx
+  on public.stakes (project_key, wallet, active, created_at desc);
+alter table public.stakes enable row level security;
+create policy "stakes are publicly readable" on public.stakes for select using (true);
+-- No anon insert/update/delete: a stake is recorded only via submitStakeAction
+-- (service_role), which verifies the ed25519 signature AND that the wallet really
+-- holds the staked $LOOP on-chain. A direct REST call can't forge a stake row.
+
 -- ── directive votes (holder voting on proposals) ─────────────────────────────
 -- One vote per (proposal, voter wallet); re-voting flips the side. The cached
 -- directives.for_votes/against_votes are kept in sync ONLY by cast_directive_vote

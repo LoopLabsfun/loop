@@ -15,6 +15,19 @@ export const TOKEN_DECIMALS = 6;
 export const sanitizeChatText = sanitizeDirectiveText;
 
 /**
+ * Canonical message a wallet signs to author a chat question — the ed25519 proof
+ * the server verifies (verifyChatProof) in place of the old on-chain $LOOP
+ * payment. Mirrors buildDirectiveMessage; the trailing `ts:` enables anti-replay.
+ */
+export function buildChatMessage(
+  projectKey: string,
+  question: string,
+  ts: number
+): string {
+  return `loop.fun chat\nproject:${projectKey}\ntext:${sanitizeChatText(question)}\nts:${ts}`;
+}
+
+/**
  * Base price, in whole $LOOP, to send the agent one message. Overridable via
  * NEXT_PUBLIC_CHAT_LOOP_PRICE (public — it's shown in the UI); defaults to 1000.
  */
