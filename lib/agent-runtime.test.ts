@@ -220,6 +220,24 @@ describe("buildUserPrompt", () => {
     expect(s.indexOf("fix the github link")).toBeLessThan(s.indexOf("open a discord"));
   });
 
+  it("asks the agent to groom its backlog only when the todo queue is thin", () => {
+    // Empty queue → thin → grooming requested
+    expect(buildUserPrompt([], [])).toMatch(/backlog is THIN/);
+
+    // A full todo queue → no grooming ask
+    const full = Array.from({ length: 6 }, (_, i) => ({
+      id: `t${i}`,
+      title: `todo ${i}`,
+      detail: "",
+      category: "feature",
+      status: "todo",
+      at: "",
+    })) as AgentTask[];
+    const s = buildUserPrompt(full, []);
+    expect(s).not.toMatch(/backlog is THIN/);
+    expect(s).toContain("standing queue"); // backlog framing always present
+  });
+
   it("surfaces only UNANSWERED inbound mail for the agent to reply to", () => {
     const inbox = [
       { id: "m1", direction: "in", party: "ann@x.com", subject: "Gm", preview: "loving loop", at: "", answered: false },
@@ -284,6 +302,25 @@ describe("coerceDecision", () => {
     // empty strings → dropped
     expect(coerceDecision({ ...good, emailReply: { replyTo: "", subject: "x", body: "y" } })?.emailReply).toBeUndefined();
     expect(coerceDecision(good)?.emailReply).toBeUndefined();
+  });
+
+  it("parses a groomed backlog, filtering malformed items", () => {
+    const d = coerceDecision({
+      ...good,
+      backlog: [
+        { title: "Add price chart", detail: "candles on token page", category: "feature" },
+        { title: "Fix mobile nav", detail: "drawer overlaps", category: "fix" },
+        { title: "no detail/cat" }, // malformed → dropped
+        { title: "bad cat", detail: "x", category: "marketing" }, // invalid enum → dropped
+        { title: "", detail: "empty title", category: "ops" }, // empty title → dropped
+      ],
+    });
+    expect(d?.backlog).toEqual([
+      { title: "Add price chart", detail: "candles on token page", category: "feature" },
+      { title: "Fix mobile nav", detail: "drawer overlaps", category: "fix" },
+    ]);
+    expect(coerceDecision(good)?.backlog).toBeUndefined();
+    expect(coerceDecision({ ...good, backlog: [] })?.backlog).toBeUndefined();
   });
 
   it("falls back on invalid enums", () => {
