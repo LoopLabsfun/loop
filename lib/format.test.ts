@@ -35,6 +35,11 @@ describe("fmtPrice", () => {
   it("uses 6 decimals below 0.01", () => {
     expect(fmtPrice(0.00029)).toBe("$0.000290");
   });
+  it("returns $0.0000 for non-finite inputs (NaN, Infinity)", () => {
+    expect(fmtPrice(NaN)).toBe("$0.0000");
+    expect(fmtPrice(Infinity)).toBe("$0.0000");
+    expect(fmtPrice(-Infinity)).toBe("$0.0000");
+  });
 });
 
 describe("compactUsd", () => {
