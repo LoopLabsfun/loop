@@ -10,6 +10,8 @@ next-env.d.ts
 Loop.fun-handoff*.zip
 .vercel
 
+# Trigger.dev local build output (created by `trigger.dev deploy`)
+.trigger/
 # Claude Code local/runtime files (launch.json is intentionally tracked)
 .claude/settings.local.json
 
@@ -52,6 +54,8 @@ scripts/build-vanity-pool.cjs
 scripts/ingest-vanity-pool.cjs
 scripts/trigger-set-env.ts
 scripts/post-github-thread.ts
+scripts/dryrun-trigger-session.ts
+scripts/diag-sandbox-phases.ts
 
 .env.local.bak
 
