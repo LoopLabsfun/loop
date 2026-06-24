@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { parseHandsOutput } from "@/lib/repo-hands";
-import { applyDecision, type AgentDecision } from "@/lib/agent-runtime";
+import { applyDecision, loadSocialPlan, type AgentDecision } from "@/lib/agent-runtime";
+import { authorSocial } from "@/lib/agent-social";
 import type { TaskCategory } from "@/lib/agent";
 import { secretsMatch } from "@/lib/api-auth";
 
@@ -70,8 +71,28 @@ export async function POST(req: Request) {
     ],
   };
 
+  // Author the build-in-public voice for the SDK brain. The E2B session does the
+  // engineering; it doesn't write copy — so without this an SDK-mode project never
+  // authors its warm-up plan and never posts (the warm-up gate stays shut). Warm-up
+  // is detected exactly as applyDecision does: no persisted plan yet ⇒ author the
+  // plan this cycle (no post); once a plan exists, author own-voice posts for a real
+  // ship. authorSocial is fail-safe (returns empty on silence/unconfigured/error),
+  // and postingPolicy "authored-only" suppresses the templated fallback.
   try {
-    await applyDecision(project, decision, verify);
+    const plan = await loadSocialPlan(project);
+    const social = await authorSocial(
+      project,
+      { title: decision.task.title, detail: decision.task.detail ?? "", shipped: hands.pushed, commitSha: hands.commitSha ?? undefined },
+      { warmup: !plan, plan }
+    );
+    if (social.socialPlan) decision.socialPlan = social.socialPlan;
+    if (social.posts) decision.posts = social.posts;
+  } catch {
+    /* never block the persist on a social-authoring failure */
+  }
+
+  try {
+    await applyDecision(project, decision, verify, { postingPolicy: "authored-only" });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "persist failed" },

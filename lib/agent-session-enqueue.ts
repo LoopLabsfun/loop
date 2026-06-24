@@ -142,11 +142,18 @@ export async function enqueueSdkSession(
 
   // Persist as "building" now; trigger/agent-session → /api/agent/session/finish
   // updates it to shipped (gated) once the session lands a green push.
+  //
+  // Social is authored at FINISH, from the REAL shipped work (authorSocial), NOT
+  // here: the session hasn't run yet, so decideNextAction's premature posts/plan
+  // would broadcast work-in-progress and then double-post at finish. Strip them
+  // and persist authored-only (no posts ⇒ this enqueue broadcasts nothing).
   const building: AgentDecision = {
     ...decision,
     task: { ...decision.task, status: "building" },
+    posts: undefined,
+    socialPlan: undefined,
   };
-  await applyDecision(p, building);
+  await applyDecision(p, building, undefined, { postingPolicy: "authored-only" });
 
   const { tasks } = await import("@trigger.dev/sdk");
   const handle = await tasks.trigger("agent-session", payload);

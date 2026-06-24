@@ -1459,7 +1459,17 @@ export async function applyDecision(
    * recipient used is the matched allow-list entry (not model free-text), so a
    * prompt-injected "email someone else" can never redirect the reply.
    */
-  opts?: { inboundParties?: string[] }
+  opts?: {
+    inboundParties?: string[];
+    /**
+     * "authored-only" (the SDK brain) posts ONLY what was authored in
+     * `d.posts` — no templated "shipped X" / "still building X" fallback. The
+     * SDK path authors its posts via agent-social (with marketing judgment), so
+     * an absent post means "judged not worth broadcasting", not "fall back to a
+     * template". Legacy leaves this unset and keeps the templated fallback.
+     */
+    postingPolicy?: "authored-only";
+  }
 ): Promise<void> {
   if (!supabaseAdmin) {
     throw new Error("Agent runtime requires SUPABASE_SERVICE_ROLE_KEY to persist.");
@@ -1682,7 +1692,7 @@ export async function applyDecision(
   // "twitter". Using "x" here both reads nothing AND fails the insert below,
   // which silently defeats the X throttle (every tweet-worthy tick re-posts).
   const lastPost = async (
-    platform: "telegram" | "twitter"
+    platform: "telegram" | "twitter" | "discord"
   ): Promise<{ body: string; at: number } | null> => {
     const { data } = await supabaseAdmin!
       .from("agent_posts")
@@ -1697,7 +1707,7 @@ export async function applyDecision(
   };
 
   // Recent post bodies per platform, for fuzzy anti-repetition (newest first).
-  const recentPosts = async (platform: "telegram" | "twitter"): Promise<string[]> => {
+  const recentPosts = async (platform: "telegram" | "twitter" | "discord"): Promise<string[]> => {
     const n = Number(process.env.AGENT_RECENT_POSTS ?? 5);
     const { data } = await supabaseAdmin!
       .from("agent_posts")
@@ -1745,6 +1755,10 @@ export async function applyDecision(
   // Build-log routing: when TELEGRAM_BUILDLOG_CHAT_ID is set, the dev-log goes to
   // that discussion-group topic (TELEGRAM_BUILDLOG_THREAD_ID) instead of spamming
   // the broadcast channel — so the channel stays curated/marketing-only.
+  // "authored-only" (SDK brain): post ONLY the agent's own-voice copy; an absent
+  // post means it judged the work not worth broadcasting, so we DON'T fall back
+  // to the templated update. Legacy keeps the templated fallback (text != null).
+  const authoredOnly = opts?.postingPolicy === "authored-only";
   const buildlogChat = process.env.TELEGRAM_BUILDLOG_CHAT_ID;
   const buildlogThread = Number(process.env.TELEGRAM_BUILDLOG_THREAD_ID) || undefined;
   const chatId = buildlogChat || process.env.TELEGRAM_CHAT_ID;
@@ -1756,14 +1770,17 @@ export async function applyDecision(
       const text =
         useAuthored && d.posts?.telegram
           ? composeAgentMessage(p, d.posts.telegram)
-          : gated.status === "shipped"
-            ? buildUpdateMessage(p, {
-                shipped: [
-                  { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
-                ],
-              })
-            : buildProgressMessage(p, work);
+          : authoredOnly
+            ? null
+            : gated.status === "shipped"
+              ? buildUpdateMessage(p, {
+                  shipped: [
+                    { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
+                  ],
+                })
+              : buildProgressMessage(p, work);
       if (
+        text &&
         shouldPublishUpdate({
           last: await lastPost("telegram"),
           text,
@@ -1789,6 +1806,57 @@ export async function applyDecision(
     }
   }
 
+  // Discord (read-only build-log webhook): the Discord counterpart of the
+  // Telegram dev-log. Same gates (socialReady + own-voice/authored-only policy),
+  // same anti-repetition. Broadcast-only via DISCORD_WEBHOOK_URL — no bot/gateway.
+  // We dedup on the rendered signature (discordSignature), stored in agent_posts
+  // under platform "discord", so a flaky channel never double-posts.
+  if (socialReady && process.env.DISCORD_WEBHOOK_URL) {
+    try {
+      const { sendDiscordMessage } = await import("./discord-send");
+      const {
+        composeAgentDiscord,
+        buildDiscordUpdate,
+        buildDiscordProgress,
+        discordSignature,
+      } = await import("./discord");
+      const payload =
+        useAuthored && d.posts?.telegram
+          ? composeAgentDiscord(p, d.posts.telegram)
+          : authoredOnly
+            ? null
+            : gated.status === "shipped"
+              ? buildDiscordUpdate(p, {
+                  shipped: [
+                    { id: "", ...work, category: d.task.category, status: "shipped", at: "now" },
+                  ],
+                })
+              : buildDiscordProgress(p, work);
+      if (payload) {
+        const sig = discordSignature(payload);
+        if (
+          shouldPublishUpdate({
+            last: await lastPost("discord"),
+            text: sig,
+            recent: simThreshold ? await recentPosts("discord") : undefined,
+            maxSimilarity: simThreshold,
+          })
+        ) {
+          const res = await sendDiscordMessage(payload);
+          if (res.ok) {
+            await supabaseAdmin.from("agent_posts").insert({
+              project_key: p.key,
+              platform: "discord",
+              body: sig,
+            });
+          }
+        }
+      }
+    } catch {
+      /* discord unavailable/failed — never abort the cycle */
+    }
+  }
+
   // X — posts AS the project's own account (@looplabsfun for LOOP).
   // Kill switch: AGENT_X_PAUSED=1 hard-pauses X posting (keeps Telegram + all
   // other agent work running). Set it in the env to stop tweets without touching
@@ -1805,9 +1873,11 @@ export async function applyDecision(
       const body =
         useAuthored && d.posts?.x
           ? composeAgentTweet(p, d.posts.x)
-          : gated.status === "shipped"
-            ? buildShipTweet(p, work)
-            : null;
+          : authoredOnly
+            ? null
+            : gated.status === "shipped"
+              ? buildShipTweet(p, work)
+              : null;
       if (
         body &&
         shouldPublishUpdate({
