@@ -78,6 +78,20 @@ describe("buildSocialSystemPrompt", () => {
     expect(sys).toContain("ROTATE ANGLES");
     expect(sys).toContain("STANDING CONTENT PLAN");
   });
+
+  it("grounds the prompt in the mission and forbids inventing a thesis", () => {
+    const sys = buildSocialSystemPrompt(base, {
+      warmup: true,
+      mission: "A launchpad where every project gets a token, treasury, and AI agent.",
+    });
+    expect(sys).toContain("A launchpad where every project gets a token");
+    expect(sys).toMatch(/NEVER invent a product category/i);
+  });
+
+  it("falls back to the project description when no mission is passed", () => {
+    const sys = buildSocialSystemPrompt(base, { warmup: false });
+    expect(sys).toContain(base.description);
+  });
 });
 
 describe("buildSocialUserPrompt", () => {
