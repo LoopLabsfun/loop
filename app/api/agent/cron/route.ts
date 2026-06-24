@@ -6,7 +6,7 @@ import {
   agentRuntimeConfigured,
   answerOpenChats,
 } from "@/lib/agent-runtime";
-import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
+import { brainMode, buildPathReadiness, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { sendDailyDigest } from "@/lib/agent-daily-digest";
 import { canAffordTick } from "@/lib/budget";
 import { secretsMatch } from "@/lib/api-auth";
@@ -60,6 +60,18 @@ export async function GET(req: Request) {
   // inside this 300s function); "sdk" decides here but ENQUEUES the long-running
   // SDK-in-E2B session on Trigger.dev (no 300s cap). Default legacy — unchanged.
   const mode = brainMode();
+
+  // Build-path preflight: log which path is live and whether it can actually ship
+  // code. A misconfig (sdk without TRIGGER_SECRET_KEY, or legacy missing E2B/token)
+  // otherwise stalls every code task at "building" silently — this turns that into
+  // a visible warning in `vercel logs`.
+  const readiness = buildPathReadiness();
+  console.log(`[agent-buildpath] ${JSON.stringify(readiness)}`);
+  if (!readiness.canBuild) {
+    console.warn(
+      `[agent-buildpath] WARNING: ${readiness.mode} build path cannot ship code — missing ${readiness.missing.join(", ")}. Code tasks will stall at "building".`
+    );
+  }
 
   const results: { key: string; ok: boolean; summary?: string; error?: string }[] =
     [];

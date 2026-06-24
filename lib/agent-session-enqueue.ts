@@ -27,6 +27,39 @@ export function brainMode(env: Record<string, string | undefined> = process.env)
 }
 
 /**
+ * Build-path readiness preflight. The single most confusing failure mode is a
+ * SILENT one: the agent decides + persists a code task as "building", but the
+ * configured build path can't actually run it (sdk mode without TRIGGER_SECRET_KEY,
+ * or legacy mode missing E2B/GITHUB_TOKEN), so the task stalls at "building"
+ * forever with no signal. This pure check names the active path and lists any
+ * missing prerequisites, so the cron can log a clear warning instead of stalling
+ * invisibly. `canBuild` is false when a CODE task could not possibly ship.
+ */
+export interface BuildPathReadiness {
+  mode: "legacy" | "sdk";
+  canBuild: boolean;
+  missing: string[];
+}
+export function buildPathReadiness(
+  env: Record<string, string | undefined> = process.env
+): BuildPathReadiness {
+  const mode = brainMode(env);
+  const missing: string[] = [];
+  if (mode === "sdk") {
+    // The cron enqueues to Trigger.dev; the durable session runs there with its
+    // OWN env (set in the Trigger dashboard, not visible here). The one thing the
+    // APP side must have to even enqueue is the secret key.
+    if (!env.TRIGGER_SECRET_KEY) missing.push("TRIGGER_SECRET_KEY");
+  } else {
+    // Legacy inline repo-hands needs the agent armed + a sandbox + push creds.
+    if (env.AGENT_REPO_HANDS !== "1") missing.push("AGENT_REPO_HANDS=1");
+    if (!env.E2B_API_KEY) missing.push("E2B_API_KEY");
+    if (!env.GITHUB_TOKEN) missing.push("GITHUB_TOKEN");
+  }
+  return { mode, canBuild: missing.length === 0, missing };
+}
+
+/**
  * Budgets for the DURABLE session — generous, since Trigger.dev (not the 300s
  * cron) hosts it. Defaults: ~10-min agent wall-clock, ~16-min sandbox ceiling
  * (npm ci + session + gate). Overridable via the same AGENT_SDK_* env knobs.
