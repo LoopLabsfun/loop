@@ -14,6 +14,7 @@ export function Footer() {
       </div>
       <div className="flex items-center gap-x-[18px] gap-y-2 text-[13px] text-muted flex-wrap justify-center">
         <Link href="/docs" className="cursor-pointer hover:text-ink transition-colors">Docs</Link>
+        <Link href="/log" className="cursor-pointer hover:text-ink transition-colors">Build log</Link>
         <Link href="/legal/terms" className="cursor-pointer hover:text-ink transition-colors">Terms</Link>
         <Link href="/legal/privacy" className="cursor-pointer hover:text-ink transition-colors">Privacy</Link>
         <Link href="/legal/disclaimer" className="cursor-pointer hover:text-ink transition-colors">Risk</Link>
