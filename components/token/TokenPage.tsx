@@ -1321,6 +1321,9 @@ function TopHolders({
   preLaunch?: boolean;
 }) {
   const { inspect } = useInspector();
+  // Concentration of the shown top holders — the fraction of supply they hold
+  // combined. A quick read on how distributed (or whale-heavy) the token is.
+  const topShare = holders.reduce((s, h) => s + Math.max(0, h.share), 0);
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="font-display font-semibold text-[14.5px] mb-3">Top Holders</div>
@@ -1332,6 +1335,31 @@ function TopHolders({
         </div>
       ) : (
         <div className="flex flex-col gap-[10px]">
+          {/* Concentration summary + distribution bar (top holders vs the rest). */}
+          <div className="mb-1">
+            <div className="flex items-baseline justify-between mb-[7px]">
+              <span className="text-[12px] text-muted">
+                Top {holders.length} concentration
+              </span>
+              <span className="font-mono text-[12.5px] tabular-nums">
+                {(topShare * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div
+              className="flex h-[7px] rounded-full overflow-hidden bg-[#F0EEF3]"
+              title={`Top ${holders.length} hold ${(topShare * 100).toFixed(1)}% of supply`}
+            >
+              {holders.map((h, i) => (
+                <div
+                  key={h.address}
+                  style={{
+                    width: `${Math.max(0, h.share) * 100}%`,
+                    background: `oklch(${0.47 + i * 0.03} 0.21 285)`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
           {holders.map((h) => (
             <button
               key={h.address}
