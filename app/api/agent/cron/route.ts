@@ -29,6 +29,16 @@ export async function GET(req: Request) {
   if (!secret || !secretsMatch(req.headers.get("authorization"), `Bearer ${secret}`)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // KILL SWITCH — when AGENT_PAUSED=1 the cron no-ops BEFORE any brain work (no
+  // Claude spend), for every caller (Vercel cron, the GitHub Actions backstop, or
+  // a manual hit). Reversible: unset AGENT_PAUSED to resume. Used to stop credit
+  // burn instantly without juggling secrets or the GH workflow.
+  if (process.env.AGENT_PAUSED === "1") {
+    return NextResponse.json(
+      { paused: true },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   const all = await getProjects();
 
   // Governance auto-resolution: close every proposal that cleared the holder-
