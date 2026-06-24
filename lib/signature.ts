@@ -2,6 +2,8 @@ import nacl from "tweetnacl";
 import { base58Decode } from "./base58";
 import { buildLaunchMessage } from "./launch-message";
 import { buildDirectiveMessage } from "./directives";
+import { buildChatMessage } from "./chat";
+import { buildStakeMessage } from "./staking";
 
 // Wallet-signature ownership proof. The launcher signs a canonical message with
 // their wallet; the server verifies the ed25519 signature before crediting the
@@ -69,5 +71,48 @@ export function verifyDirectiveProof(
   const ts = Number(m[1]);
   if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
   if (proof.message !== buildDirectiveMessage(projectKey, text, ts)) return false;
+  return verifyWalletSignature(proof);
+}
+
+/**
+ * Full check for authoring a (stake-gated, unpaid) chat question: valid ed25519
+ * signature of the canonical (projectKey, question) message, and recent. Replaces
+ * the on-chain payment as the spam gate — the wallet must also have an active
+ * stake (checked separately by the caller). Mirrors verifyDirectiveProof.
+ */
+export function verifyChatProof(
+  proof: LaunchProof,
+  projectKey: string,
+  question: string,
+  opts: { maxAgeMs?: number; now?: number } = {}
+): boolean {
+  const maxAgeMs = opts.maxAgeMs ?? 10 * 60 * 1000;
+  const now = opts.now ?? Date.now();
+  const m = proof.message.match(/\nts:(\d+)$/);
+  if (!m) return false;
+  const ts = Number(m[1]);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
+  if (proof.message !== buildChatMessage(projectKey, question, ts)) return false;
+  return verifyWalletSignature(proof);
+}
+
+/**
+ * Full check for a stake commitment: valid ed25519 signature of the canonical
+ * (projectKey, amount) message, and recent. Only on success may the server record
+ * a `stakes` row crediting `proof.pubkey`. Mirrors verifyDirectiveProof.
+ */
+export function verifyStakeProof(
+  proof: LaunchProof,
+  projectKey: string,
+  amount: number,
+  opts: { maxAgeMs?: number; now?: number } = {}
+): boolean {
+  const maxAgeMs = opts.maxAgeMs ?? 10 * 60 * 1000;
+  const now = opts.now ?? Date.now();
+  const m = proof.message.match(/\nts:(\d+)$/);
+  if (!m) return false;
+  const ts = Number(m[1]);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
+  if (proof.message !== buildStakeMessage(projectKey, amount, ts)) return false;
   return verifyWalletSignature(proof);
 }

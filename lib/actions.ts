@@ -5,7 +5,13 @@ import type { LaunchInput, LaunchResult } from "./api";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
-import { verifyLaunchProof, verifyDirectiveProof, type LaunchProof } from "./signature";
+import {
+  verifyLaunchProof,
+  verifyDirectiveProof,
+  verifyChatProof,
+  verifyStakeProof,
+  type LaunchProof,
+} from "./signature";
 import {
   sanitizeDirectiveText,
   isSuspiciousDirective,
@@ -14,6 +20,12 @@ import {
 } from "./directives";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "./launch-config";
 import { toBaseUnits, chatBasePrice, TOKEN_DECIMALS } from "./chat";
+import {
+  sanitizeStakeAmount,
+  participationTier,
+  canParticipate,
+  stakeMin,
+} from "./staking";
 
 /**
  * Persist a newly launched project.
@@ -204,6 +216,54 @@ export async function submitDirectiveAction(
   // Proposals resolve at a holder-proportional quorum (≈1/10, floor 3) instead of
   // an unreachable fixed number; directives don't vote.
   const quorum = kind === "proposal" ? proposalQuorum(input.holders) : undefined;
+
+  // Stake-gated (unpaid) steering — the primary path. A signed message replaces
+  // the on-chain $LOOP transfer as the spam gate (the transfer is what Phantom/
+  // Blowfish flagged); the wallet must have an active stake, and the same signature
+  // proves authorship (so the row is attributed + verified). Moves no funds.
+  if (input.proof && !(input.txSig ?? "").trim()) {
+    if (
+      !input.authorWallet ||
+      input.proof.pubkey !== input.authorWallet ||
+      !verifyDirectiveProof(input.proof, input.projectKey, text)
+    ) {
+      return { ok: false, persisted: false, error: "Couldn't verify your signature." };
+    }
+    if (!supabaseAdmin) return { ok: true, persisted: false };
+    const { getProject } = await import("./queries");
+    const project = await getProject(input.projectKey);
+    if (!project) return { ok: false, persisted: false, error: "Unknown project." };
+    const gate = await checkStakeGate(project, input.authorWallet);
+    if (gate) return { ok: false, persisted: false, error: gate };
+    // Replay guard: the message signature is single-use (stored in tx_sig).
+    const sigKey = input.proof.signature.slice(0, 128);
+    const { data: dup } = await supabaseAdmin
+      .from("directives")
+      .select("id")
+      .eq("tx_sig", sigKey)
+      .limit(1)
+      .maybeSingle();
+    if (dup) {
+      return { ok: false, persisted: false, error: "This message was already submitted." };
+    }
+    const { error } = await supabaseAdmin.from("directives").insert({
+      project_key: input.projectKey,
+      kind,
+      text,
+      role: "holder",
+      status: "open",
+      author_wallet: input.proof.pubkey.slice(0, 64),
+      verified: true,
+      // Auto-hide obvious abuse from the public feed (kept for traceability),
+      // same as the unpaid anon path below.
+      hidden: isAbusiveDirective(text),
+      tx_sig: sigKey,
+      loop_paid: 0,
+      ...(quorum != null ? { quorum } : {}),
+    });
+    if (error) return { ok: false, persisted: false, error: error.message };
+    return { ok: true, persisted: true };
+  }
 
   // PAID steering: when a payment signature is supplied, the $LOOP transfer to the
   // treasury is the spam gate (same model as paid chat — pay to ask, pay to steer).
@@ -551,11 +611,19 @@ export async function setProposalExecAction(
 
 export interface ChatInput {
   projectKey: string;
-  /** The sender's connected wallet (the one that paid the $LOOP). */
+  /** The sender's connected wallet (the one that staked / paid the $LOOP). */
   wallet: string;
   question: string;
-  /** Signature of the on-chain $LOOP transfer that paid for this message. */
+  /** Signature of the on-chain $LOOP transfer that paid for this message (legacy
+   *  paid path; the primary path is now a stake-gated signature `proof`). */
   txSig?: string | null;
+  /**
+   * ed25519 proof the wallet signed the canonical chat message. When present (and
+   * no `txSig`), it replaces the on-chain payment as the spam gate — the wallet
+   * must also have an active stake. Signing moves no funds, so it never trips the
+   * Phantom/Blowfish scanner the per-message transfer did.
+   */
+  proof?: LaunchProof;
   /** $LOOP sent (base price) and the extra boost, for display + answer ordering. */
   loopPaid?: number;
   boost?: number;
@@ -593,6 +661,47 @@ export async function submitChatAction(input: ChatInput): Promise<ChatResult> {
       error:
         "Message rejected — ask in plain language. No wallet addresses or override instructions; the agent can't move funds from chat.",
     };
+  }
+
+  // Stake-gated (unpaid) path — the primary one. A signed message replaces the
+  // on-chain $LOOP transfer as the spam gate (the transfer is what Phantom/Blowfish
+  // flagged); the wallet must have an active stake. Signing moves no funds.
+  if (input.proof && !(input.txSig ?? "").trim()) {
+    if (
+      input.proof.pubkey !== input.wallet ||
+      !verifyChatProof(input.proof, input.projectKey, question)
+    ) {
+      return { ok: false, persisted: false, error: "Couldn't verify your message signature." };
+    }
+    const { getProject } = await import("./queries");
+    const project = await getProject(input.projectKey);
+    if (!project) return { ok: false, persisted: false, error: "Unknown project." };
+    const gate = await checkStakeGate(project, input.wallet);
+    if (gate) return { ok: false, persisted: false, error: gate };
+    if (!supabaseAdmin) return { ok: true, persisted: false };
+    // Replay guard: the message signature is single-use (stored in tx_sig — the
+    // row's authorizing token, here an ed25519 message signature, not a payment).
+    const sigKey = input.proof.signature.slice(0, 128);
+    const { data: dup } = await supabaseAdmin
+      .from("agent_chat")
+      .select("id")
+      .eq("tx_sig", sigKey)
+      .limit(1)
+      .maybeSingle();
+    if (dup) {
+      return { ok: false, persisted: false, error: "This message was already submitted." };
+    }
+    const { error } = await supabaseAdmin.from("agent_chat").insert({
+      project_key: input.projectKey,
+      wallet: input.wallet.slice(0, 64),
+      question,
+      loop_paid: 0,
+      boost: 0,
+      tx_sig: sigKey,
+      status: "open",
+    });
+    if (error) return { ok: false, persisted: false, error: error.message };
+    return { ok: true, persisted: true };
   }
 
   const sig = (input.txSig ?? "").trim();
@@ -653,4 +762,152 @@ export async function submitChatAction(input: ChatInput): Promise<ChatResult> {
   });
   if (error) return { ok: false, persisted: false, error: error.message };
   return { ok: true, persisted: true };
+}
+
+// ── stake-to-participate ─────────────────────────────────────────────────────
+
+/**
+ * A wallet's currently-active staked $LOOP for a project (0 when none / no
+ * backend). The single source of truth for the participation gate.
+ */
+async function activeStakeAmount(projectKey: string, wallet: string): Promise<number> {
+  if (!supabaseAdmin) return 0;
+  const { data } = await supabaseAdmin
+    .from("stakes")
+    .select("amount")
+    .eq("project_key", projectKey)
+    .eq("wallet", wallet.slice(0, 64))
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return Number((data as { amount?: number } | null)?.amount ?? 0);
+}
+
+/**
+ * Participation gate for steering (ask / propose). The wallet must have an active
+ * stake ≥ the floor AND still hold ≥ the floor of the project's $LOOP on-chain —
+ * the live balance is re-read because v1 takes no custody, so a stake can't be
+ * gamed by staking then dumping. Returns an error string to surface, or null when
+ * the gate is met.
+ */
+async function checkStakeGate(
+  project: { key: string; mint?: string | null; network?: string | null },
+  wallet: string
+): Promise<string | null> {
+  const staked = await activeStakeAmount(project.key, wallet);
+  if (staked < stakeMin()) {
+    return `Stake at least ${stakeMin().toLocaleString()} $LOOP to steer the agent.`;
+  }
+  if (!project.mint) return "This project has no token to stake yet.";
+  const { getSplBalance } = await import("./solana");
+  const bal = await getSplBalance(
+    wallet,
+    project.mint,
+    project.network === "devnet" ? "devnet" : "mainnet"
+  );
+  if (bal == null) return "Couldn't read your $LOOP balance. Try again in a moment.";
+  if (!canParticipate(staked, bal)) {
+    return `Your $LOOP balance dropped below your stake — hold at least ${stakeMin().toLocaleString()} $LOOP to keep steering.`;
+  }
+  return null;
+}
+
+export interface StakeInput {
+  projectKey: string;
+  /** The connected wallet committing the stake. */
+  wallet: string;
+  /** Whole $LOOP to stake (must be ≤ the wallet's live on-chain balance). */
+  amount: number;
+  /** ed25519 proof the wallet signed the canonical stake message. */
+  proof: LaunchProof;
+}
+
+export interface StakeResult {
+  ok: boolean;
+  /** False when persistence is unavailable (signature + holdings still verified). */
+  persisted?: boolean;
+  /** The recorded stake amount + tier name, echoed for the UI. */
+  staked?: number;
+  tier?: string | null;
+  error?: string;
+}
+
+/**
+ * Record a stake-to-participate commitment. The signature proves the wallet
+ * authored the (project, amount) message, and we re-read the live on-chain $LOOP
+ * balance so a wallet can only stake what it actually holds — v1 takes NO custody
+ * (the $LOOP stays in the wallet). The latest stake per (project, wallet)
+ * supersedes prior ones. Written service_role (anon RLS has no insert on stakes).
+ */
+export async function submitStakeAction(input: StakeInput): Promise<StakeResult> {
+  const amount = sanitizeStakeAmount(input.amount);
+  if (!input.projectKey || !input.wallet) {
+    return { ok: false, error: "Missing project or wallet." };
+  }
+  if (amount < stakeMin()) {
+    return { ok: false, error: `Minimum stake is ${stakeMin().toLocaleString()} $LOOP.` };
+  }
+  if (
+    !input.proof ||
+    input.proof.pubkey !== input.wallet ||
+    !verifyStakeProof(input.proof, input.projectKey, amount)
+  ) {
+    return { ok: false, error: "Couldn't verify your stake signature." };
+  }
+  const { getProject } = await import("./queries");
+  const project = await getProject(input.projectKey);
+  if (!project?.mint) {
+    return { ok: false, error: "This project has no token to stake yet." };
+  }
+  // Honest gate: you can only stake what you actually hold on-chain.
+  const { getSplBalance } = await import("./solana");
+  const bal = await getSplBalance(
+    input.wallet,
+    project.mint,
+    project.network === "devnet" ? "devnet" : "mainnet"
+  );
+  if (bal == null) {
+    return { ok: false, error: "Couldn't read your $LOOP balance. Try again in a moment." };
+  }
+  if (bal < amount) {
+    return {
+      ok: false,
+      error: `You hold ${Math.floor(bal).toLocaleString()} $LOOP — less than the ${amount.toLocaleString()} you're staking.`,
+    };
+  }
+  const tier = participationTier(amount)?.name ?? null;
+  // Verified but no backend (cold/prototype) — succeed without persistence.
+  if (!supabaseAdmin) return { ok: true, persisted: false, staked: amount, tier };
+  // One active stake per (project, wallet): supersede the prior active row.
+  await supabaseAdmin
+    .from("stakes")
+    .update({ active: false })
+    .eq("project_key", input.projectKey)
+    .eq("wallet", input.wallet.slice(0, 64))
+    .eq("active", true);
+  const { error } = await supabaseAdmin.from("stakes").insert({
+    project_key: input.projectKey,
+    wallet: input.wallet.slice(0, 64),
+    amount,
+    message: input.proof.message.slice(0, 500),
+    signature: input.proof.signature.slice(0, 200),
+    active: true,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, persisted: true, staked: amount, tier };
+}
+
+/**
+ * Read a wallet's active stake for a project, for the UI's participation state.
+ * Pure read (no writes); returns the staked amount, its tier, and the floor.
+ */
+export async function getStakeAction(
+  projectKey: string,
+  wallet: string
+): Promise<{ staked: number; tier: string | null; min: number }> {
+  const min = stakeMin();
+  if (!projectKey || !wallet) return { staked: 0, tier: null, min };
+  const staked = await activeStakeAmount(projectKey, wallet);
+  return { staked, tier: participationTier(staked)?.name ?? null, min };
 }

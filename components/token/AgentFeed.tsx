@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import {
@@ -16,9 +16,12 @@ import {
   resolveDirectiveAction,
   setProposalExecAction,
   submitChatAction,
+  submitStakeAction,
+  getStakeAction,
 } from "@/lib/actions";
 import { isSuspiciousDirective, proposalQuorum } from "@/lib/directives";
-import { chatBasePrice, chatCost, TOKEN_DECIMALS, type ChatMsg } from "@/lib/chat";
+import { stakeMin, sanitizeStakeAmount } from "@/lib/staking";
+import { type ChatMsg } from "@/lib/chat";
 import { agentRunState } from "@/lib/budget";
 import { explorerTx, shortAddr } from "@/lib/format";
 import { useInspector } from "@/lib/inspector";
@@ -64,11 +67,19 @@ export function AgentFeed({
   const [feed, setFeed] = useState<FeedItem[]>(() => directives ?? []);
   const [messages, setMessages] = useState<ChatMsg[]>(chat);
   const [draft, setDraft] = useState("");
-  const [boost, setBoost] = useState("");
-  // One composer, two PAID actions — no mode tabs. `pending` is whichever action
-  // is mid-payment ("ask" = a question, "steer" = a directive/proposal), or null.
+  // One composer, two actions — no mode tabs. `pending` is whichever action is
+  // mid-signature ("ask" = a question, "steer" = a directive/proposal), or null.
   const [pending, setPending] = useState<null | "ask" | "steer">(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Stake-to-participate: the connected wallet's active stake (null until loaded /
+  // disconnected), the stake-amount draft, and whether a stake is mid-signature.
+  const [stake, setStake] = useState<{
+    staked: number;
+    tier: string | null;
+    min: number;
+  } | null>(null);
+  const [stakeDraft, setStakeDraft] = useState("");
+  const [staking, setStaking] = useState(false);
   const idRef = useRef(1000);
   const newId = () => `c${idRef.current++}`;
 
@@ -81,18 +92,82 @@ export function AgentFeed({
     return [...gov, ...msgs].sort((a, b) => b.ts - a.ts);
   }, [feed, messages]);
 
-  // Talking to the agent needs a token to charge + a treasury to receive it —
-  // BOTH actions (ask + steer) are paid in $LOOP to the treasury.
-  const canChat = !!(p.mint && p.treasuryWallet);
-  const base = chatBasePrice();
-  const boostN = Math.max(0, parseFloat(boost) || 0);
-  const chatCostTotal = chatCost(boostN, base);
+  // Steering the agent (ask + steer) is unlocked by an active $LOOP stake — no
+  // per-message on-chain transfer (which Phantom/Blowfish flagged as a scam on a
+  // new domain+token). Needs the project token to read/stake $LOOP against.
+  const canChat = !!p.mint;
   const busy = pending != null;
+  const staked = stake?.staked ?? 0;
+  const stakeFloor = stake?.min ?? stakeMin();
+  const isStaked = staked >= stakeFloor;
 
-  // The one paid path for both actions: a USER-SIGNED $LOOP transfer to the
-  // treasury gates the message, then it's recorded ("ask" → a question the agent
-  // answers; "steer" → a directive (founder) or a holder proposal). The text is
-  // screened with the same injection/address guard either way.
+  // Load the connected wallet's active stake (and clear it on disconnect) so the
+  // composer knows whether participation is unlocked.
+  useEffect(() => {
+    let cancelled = false;
+    if (wallet.connected && wallet.address && p.key) {
+      getStakeAction(p.key, wallet.address).then((s) => {
+        if (!cancelled) setStake(s);
+      });
+    } else {
+      setStake(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.connected, wallet.address, p.key]);
+
+  // Stake $LOOP to unlock steering. A SIGNED commitment (no transfer → no Blowfish
+  // flag); the server verifies the signature AND that the wallet really holds the
+  // staked $LOOP on-chain. v1 takes no custody — the $LOOP stays in the wallet.
+  async function stakeNow() {
+    if (!wallet.connected || !wallet.address) {
+      wallet.connect();
+      return;
+    }
+    if (wrongNet) {
+      setNetwork(projectNet);
+      return;
+    }
+    const amount = sanitizeStakeAmount(stakeDraft) || stakeFloor;
+    if (amount < stakeFloor) {
+      setNotice(`Minimum stake is ${fmtLoop(stakeFloor)} $${sym}.`);
+      return;
+    }
+    setNotice(null);
+    setStaking(true);
+    try {
+      const proof = await wallet.signStakeProof(p.key, amount);
+      if (!proof) {
+        setNotice("Your wallet can't sign messages.");
+        setStaking(false);
+        return;
+      }
+      const res = await submitStakeAction({
+        projectKey: p.key,
+        wallet: wallet.address,
+        amount,
+        proof,
+      });
+      if (res.ok) {
+        setStake({ staked: res.staked ?? amount, tier: res.tier ?? null, min: stakeFloor });
+        setStakeDraft("");
+      } else {
+        setNotice(res.error ?? "Couldn't record your stake.");
+      }
+      setStaking(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Signing failed";
+      setNotice(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
+      setStaking(false);
+    }
+  }
+
+  // The one path for both actions: a USER-SIGNED message (moves no funds, so it
+  // never trips the Phantom/Blowfish scanner) gated by an active stake, then it's
+  // recorded ("ask" → a question the agent answers; "steer" → a directive (founder)
+  // or a holder proposal). The text is screened with the same injection guard, and
+  // the signature also proves authorship.
   async function send(kind: "ask" | "steer") {
     if (kind === "steer" && role === "spectator") {
       wallet.connect();
@@ -114,46 +189,53 @@ export function AgentFeed({
       );
       return;
     }
-    if (!p.mint || !p.treasuryWallet) return;
+    if (!p.mint) return;
+    if (!isStaked) {
+      setNotice(`Stake at least ${fmtLoop(stakeFloor)} $${sym} to steer the agent.`);
+      return;
+    }
     setNotice(null);
     setPending(kind);
     try {
-      // 1) Pay $LOOP to the treasury — the same spam gate for asking and steering.
-      const sig = await wallet.sendSplToken(
-        p.mint,
-        p.treasuryWallet,
-        chatCostTotal,
-        TOKEN_DECIMALS
-      );
       if (kind === "ask") {
+        // Sign the question (no transfer → no Blowfish flag); the stake is the gate.
+        const proof = await wallet.signChatProof(p.key, text);
+        if (!proof) {
+          setNotice("Your wallet can't sign messages.");
+          setPending(null);
+          return;
+        }
         const optimistic: ChatMsg = {
           id: `local-${Date.now()}`,
           wallet: wallet.address,
           question: text,
           answer: null,
-          loopPaid: chatCostTotal,
-          boost: boostN,
-          txSig: sig,
+          loopPaid: 0,
+          boost: 0,
+          txSig: null,
           status: "open",
           at: "just now",
           ts: Date.now(),
         };
         setMessages((m) => [optimistic, ...m].slice(0, 30));
         setDraft("");
-        setBoost("");
         const res = await submitChatAction({
           projectKey: p.key,
           wallet: wallet.address,
           question: text,
-          txSig: sig,
-          loopPaid: chatCostTotal,
-          boost: boostN,
+          proof,
         });
-        if (!res.ok) setNotice(res.error ?? "Saved your payment, but the message didn't record.");
+        if (!res.ok) setNotice(res.error ?? "Couldn't record your message.");
       } else {
-        // A console submission is never authoritative: it's queued as an UNVERIFIED
-        // suggestion (open), not an applied founder action — the paid $LOOP only
-        // gates spam, it confers no authority.
+        // A console submission is never authoritative: it's queued as an open
+        // suggestion (the agent treats console text as untrusted), even though the
+        // signature verifies authorship — steering confers no on-chain authority.
+        const proof = await wallet.signDirectiveProof(p.key, text);
+        if (!proof) {
+          setNotice("Your wallet can't sign messages.");
+          setPending(null);
+          return;
+        }
         const item: FeedItem =
           role === "founder"
             ? {
@@ -179,20 +261,19 @@ export function AgentFeed({
               };
         setFeed((f) => [item, ...f].slice(0, 14));
         setDraft("");
-        setBoost("");
         const res = await submitDirectiveAction({
           projectKey: p.key,
           text,
           kind: role === "founder" ? "directive" : "proposal",
           authorWallet: wallet.address,
           holders: p.holders,
-          txSig: sig,
+          proof,
         });
-        if (!res.ok) setNotice(res.error ?? "Saved your payment, but the message didn't record.");
+        if (!res.ok) setNotice(res.error ?? "Couldn't record your message.");
       }
       setPending(null);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Payment failed";
+      const msg = e instanceof Error ? e.message : "Signing failed";
       setNotice(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
       setPending(null);
     }
@@ -443,17 +524,78 @@ export function AgentFeed({
         )}
       </div>
 
-      {/* Composer — one box, two PAID actions (no mode tabs): Ask a question, or
-          steer (Direct/Propose). Each one signs a $LOOP payment to the treasury. */}
+      {/* Composer — one box, two actions (no mode tabs): Ask a question, or steer
+          (Direct/Propose). Each one SIGNS a message (moves no funds → no Phantom/
+          Blowfish flag); an active $LOOP stake is the gate, not a per-message fee. */}
       <div className="px-5 py-[14px] border-t border-line-4">
         {!canChat ? (
           <div className="text-[12.5px] text-faint text-center py-2">
-            {p.mint
-              ? "Talking to the agent opens once the project treasury is set."
-              : `Talking to the agent opens when ${p.ticker} launches on-chain.`}
+            Talking to the agent opens when {p.ticker} launches on-chain.
+          </div>
+        ) : !wallet.connected ? (
+          <button
+            onClick={() => wallet.connect()}
+            className="w-full font-display font-semibold text-[14px] px-5 py-[10px] rounded-[10px] bg-ink text-white hover:bg-ink-2 transition-colors"
+          >
+            Connect wallet to participate
+          </button>
+        ) : wrongNet ? (
+          <button
+            onClick={() => setNetwork(projectNet)}
+            className="w-full font-display font-semibold text-[14px] px-5 py-[10px] rounded-[10px] border border-warn text-warn"
+          >
+            Switch to {projectNet}
+          </button>
+        ) : !isStaked ? (
+          // Stake-to-participate gate: sign a stake (no transfer) to unlock asking +
+          // steering. The $LOOP stays in the wallet — v1 takes no custody.
+          <div className="flex flex-col gap-2">
+            <div className="text-[12.5px] text-body">
+              Stake{" "}
+              <span className="font-mono text-muted">
+                {fmtLoop(stakeFloor)} ${sym}
+              </span>{" "}
+              to ask + steer the agent. Signing only — it never leaves your wallet,
+              so Phantom won&apos;t flag it as a scam.
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 border border-line-3 rounded-[9px] px-2 py-1 bg-surface">
+                <input
+                  value={stakeDraft}
+                  onChange={(e) => setStakeDraft(e.target.value)}
+                  inputMode="numeric"
+                  placeholder={fmtLoop(stakeFloor)}
+                  className="w-[104px] border-0 outline-none bg-transparent font-mono text-[12.5px] py-1"
+                />
+                <span className="font-mono text-[11px] text-faint">${sym}</span>
+              </div>
+              <button
+                onClick={stakeNow}
+                disabled={staking}
+                className="ml-auto font-display font-semibold text-[13.5px] px-5 py-[10px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors disabled:opacity-60 whitespace-nowrap"
+              >
+                {staking ? "Sign in wallet…" : "Stake to participate"}
+              </button>
+            </div>
+            <div className="text-[11px] text-faint leading-[1.5]">
+              One signature unlocks unlimited asks + proposals. Higher stakes carry
+              more governance weight. Locked-vault staking + rewards are coming.
+            </div>
           </div>
         ) : (
           <>
+            <div className="flex items-center justify-between gap-2 mb-2 text-[11.5px]">
+              <span className="text-faint">
+                Staked{" "}
+                <span className="font-mono text-muted">
+                  {fmtLoop(staked)} ${sym}
+                </span>
+                {stake?.tier ? (
+                  <span className="ml-1 text-accent-text">· {stake.tier}</span>
+                ) : null}
+              </span>
+              <span className="text-faint">steering unlocked</span>
+            </div>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -469,68 +611,38 @@ export function AgentFeed({
               className="loop-input resize-none w-full py-[10px]"
             />
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <div className="flex items-center gap-1 border border-line-3 rounded-[9px] px-2 py-1 bg-surface">
-                <span className="font-mono text-[11px] text-faint">+ boost</span>
-                <input
-                  value={boost}
-                  onChange={(e) => setBoost(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="w-[56px] border-0 outline-none bg-transparent font-mono text-[12.5px] py-1"
-                />
-                <span className="font-mono text-[11px] text-faint">${sym}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => send("steer")}
+                  disabled={busy}
+                  className="font-display font-semibold text-[13.5px] px-4 py-[10px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-accent hover:text-accent-text transition-colors disabled:opacity-60 whitespace-nowrap"
+                >
+                  {pending === "steer"
+                    ? "Sign in wallet…"
+                    : role === "founder"
+                      ? "Send Directive"
+                      : "Open Proposal"}
+                </button>
+                <button
+                  onClick={() => send("ask")}
+                  disabled={busy}
+                  className="font-display font-semibold text-[13.5px] px-4 py-[10px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors disabled:opacity-60 whitespace-nowrap"
+                >
+                  {pending === "ask" ? "Sign in wallet…" : "Ask Question"}
+                </button>
               </div>
-
-              {!wallet.connected ? (
-                <button
-                  onClick={() => wallet.connect()}
-                  className="ml-auto font-display font-semibold text-[14px] px-5 py-[10px] rounded-[10px] bg-ink text-white hover:bg-ink-2 transition-colors whitespace-nowrap"
-                >
-                  Connect wallet
-                </button>
-              ) : wrongNet ? (
-                <button
-                  onClick={() => setNetwork(projectNet)}
-                  className="ml-auto font-display font-semibold text-[14px] px-5 py-[10px] rounded-[10px] border border-warn text-warn whitespace-nowrap"
-                >
-                  Switch to {projectNet}
-                </button>
-              ) : (
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={() => send("steer")}
-                    disabled={busy}
-                    className="font-display font-semibold text-[13.5px] px-4 py-[10px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-accent hover:text-accent-text transition-colors disabled:opacity-60 whitespace-nowrap"
-                  >
-                    {pending === "steer"
-                      ? "Confirm in wallet…"
-                      : `${role === "founder" ? "Send Directive" : "Open Proposal"} · ${fmtLoop(chatCostTotal)}`}
-                  </button>
-                  <button
-                    onClick={() => send("ask")}
-                    disabled={busy}
-                    className="font-display font-semibold text-[13.5px] px-4 py-[10px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors disabled:opacity-60 whitespace-nowrap"
-                  >
-                    {pending === "ask"
-                      ? "Confirm in wallet…"
-                      : `Ask Question · ${fmtLoop(chatCostTotal)}`}
-                  </button>
-                </div>
-              )}
             </div>
             <div className="text-[11px] text-faint mt-2 leading-[1.5]">
-              Both cost{" "}
-              <span className="text-muted">
-                {fmtLoop(chatCostTotal)} ${sym}
+              Free once staked — each action is a wallet signature, no transfer.{" "}
+              <span className="text-body">Ask Question</span> gets a written answer
+              {runState === "active" ? " on the next run" : " once the agent wakes"}.{" "}
+              <span className="text-body">
+                {role === "founder" ? "Send Directive" : "Open Proposal"}
               </span>{" "}
-              to the treasury. <span className="text-body">Ask Question</span> gets a written
-              answer{runState === "active" ? " on the next run" : " once the agent wakes"} —
-              boost jumps the queue.{" "}
-              <span className="text-body">{role === "founder" ? "Send Directive" : "Open Proposal"}</span>{" "}
               {role === "founder"
                 ? "queues a directive for the agent"
                 : `opens a $${sym}-weighted holder vote`}
-              . They steer the agent — they never move treasury funds.
+              . They steer the agent — they never move funds.
             </div>
           </>
         )}

@@ -31,7 +31,9 @@ import {
 } from "@solana/wallet-adapter-wallets";
 import { useNetwork } from "./network";
 import { buildLaunchMessage } from "./launch-message";
-import { toBaseUnits, TOKEN_DECIMALS } from "./chat";
+import { toBaseUnits, TOKEN_DECIMALS, buildChatMessage } from "./chat";
+import { buildDirectiveMessage } from "./directives";
+import { buildStakeMessage } from "./staking";
 import type { LaunchProof } from "./signature";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
@@ -137,6 +139,16 @@ export interface WalletState {
   toggle: () => void;
   /** Sign the canonical launch message; null if the wallet can't sign. */
   signLaunchProof: (ticker: string) => Promise<LaunchProof | null>;
+  /**
+   * Sign the canonical stake message for (project, amount). The server verifies it
+   * before recording a stake. null if the wallet can't sign. Moves no funds — this
+   * is what lets steering avoid the per-message transfer Phantom/Blowfish flagged.
+   */
+  signStakeProof: (projectKey: string, amount: number) => Promise<LaunchProof | null>;
+  /** Sign the canonical chat message for (project, question); null if unsupported. */
+  signChatProof: (projectKey: string, question: string) => Promise<LaunchProof | null>;
+  /** Sign the canonical directive message for (project, text); null if unsupported. */
+  signDirectiveProof: (projectKey: string, text: string) => Promise<LaunchProof | null>;
   /**
    * Send `sol` SOL from the connected wallet to `to` on the active cluster
    * (a plain SystemProgram.transfer — used for project donations). Resolves
@@ -314,19 +326,36 @@ export function useWallet(): WalletState {
     }
   };
 
-  const signLaunchProof = async (
-    ticker: string
-  ): Promise<LaunchProof | null> => {
+  // Sign an already-built canonical message → an ed25519 ownership proof the server
+  // verifies. The shared core behind every sign* helper; null when the wallet can't
+  // sign. Crucially this moves NO funds, so it never trips the Phantom/Blowfish
+  // transaction scanner the way the old per-message $LOOP transfer did.
+  const signProof = async (message: string): Promise<LaunchProof | null> => {
     if (!publicKey || !signMessage) return null;
-    const ts = Date.now();
-    const message = buildLaunchMessage(ticker, ts);
     const signature = await signMessage(new TextEncoder().encode(message));
-    return {
-      pubkey: publicKey.toBase58(),
-      signature: toBase64(signature),
-      message,
-    };
+    return { pubkey: publicKey.toBase58(), signature: toBase64(signature), message };
   };
+
+  const signLaunchProof = (ticker: string): Promise<LaunchProof | null> =>
+    signProof(buildLaunchMessage(ticker, Date.now()));
+
+  const signStakeProof = (
+    projectKey: string,
+    amount: number
+  ): Promise<LaunchProof | null> =>
+    signProof(buildStakeMessage(projectKey, amount, Date.now()));
+
+  const signChatProof = (
+    projectKey: string,
+    question: string
+  ): Promise<LaunchProof | null> =>
+    signProof(buildChatMessage(projectKey, question, Date.now()));
+
+  const signDirectiveProof = (
+    projectKey: string,
+    text: string
+  ): Promise<LaunchProof | null> =>
+    signProof(buildDirectiveMessage(projectKey, text, Date.now()));
 
   return {
     connected,
@@ -336,6 +365,9 @@ export function useWallet(): WalletState {
     disconnect: () => void disconnect(),
     toggle: connected ? () => void disconnect() : openModal,
     signLaunchProof,
+    signStakeProof,
+    signChatProof,
+    signDirectiveProof,
     sendSol,
     sendSwapTx,
     sendSplToken,
