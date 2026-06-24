@@ -61,7 +61,13 @@ export const agentSession = task({
           GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? "",
           // Powers the in-sandbox Claude Agent SDK session.
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+          // The brief is MULTILINE (Task/Details/Implement…). E2B's runCode drops
+          // multiline env values, so the session saw an empty TASK_BRIEF and
+          // no-op'd every SDK tick. Pass it base64-encoded (single-line ASCII,
+          // survives intact); the session decodes TASK_BRIEF_B64 first. Keep raw
+          // TASK_BRIEF too for back-compat during the worker re-deploy window.
           TASK_BRIEF: taskBrief,
+          TASK_BRIEF_B64: Buffer.from(taskBrief ?? "", "utf8").toString("base64"),
           AGENT_SDK_MODEL: model,
           AGENT_SDK_MAX_TURNS: String(maxTurns),
           AGENT_SDK_WALL_MS: String(wallMs),
