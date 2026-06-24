@@ -26,6 +26,17 @@ export const ZERO_TOTALS: RoleTotals = {
   platformSol: 0,
 };
 
+/** A project's full fee accounting: cumulative earned + claimed per role. */
+export interface FeeLedger {
+  earned: RoleTotals;
+  claimed: RoleTotals;
+}
+
+export const ZERO_FEE_LEDGER: FeeLedger = {
+  earned: ZERO_TOTALS,
+  claimed: ZERO_TOTALS,
+};
+
 // Lamport precision (1 SOL = 1e9 lamports) — matches lib/fees.ts.
 function round9(n: number): number {
   return Math.round(n * 1e9) / 1e9;

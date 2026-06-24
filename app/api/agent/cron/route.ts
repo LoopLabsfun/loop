@@ -137,6 +137,30 @@ export async function GET(req: Request) {
       if (feeClaim.ok && feeClaim.claimedSol && feeClaim.claimedSol > 0) {
         const { addEarnedSol } = await import("@/lib/agent-data");
         await addEarnedSol("loop", feeClaim.claimedSol);
+        // Persist the 30/65/5 split into fee_ledger so the per-role accounting is
+        // REAL (not just displayed): each claim splits into founder/agent/platform
+        // earned totals, and the UI's founder-claimable reads from this. Pure
+        // accounting — no SOL moved here (physical distribution is a separate,
+        // founder-armed step). Best-effort: a ledger write must never abort cron.
+        try {
+          const { splitForProject } = await import("@/lib/fees");
+          const { recordSweepToLedger } = await import("@/lib/fee-ledger-store");
+          const loopProject = all.find((p) => p.key === "loop");
+          const split = splitForProject(loopProject ?? {});
+          const ledger = await recordSweepToLedger("loop", feeClaim.claimedSol, split);
+          console.log(
+            `[fee-ledger] ${JSON.stringify({
+              key: "loop",
+              swept: feeClaim.claimedSol,
+              split: `${split.founderPct}/${split.agentPct}/${split.platformPct}`,
+              earned: ledger.earned,
+            })}`
+          );
+        } catch (e) {
+          console.error(
+            `[fee-ledger] ${JSON.stringify({ key: "loop", error: e instanceof Error ? e.message : "ledger write failed" })}`
+          );
+        }
       }
     } catch (e) {
       feeClaim = { ok: false, error: e instanceof Error ? e.message : "claim failed" };
