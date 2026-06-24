@@ -638,9 +638,15 @@ function EmailBody({ email: m }: { email: InboxMessage }) {
         </span>
         <span className="text-faint ml-auto">{m.at}</span>
       </div>
-      <Field label={m.direction === "out" ? "To" : "From"}>{m.party}</Field>
-      <Field label="Preview">
-        <span className="whitespace-pre-wrap text-[12.5px] text-muted">{m.preview}</span>
+      <Field label={m.direction === "out" ? "To" : "From"}>
+        <span className="break-words">{m.party}</span>
+      </Field>
+      <Field label="Message">
+        {/* Full body when stored (newlines preserved); legacy rows fall back to the
+            short preview. break-words so long URLs/hashes wrap inside the panel. */}
+        <span className="whitespace-pre-wrap break-words text-[12.5px] text-muted">
+          {m.body || m.preview}
+        </span>
       </Field>
     </>
   );
