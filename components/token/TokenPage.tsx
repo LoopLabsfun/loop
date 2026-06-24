@@ -786,6 +786,12 @@ function FeesCustodyCard({
   const claims = claimable(ledger.earned, ledger.claimed);
   const founderClaimable = claims.founderSol;
   const hasClaimable = founderClaimable > 0;
+  // Total creator fees swept to date (sum of the three role buckets). When > 0 we
+  // surface the REAL per-role earned split below the modeled percentages, so the
+  // "30/65/5" stops being decoration and shows actual SOL routed per role.
+  const totalEarned =
+    ledger.earned.founderSol + ledger.earned.agentSol + ledger.earned.platformSol;
+  const hasEarned = totalEarned > 0;
   const net = p.network === "devnet" ? "devnet" : "mainnet";
 
   return (
@@ -806,6 +812,22 @@ function FeesCustodyCard({
           <SplitChip label="Agent" pct={split.agentPct} tone="accent" />
           <SplitChip label="Platform" pct={split.platformPct} tone="muted" />
         </div>
+
+        {/* Real per-role earned — only once fees have actually been swept. Reads
+            the persisted fee_ledger so the split is honest SOL, not just %. */}
+        {hasEarned && (
+          <div className="border-t border-line-4 pt-[10px] flex flex-col gap-[7px]">
+            <div className="flex items-center justify-between">
+              <span className="text-muted">Fees earned · routed</span>
+              <span className="font-mono text-[12px] text-pos">
+                {totalEarned.toFixed(4)} SOL
+              </span>
+            </div>
+            <EarnedRow label="Founder" sol={ledger.earned.founderSol} />
+            <EarnedRow label="Agent" sol={ledger.earned.agentSol} />
+            <EarnedRow label="Platform" sol={ledger.earned.platformSol} />
+          </div>
+        )}
 
         {/* Agent wallet (external custody) */}
         <div className="flex justify-between border-t border-line-4 pt-[10px]">
@@ -858,6 +880,17 @@ function FeesCustodyCard({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+// One role's real swept-fee total (SOL), shown under the percentage chips once
+// the fee_ledger has actual earnings.
+function EarnedRow({ label, sol }: { label: string; sol: number }) {
+  return (
+    <div className="flex items-center justify-between font-mono text-[12px]">
+      <span className="text-faint">{label}</span>
+      <span className="text-body">{sol.toFixed(4)} SOL</span>
     </div>
   );
 }
