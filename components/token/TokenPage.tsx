@@ -32,7 +32,7 @@ import {
 } from "@/lib/ledger";
 import { agentRunState, canAffordTick } from "@/lib/budget";
 import { splitForProject } from "@/lib/fees";
-import { claimable, ZERO_TOTALS } from "@/lib/fee-ledger";
+import { claimable, ZERO_FEE_LEDGER, type FeeLedger } from "@/lib/fee-ledger";
 import { TREASURY_EXITS } from "@/lib/governance";
 
 export interface LiveMarket {
@@ -52,6 +52,7 @@ export function TokenPage({
   agentState,
   chat,
   compute,
+  feeLedger,
   visitors,
 }: {
   project: Project;
@@ -65,6 +66,8 @@ export function TokenPage({
   chat?: ChatMsg[];
   /** Real Claude API spend + remaining credit (official project only), or null. */
   compute?: ComputeSummary | null;
+  /** Real per-role creator-fee accounting (earned/claimed), or zero until any claim. */
+  feeLedger?: FeeLedger;
   /** Total Vercel visitors since launch, or null when unconfigured. */
   visitors?: number | null;
 }) {
@@ -293,7 +296,7 @@ export function TokenPage({
           <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
           <TreasuryStats project={p} solUsd={solUsd} compute={compute} />
-          <FeesCustodyCard project={p} preLaunch={preLaunch} />
+          <FeesCustodyCard project={p} preLaunch={preLaunch} feeLedger={feeLedger} />
           <TopHolders holders={market.holders} network={p.network ?? "mainnet"} preLaunch={preLaunch} />
 
         </div>
@@ -759,9 +762,11 @@ function BondingCurve({
 function FeesCustodyCard({
   project: p,
   preLaunch,
+  feeLedger,
 }: {
   project: Project;
   preLaunch: boolean;
+  feeLedger?: FeeLedger;
 }) {
   const wallet = useWallet();
   const split = splitForProject(p);
@@ -774,9 +779,13 @@ function FeesCustodyCard({
     p.creatorWallet &&
     wallet.address === p.creatorWallet
   );
-  // No fees can have accrued before launch; once the ledger table is live this
-  // reads the project's real swept-and-unclaimed founder balance. Honest 0 now.
-  const founderClaimable = claimable(ZERO_TOTALS, ZERO_TOTALS).founderSol;
+  // REAL founder-claimable, read from the project's persisted fee_ledger (earned −
+  // claimed, per role). The runtime writes this on every pump.fun creator-fee
+  // sweep, split 30/65/5; before any claim it's an honest 0.
+  const ledger = feeLedger ?? ZERO_FEE_LEDGER;
+  const claims = claimable(ledger.earned, ledger.claimed);
+  const founderClaimable = claims.founderSol;
+  const hasClaimable = founderClaimable > 0;
   const net = p.network === "devnet" ? "devnet" : "mainnet";
 
   return (
@@ -827,11 +836,13 @@ function FeesCustodyCard({
               title={
                 preLaunch
                   ? "Dev-fees accrue from trading once the token is live."
-                  : "Nothing to claim yet — fees accrue as the token trades."
+                  : hasClaimable
+                    ? `${founderClaimable.toFixed(4)} SOL of founder fees accrued. The agent claims creator fees into Loop custody; on-chain withdrawal to your creator wallet is being wired.`
+                    : "Nothing to claim yet — fees accrue as the token trades."
               }
               className="mt-1 w-full font-display font-semibold text-[13.5px] py-[10px] rounded-[10px] border border-line-3 bg-surface-2 text-faint cursor-not-allowed"
             >
-              Claim dev-fees
+              {hasClaimable ? `Claim ${founderClaimable.toFixed(3)} SOL` : "Claim dev-fees"}
             </button>
             <p className="text-[11.5px] text-faint leading-[1.45]">
               The agent auto-claims creator fees on pump.fun; Loop custodies them
