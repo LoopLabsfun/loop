@@ -85,6 +85,11 @@ describe("countdown", () => {
     expect(countdown(5.9)).toBe("00:05");
     expect(countdown(65.99)).toBe("01:05");
   });
+  it("returns 00:00 for non-finite inputs (NaN, Infinity)", () => {
+    expect(countdown(NaN)).toBe("00:00");
+    expect(countdown(Infinity)).toBe("00:00");
+    expect(countdown(-Infinity)).toBe("00:00");
+  });
 });
 
 describe("shortAge", () => {

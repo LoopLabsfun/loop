@@ -60,6 +60,7 @@ export function compactNum(n: number): string {
 }
 
 export function countdown(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds)) return "00:00";
   const t = Math.max(0, Math.floor(totalSeconds));
   const mm = Math.floor(t / 60);
   const ss = String(t % 60).padStart(2, "0");
