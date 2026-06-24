@@ -7,6 +7,7 @@ import {
   answerOpenChats,
 } from "@/lib/agent-runtime";
 import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
+import { sendDailyDigest } from "@/lib/agent-daily-digest";
 import { canAffordTick } from "@/lib/budget";
 import { secretsMatch } from "@/lib/api-auth";
 
@@ -65,11 +66,21 @@ export async function GET(req: Request) {
   for (const p of projects) {
     try {
       const state = await getAgentState(p);
+      // Daily founder recap (once per UTC day, official projects only) — runs in
+      // both brain modes since the SDK path returns early below. Self-guarding +
+      // failure-safe, so it never affects the tick.
+      try {
+        const dg = await sendDailyDigest(p, state);
+        if (dg.sent) console.log(`[agent-digest] ${JSON.stringify({ key: p.key, ...dg })}`);
+      } catch (e) {
+        console.error(`[agent-digest] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+      }
       if (mode === "sdk") {
         // Durable path: decide + enqueue; the session + its persist happen later.
         const r = await enqueueSdkSession(p, {
           tasks: state.tasks,
           directives: state.directives,
+          inbox: state.inbox,
         });
         results.push({ key: p.key, ok: true, summary: r.note });
         console.log(`[agent-sdk-enqueue] ${JSON.stringify({ key: p.key, ...r })}`);
@@ -78,6 +89,7 @@ export async function GET(req: Request) {
       const decision = await runAgentTick(p, {
         tasks: state.tasks,
         directives: state.directives,
+        inbox: state.inbox,
       });
       results.push({ key: p.key, ok: true, summary: decision.summary });
       // Observability: a structured per-tick line so `vercel logs` shows WHAT the
