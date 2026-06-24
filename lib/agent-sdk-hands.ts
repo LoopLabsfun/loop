@@ -74,6 +74,10 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
   return [
     `set -uo pipefail`,
     `export GIT_TERMINAL_PROMPT=0`,
+    // Per-phase timing markers (stdout, no secrets) so every run's bottleneck is
+    // visible — clone vs npm ci vs the agentic session vs the gate. Parsed nowhere
+    // critical; purely observability (the timeouts were invisible without this).
+    `SDK_T0=$(date +%s)`,
     // Capture the GitHub token, then REMOVE it from the environment so the agent
     // session (spawned below) never sees it — re-used only for clone + push.
     `GH="\${GITHUB_TOKEN:-}"`,
@@ -83,6 +87,7 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `rm -rf agent-work`,
     `git clone --depth 20 --branch ${shquote(branch)} "https://x-access-token:\${GH}@github.com/${repoSlug}.git" agent-work || { echo "CLONE_FAILED"; echo "PUSHED=no"; exit 0; }`,
     `cd agent-work`,
+    `echo "PHASE=clone t=$(($(date +%s)-SDK_T0))s"`,
     // Set the local git identity NOW, before the session runs — not just before
     // the final commit. A fresh clone in the sandbox has NO git identity (nothing
     // sets --global), and Claude Code's internal git checkpointing tries to commit
@@ -93,9 +98,18 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `: > ${LOG}`,
     // Install deps so the SESSION can run the tests itself (warm cache).
     `npm ci --no-audit --no-fund >> ${LOG} 2>&1 || { echo "NPM_CI_FAILED"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; tail -n 20 ${LOG}; exit 0; }`,
+    `echo "PHASE=npm_ci t=$(($(date +%s)-SDK_T0))s"`,
     // ── The agentic session (maker). No GITHUB_TOKEN in its env. Bounded by the
     //    runner's maxTurns + wall-clock; its own test runs are advisory. ──
-    `node scripts/agent-sdk-session.mjs || echo "SESSION_RESULT=error"`,
+    // Hard wall backstop: the session's own JS AbortController aborts the async
+    // iterator but does NOT kill the spawned Claude Code subprocess, so a runaway
+    // session can overrun its wall by minutes and hang the whole sandbox to the
+    // ceiling (observed: ~600s on a 300s wall). `timeout` kills the process GROUP
+    // at wall + 60s grace (SIGTERM, then SIGKILL 10s later), bounding the run
+    // deterministically to clone + npm ci + wall + gate. Coreutils `timeout` is
+    // standard in the sandbox image.
+    `timeout -k 10 "$(( \${AGENT_SDK_WALL_MS:-150000} / 1000 + 60 ))s" node scripts/agent-sdk-session.mjs || echo "SESSION_RESULT=error_or_timeout"`,
+    `echo "PHASE=session t=$(($(date +%s)-SDK_T0))s"`,
     // Did it change anything?
     `CHANGED="$(git -C "$PWD" diff --name-only)"`,
     `if [ -z "$CHANGED" ]; then echo "NO_CHANGES"; echo "PUSHED=no"; exit 0; fi`,
@@ -108,6 +122,7 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     ...(fullGate ? [step(`npx next build`)] : []),
     `if [ "$GATE_RESULT" != "ok" ]; then echo "----- gate tail -----"; tail -n 25 ${LOG}; echo "---------------------"; fi`,
     `echo "GATE_RESULT=$GATE_RESULT"`,
+    `echo "PHASE=gate t=$(($(date +%s)-SDK_T0))s"`,
     // dryRun OMITS the commit/push tail entirely (defense in depth: a dry-run
     // script literally cannot push). Otherwise commit + push if green.
     ...(dryRun

@@ -104,7 +104,7 @@ export const agentSession = task({
     // Surface the parseable markers (no secrets) for the dashboard.
     const markers = stdout
       .split("\n")
-      .filter((l) => /^(GATE_RESULT|PUSHED|COMMIT_SHA|SESSION_\w+|NO_CHANGES|DENYLIST_HIT|CLONE_FAILED|NPM_CI_FAILED|DRY_RUN)=?/.test(l))
+      .filter((l) => /^(GATE_RESULT|PUSHED|COMMIT_SHA|SESSION_\w+|NO_CHANGES|DENYLIST_HIT|CLONE_FAILED|NPM_CI_FAILED|DRY_RUN|PHASE)=?/.test(l))
       .join("\n");
     return { key, ok, markers, stderrTail: stderr.split("\n").slice(-5).join("\n"), persisted };
   },
