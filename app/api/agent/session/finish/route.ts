@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { parseHandsOutput } from "@/lib/repo-hands";
-import { applyDecision, loadSocialPlan, type AgentDecision } from "@/lib/agent-runtime";
+import {
+  applyDecision,
+  loadSocialPlan,
+  requeueTaskOnSessionError,
+  type AgentDecision,
+} from "@/lib/agent-runtime";
 import { authorSocial } from "@/lib/agent-social";
 import type { TaskCategory } from "@/lib/agent";
 import { secretsMatch } from "@/lib/api-auth";
@@ -45,6 +50,30 @@ export async function POST(req: Request) {
   }
 
   const hands = parseHandsOutput(stdout);
+
+  // Infra/brain failure (not a code outcome): the in-sandbox session errored,
+  // timed out, or hit the Anthropic credit wall, so it never produced a usable
+  // diff. Don't run the verifier gate (it would just re-hold a misleading
+  // "building" card) or authorSocial (the same brain is down — the call would
+  // fail anyway). Re-queue the task to "todo" so the next funded cycle retries
+  // it, surface the real reason in the feed, and log it unmistakably.
+  if (hands.sessionError && !hands.pushed) {
+    await requeueTaskOnSessionError(project, String(title).slice(0, 120), hands.note);
+    const tag = hands.creditExhausted ? "agent-credit-exhausted" : "agent-session-error";
+    console.warn(`[${tag}] ${JSON.stringify({ key, title: String(title).slice(0, 120), note: hands.note })}`);
+    return NextResponse.json(
+      {
+        key,
+        pushed: false,
+        sessionError: true,
+        creditExhausted: hands.creditExhausted,
+        requeued: true,
+        note: hands.note,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   const cat: TaskCategory = CATEGORIES.includes(category as TaskCategory)
     ? (category as TaskCategory)
     : "feature";

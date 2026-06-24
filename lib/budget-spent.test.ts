@@ -52,4 +52,17 @@ describe('spentTodaySol', () => {
     ];
     expect(spentTodaySol(entries, NOW, 60 * 60 * 1000)).toBeCloseTo(1, 9);
   });
+
+  it('does NOT bypass the window when `now`/`windowMs` are non-finite', () => {
+    // A NaN `now` once made cutoff NaN, so the window check was skipped and an
+    // out-of-window entry was wrongly counted. With the guard it falls back to a
+    // live clock, so a clearly-old fixed entry stays out of the rolling window.
+    const entries: SpendEntry[] = [
+      { amountSol: 1, disposition: 'executed', at: iso(30 * 24 * 60 * 60 * 1000) },
+    ];
+    expect(spentTodaySol(entries, Number.NaN)).toBe(0);
+    // A non-finite/negative window falls back to the 24h default, not "count all".
+    expect(spentTodaySol(entries, NOW, Number.NaN)).toBe(0);
+    expect(spentTodaySol(entries, NOW, -5)).toBe(0);
+  });
 });

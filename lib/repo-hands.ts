@@ -231,6 +231,21 @@ export interface HandsResult {
   commitSha: string | null;
   /** Short human note for the build log. */
   note: string;
+  /**
+   * The in-sandbox SDK session itself errored, aborted, or timed out — it never
+   * got a fair attempt, so it produced no usable diff. Distinct from a clean
+   * "no changes" (the maker deliberately did nothing) or a red gate (it tried,
+   * the checker rejected it): an infra/brain failure, not a code outcome. The
+   * legacy repo-hands path emits no SESSION_RESULT, so this stays false there.
+   */
+  sessionError: boolean;
+  /**
+   * The session error is Anthropic credit exhaustion — the agent literally can't
+   * think until billing is topped up. A subset of `sessionError`, surfaced
+   * separately so the finish route can flag it unmistakably instead of burying
+   * it in a misleading "no file changes" note.
+   */
+  creditExhausted: boolean;
 }
 
 /** Parse the sandbox stdout markers into a structured result. */
@@ -239,12 +254,23 @@ export function parseHandsOutput(stdout: string): HandsResult {
   const pushed = /PUSHED=yes/.test(stdout);
   const shaMatch = stdout.match(/COMMIT_SHA=([0-9a-f]{7,40})/);
   const commitSha = shaMatch ? shaMatch[1] : null;
+  // The in-sandbox session reports its own outcome (scripts/agent-sdk-session.mjs:
+  // SESSION_RESULT=ok|error|aborted), and the Trigger wrapper adds
+  // SESSION_RESULT=error_or_timeout when the node process is killed/crashes. Any
+  // non-"ok" result with no push means the maker never produced a usable diff.
+  const sessionResult = stdout.match(/SESSION_RESULT=(\S+)/)?.[1];
+  const sessionNote = stdout.match(/SESSION_NOTE=(.+)/)?.[1]?.trim();
+  const sessionError = !pushed && !!sessionResult && sessionResult !== "ok";
+  const creditExhausted =
+    sessionError && /credit balance is too low/i.test(sessionNote ?? "");
   let note: string;
   if (pushed && commitSha) note = `pushed ${commitSha.slice(0, 7)} to main (gate green)`;
   else if (/CLONE_FAILED/.test(stdout)) note = "clone failed — no changes";
+  else if (creditExhausted) note = "session blocked — Anthropic credit exhausted (top up billing)";
+  else if (sessionError) note = `session errored — ${sessionNote || "no usable diff produced"}`;
   else if (/NO_CHANGES/.test(stdout)) note = "no file changes to commit";
   else if (!gatePassed) note = "gate failed — not pushed (tree stays green)";
   else if (/PUSH_FAILED|REBASE_FAILED/.test(stdout)) note = "gate green but push failed (will retry next cycle)";
   else note = "no commit this cycle";
-  return { pushed, gatePassed, commitSha, note };
+  return { pushed, gatePassed, commitSha, note, sessionError, creditExhausted };
 }

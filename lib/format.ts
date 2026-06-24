@@ -4,6 +4,10 @@
 export const SOL_USD = 164;
 
 export function usd(n: number): string {
+  // Guard non-finite input (NaN/±Infinity) so a bad upstream number renders a
+  // clean "0.00" instead of "NaN"/"∞" leaking into the UI — same posture as
+  // fmtPrice/compactUsd below.
+  if (!Number.isFinite(n)) return "0.00";
   return n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -11,6 +15,7 @@ export function usd(n: number): string {
 }
 
 export function sol(n: number, digits = 2): string {
+  if (!Number.isFinite(n)) return (0).toFixed(digits);
   return n.toFixed(digits);
 }
 
