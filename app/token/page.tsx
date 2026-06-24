@@ -31,9 +31,10 @@ export async function generateMetadata({
   const description =
     project.description ||
     `${project.name} — an autonomous project funded by its market on Loop.`;
-  // Defining openGraph/twitter here replaces the root file-convention image,
-  // so reference the site OG image explicitly to keep project links rich.
-  const images = ["/opengraph-image"];
+  // Per-project share card with the token's LIVE price + market cap baked in
+  // (app/token-og), so a shared /token link renders the real numbers instead of
+  // the generic site card.
+  const images = [`/token-og?p=${encodeURIComponent(project.key)}`];
   return {
     title,
     description,
