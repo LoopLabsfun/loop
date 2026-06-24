@@ -914,6 +914,37 @@ function SplitChip({
   );
 }
 
+// Tiny SVG bar sparkline of recent on-chain treasury inflows (oldest → newest,
+// left to right). Each bar is one claim, height ∝ its SOL amount. Decorative —
+// the exact amounts live in the claim list below it.
+function InflowSparkline({ amounts }: { amounts: number[] }) {
+  const series = amounts.slice(0, 12).reverse(); // newest-first in → chronological
+  const max = Math.max(...series, 0.000001);
+  const W = 64;
+  const H = 16;
+  const gap = 1.5;
+  const bw = (W - gap * (series.length - 1)) / series.length;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      {series.map((v, i) => {
+        const h = Math.max(1.5, (Math.max(0, v) / max) * H);
+        return (
+          <rect
+            key={i}
+            x={i * (bw + gap)}
+            y={H - h}
+            width={bw}
+            height={h}
+            rx={0.8}
+            fill="var(--pos)"
+            opacity={0.55 + (i / series.length) * 0.45}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 function TreasuryStats({
   project: p,
   solUsd,
@@ -1003,7 +1034,12 @@ function TreasuryStats({
         ))}
         {claims.length > 0 && (
           <div className="border-t border-line-4 pt-[10px] flex flex-col gap-[8px]">
-            <span className="text-muted text-[12px]">Recent claims · on-chain</span>
+            <div className="flex items-center justify-between">
+              <span className="text-muted text-[12px]">Recent claims · on-chain</span>
+              {claims.length > 1 && (
+                <InflowSparkline amounts={claims.map((c) => c.sol)} />
+              )}
+            </div>
             {claims.slice(0, 4).map((c) => (
               <button
                 key={c.sig}
