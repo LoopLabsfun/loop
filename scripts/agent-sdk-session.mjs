@@ -27,7 +27,15 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 process.env.IS_SANDBOX = "1";
 process.env.HOME ||= "/home/user";
 
-const brief = process.env.TASK_BRIEF?.trim();
+// The brief is passed base64-encoded (TASK_BRIEF_B64) because E2B's runCode drops
+// multiline env values — the raw multiline TASK_BRIEF arrived empty and every SDK
+// tick no-op'd. Decode the b64 first; fall back to the raw var for back-compat.
+const briefB64 = process.env.TASK_BRIEF_B64?.trim();
+const brief = (
+  briefB64
+    ? Buffer.from(briefB64, "base64").toString("utf8")
+    : process.env.TASK_BRIEF || ""
+).trim();
 if (!brief) {
   console.log("SESSION_RESULT=error");
   console.log("SESSION_NOTE=no TASK_BRIEF");
