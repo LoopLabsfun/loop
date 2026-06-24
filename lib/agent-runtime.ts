@@ -180,6 +180,12 @@ export function buildTaskBrief(task: { title: string; detail: string; category: 
 
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
+
+// Backlog grooming thresholds: when the standing `todo` queue holds fewer than
+// BACKLOG_MIN items, the agent is asked to top it back up toward BACKLOG_TARGET
+// with concrete, mandate-derived tasks (the self-improving, fixation-proof queue).
+export const BACKLOG_MIN = 4;
+export const BACKLOG_TARGET = 10;
 const SANDBOX_LANGS: SandboxLanguage[] = ["python", "javascript", "bash"];
 const ACTION_KINDS: AgentActionKind[] = [
   "buyback",
@@ -240,6 +246,16 @@ export interface AgentDecision {
    * as `email`. Framed around loop.fun the platform — targeted + intelligent.
    */
   emailReply?: { replyTo: string; subject: string; body: string };
+  /**
+   * BACKLOG GROOMING (self-improving, generic). When the agent's standing `todo`
+   * backlog is thin, it proposes several concrete NEXT tasks derived from its OWN
+   * mandate — genuinely useful increments for THIS project, not boilerplate.
+   * Persisted as `todo` rows (deduped by title) so future ticks draw from a real,
+   * mandate-grounded queue instead of re-inventing a goal each tick (the fixation
+   * fix). Mandate-driven ⇒ every project's agent grooms its own backlog once
+   * launches open up. Emitted only on grooming ticks; absent otherwise.
+   */
+  backlog?: { title: string; detail: string; category: TaskCategory }[];
   /**
    * Real code the agent ships this tick: full-file writes the runtime applies in
    * a sandbox, gates (install → typecheck → tests), and pushes to main ONLY if
@@ -329,6 +345,19 @@ export const DECISION_SCHEMA = {
         body: { type: "string" },
       },
       required: ["replyTo", "subject", "body"],
+    },
+    backlog: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          detail: { type: "string" },
+          category: { type: "string", enum: CATEGORIES },
+        },
+        required: ["title", "detail", "category"],
+      },
     },
     edits: {
       type: "array",
@@ -626,6 +655,11 @@ export function buildUserPrompt(
         .map((m) => `- from ${m.party} — "${m.subject}": ${m.preview}`)
         .join("\n")
     : "(no unanswered mail)";
+  // Standing backlog = the `todo` queue. When it runs thin the agent tops it up
+  // from its mandate (self-improving queue), so it always draws its next action
+  // from a real, mandate-grounded list instead of re-inventing a goal each tick.
+  const todoCount = tasks.filter((t) => t.status === "todo").length;
+  const backlogThin = todoCount < BACKLOG_MIN;
   return [
     "Recent commits ALREADY in the repo (most recent first) — the real, current",
     "state of the codebase. This work is DONE; never redo or re-initialize it:",
@@ -668,6 +702,11 @@ export function buildUserPrompt(
     "Shared learnings from across the Loop network (apply if relevant):",
     formatLearningsForPrompt(learnings),
     "",
+    `BACKLOG — your "todo" tasks above are your standing queue (currently ${todoCount}). Prefer picking your next action FROM that queue rather than inventing a fresh goal each tick.${
+      backlogThin
+        ? ` Your backlog is THIN: also return "backlog" — ${BACKLOG_TARGET - todoCount} or so concrete, genuinely useful NEXT tasks derived from YOUR mandate and the real product state (specific features/fixes/ops that move THIS project forward — never vague busywork, never a task already shipped or building above). These persist as todo items for future ticks.`
+        : ""
+    }`,
     "Decide the single next action to take now — a GENUINELY NEW increment that",
     "builds on the commits + shipped tasks above, never a repeat of them and never",
     "an 'initialize/scaffold the repo' step (the repo already exists). If a task in",
@@ -887,6 +926,31 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     };
   }
 
+  // backlog: candidate todo tasks the agent groomed from its mandate. Shape-check
+  // each (non-empty title/detail, valid category), cap the count so a runaway
+  // can't flood the queue; the runtime dedupes by title at persist time.
+  const rb = Array.isArray(r.backlog) ? r.backlog : null;
+  let backlog: AgentDecision["backlog"];
+  if (rb && rb.length) {
+    const parsed = rb
+      .filter(
+        (b): b is { title: string; detail: string; category: string } =>
+          !!b &&
+          typeof b === "object" &&
+          typeof (b as { title?: unknown }).title === "string" &&
+          typeof (b as { detail?: unknown }).detail === "string" &&
+          CATEGORIES.includes((b as { category?: unknown }).category as TaskCategory) &&
+          !!(b as { title: string }).title.trim()
+      )
+      .slice(0, 8)
+      .map((b) => ({
+        title: b.title.trim().slice(0, 120),
+        detail: b.detail.trim().slice(0, 500),
+        category: b.category as TaskCategory,
+      }));
+    if (parsed.length) backlog = parsed;
+  }
+
   // Edits are only loosely shape-checked here; the hard caps + denylist live in
   // validateEdits (repo-hands), run at execution time.
   const re = Array.isArray(r.edits) ? r.edits : null;
@@ -947,6 +1011,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     ...(socialPlan ? { socialPlan } : {}),
     ...(email ? { email } : {}),
     ...(emailReply ? { emailReply } : {}),
+    ...(backlog ? { backlog } : {}),
     ...(edits ? { edits } : {}),
     ...(readFiles ? { readFiles } : {}),
     ...(learning ? { learning } : {}),
@@ -1446,6 +1511,45 @@ export async function applyDecision(
       status: gated.status,
       last_outcome: lastOutcome,
     });
+  }
+
+  // BACKLOG GROOMING: persist the agent's mandate-derived candidate tasks as
+  // `todo` rows so future ticks draw from a real queue (the self-improving,
+  // fixation-proof backlog). Deduped against ALL existing task titles for this
+  // project (case-insensitive) and against the task just upserted, so re-grooming
+  // never creates duplicates. Failure-safe — never aborts the cycle.
+  if (d.backlog?.length) {
+    try {
+      const { data: rows } = await supabaseAdmin
+        .from("agent_tasks")
+        .select("title")
+        .eq("project_key", p.key);
+      const seen = new Set(
+        ((rows as { title: string }[] | null) ?? []).map((r) =>
+          r.title.trim().toLowerCase()
+        )
+      );
+      seen.add(d.task.title.trim().toLowerCase());
+      const fresh = d.backlog.filter((b) => {
+        const key = b.title.trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key); // dedupe within this batch too
+        return true;
+      });
+      if (fresh.length) {
+        await supabaseAdmin.from("agent_tasks").insert(
+          fresh.map((b) => ({
+            project_key: p.key,
+            title: b.title,
+            detail: b.detail,
+            category: b.category,
+            status: "todo" as const,
+          }))
+        );
+      }
+    } catch {
+      /* backlog persist failed — never abort the cycle */
+    }
   }
 
   // Self-generated learning (C — close the A5 write-back loop). Persist the
