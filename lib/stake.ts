@@ -15,6 +15,40 @@ import type { LaunchCluster } from "./launchpad";
 
 export const STAKE_REQUIRED_LOOP = 1000;
 
+// ── Boost tiers ──────────────────────────────────────────────────────────────
+// A wallet's $LOOP balance sets which model the agent uses on its behalf (and its
+// governance weight). Pure + client-safe (no env, no I/O), so the UI can render a
+// holder's tier from a balance it already read.
+export interface BoostTier {
+  /** Model unlocked at this threshold. */
+  name: string;
+  /** $LOOP required to reach this tier. */
+  min: number;
+}
+
+export const BOOST_TIERS: BoostTier[] = [
+  { name: "Haiku", min: 1_000 },
+  { name: "Sonnet", min: 5_000 },
+  { name: "Opus", min: 25_000 },
+];
+
+/**
+ * Resolve a $LOOP balance to its boost tier: the highest tier met (`current`,
+ * null below the first), the next tier up (`next`, null at the top), and how much
+ * more $LOOP to reach it (`toNext`, 0 at the top). Pure.
+ */
+export function boostTierFor(balance: number | null): {
+  current: BoostTier | null;
+  next: BoostTier | null;
+  toNext: number;
+} {
+  const bal = balance != null && Number.isFinite(balance) ? Math.max(0, balance) : 0;
+  let current: BoostTier | null = null;
+  for (const t of BOOST_TIERS) if (bal >= t.min) current = t;
+  const next = BOOST_TIERS.find((t) => bal < t.min) ?? null;
+  return { current, next, toNext: next ? Math.max(0, next.min - bal) : 0 };
+}
+
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** The configured LOOP mint, or null when stake gating is off (prototype). */

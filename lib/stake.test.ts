@@ -6,7 +6,37 @@ import {
   sumLoopBalance,
   hasRequiredStake,
   STAKE_REQUIRED_LOOP,
+  boostTierFor,
 } from "./stake";
+
+describe("boostTierFor", () => {
+  it("returns no tier below the first threshold", () => {
+    const t = boostTierFor(500);
+    expect(t.current).toBeNull();
+    expect(t.next?.name).toBe("Haiku");
+    expect(t.toNext).toBe(500);
+  });
+
+  it("picks the highest tier met and the next up", () => {
+    const t = boostTierFor(6_000);
+    expect(t.current?.name).toBe("Sonnet");
+    expect(t.next?.name).toBe("Opus");
+    expect(t.toNext).toBe(19_000);
+  });
+
+  it("caps at the top tier with no next", () => {
+    const t = boostTierFor(30_000);
+    expect(t.current?.name).toBe("Opus");
+    expect(t.next).toBeNull();
+    expect(t.toNext).toBe(0);
+  });
+
+  it("treats null/negative/NaN balance as zero", () => {
+    expect(boostTierFor(null).current).toBeNull();
+    expect(boostTierFor(-5).current).toBeNull();
+    expect(boostTierFor(Number.NaN).next?.name).toBe("Haiku");
+  });
+});
 
 const ORIG = { ...process.env };
 afterEach(() => {
