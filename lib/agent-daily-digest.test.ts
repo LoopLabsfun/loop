@@ -6,13 +6,14 @@ import {
   founderDigestEmail,
 } from "./agent-daily-digest";
 import type { DigestInput } from "./agent-daily-digest";
+import type { Project } from "./types";
 
 const project = {
   key: "loop",
   ticker: "$LOOP",
   treasurySol: 1.5,
   repo: "https://github.com/LoopLabsfun/loop",
-};
+} as Pick<Project, "key" | "ticker" | "treasurySol" | "repo">;
 
 // 2026-06-24T15:00:00Z
 const NOW = Date.parse("2026-06-24T15:00:00.000Z");
