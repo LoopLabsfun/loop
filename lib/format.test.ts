@@ -19,12 +19,21 @@ describe("usd", () => {
     expect(usd(2043.6)).toBe("2,043.60");
     expect(usd(0)).toBe("0.00");
   });
+  it("renders non-finite input as 0.00 (never NaN/∞)", () => {
+    expect(usd(NaN)).toBe("0.00");
+    expect(usd(Infinity)).toBe("0.00");
+    expect(usd(-Infinity)).toBe("0.00");
+  });
 });
 
 describe("sol", () => {
   it("fixes to 2 decimals by default", () => {
     expect(sol(12.4631)).toBe("12.46");
     expect(sol(1.2, 3)).toBe("1.200");
+  });
+  it("renders non-finite input as zero at the requested precision", () => {
+    expect(sol(NaN)).toBe("0.00");
+    expect(sol(Infinity, 3)).toBe("0.000");
   });
 });
 

@@ -1475,6 +1475,39 @@ export function summarizeTickOutcome(
     : "planned only — no verifying command/edits ran this tick";
 }
 
+/**
+ * Re-queue a task whose in-sandbox SDK session never got a fair attempt — it
+ * errored, timed out, or hit the Anthropic credit wall (parseHandsOutput's
+ * `sessionError`). Such a task was persisted as "building" at enqueue, but the
+ * work was NOT attempted-and-rejected (a red gate) nor deliberately skipped (a
+ * clean no-op): leaving it "building" would masquerade as in-progress forever
+ * (the landed-commit reconcile can't fix it — nothing landed). Set it back to
+ * "todo" so the next funded cycle picks it up again, recording the real reason
+ * so the feed and the next decision both see it. Failure-safe; bumps updated_at
+ * so the cooldown signal stays honest. No-op if no matching non-shipped row.
+ */
+export async function requeueTaskOnSessionError(
+  p: Project,
+  title: string,
+  reason: string
+): Promise<void> {
+  if (!supabaseAdmin) return;
+  try {
+    await supabaseAdmin
+      .from("agent_tasks")
+      .update({
+        status: "todo",
+        last_outcome: `re-queued: ${reason}`.slice(0, 400),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("project_key", p.key)
+      .eq("title", title.slice(0, 120))
+      .neq("status", "shipped");
+  } catch {
+    /* never block the finish callback on a re-queue write */
+  }
+}
+
 export async function applyDecision(
   p: Project,
   d: AgentDecision,
@@ -1507,12 +1540,23 @@ export async function applyDecision(
   // actually ran an objective check this cycle and it passed — otherwise it's
   // held at "building" (the Ralph Wiggum guardrail). The block reason is surfaced
   // in the public build update for transparency.
-  const gated = gateAgentShip({
-    status: d.task.status,
-    makerId: `agent:${p.key}`,
-    checkerId: verify?.checkerId ?? null,
-    checks: verify?.checks ?? [],
-  });
+  //
+  // CODE-only: this guardrail exists for code shipped to main (the E2B gate is the
+  // checker). Non-code tasks (outreach/ops) have no compilable artifact to verify
+  // independently — their "ship" IS the side-effect this very function performs and
+  // records (an email sent, a post published, an action routed). Subjecting them to
+  // the gate (which always sees zero code checks) pinned every outreach/ops task at
+  // "building" forever. So gate CODE tasks; let non-code tasks keep their declared
+  // status — the recorded side-effect is their evidence.
+  const isCodeTask = d.task.category === "feature" || d.task.category === "fix";
+  const gated = isCodeTask
+    ? gateAgentShip({
+        status: d.task.status,
+        makerId: `agent:${p.key}`,
+        checkerId: verify?.checkerId ?? null,
+        checks: verify?.checks ?? [],
+      })
+    : { status: d.task.status, note: null };
   const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
   // Episodic memory (B): record this tick's verifier outcome on the task so the
   // agent sees it next cycle and adapts instead of re-planning identically.
@@ -1542,6 +1586,11 @@ export async function applyDecision(
         category: d.task.category,
         status: gated.status,
         last_outcome: lastOutcome,
+        // Bump updated_at explicitly: the column only defaults on INSERT (no DB
+        // trigger), so without this an in-place task update never advances it —
+        // which silently staled the cooldown signal (isAgentActive orders by
+        // updated_at) and the feed's recency.
+        updated_at: new Date().toISOString(),
       })
       .eq("id", existing.id);
   } else {

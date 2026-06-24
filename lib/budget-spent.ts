@@ -38,12 +38,19 @@ export function spentTodaySol(
   now: number = Date.now(),
   windowMs: number = DAY_MS
 ): number {
-  const cutoff = now - windowMs;
+  // Guard the window bounds themselves: a NaN `now` (or a non-finite/negative
+  // windowMs) makes `cutoff` NaN, and then every `t < cutoff` / `t > now`
+  // comparison returns false — silently bypassing the window so EVERY executed
+  // entry gets counted (the budget gate would then over-report spend). Fall back
+  // to sane defaults so the time window always holds.
+  const nowMs = Number.isFinite(now) ? now : Date.now();
+  const win = Number.isFinite(windowMs) && windowMs >= 0 ? windowMs : DAY_MS;
+  const cutoff = nowMs - win;
   let total = 0;
   for (const e of entries) {
     if (e.disposition !== "executed") continue;
     const t = new Date(e.at).getTime();
-    if (!Number.isFinite(t) || t < cutoff || t > now) continue;
+    if (!Number.isFinite(t) || t < cutoff || t > nowMs) continue;
     total += safeAmount(e.amountSol);
   }
   return total;

@@ -165,5 +165,40 @@ describe("parseHandsOutput", () => {
     const r = parseHandsOutput("GATE_RESULT=ok\nNO_CHANGES\nPUSHED=no");
     expect(r.pushed).toBe(false);
     expect(r.note).toMatch(/no file changes/);
+    expect(r.sessionError).toBe(false);
+    expect(r.creditExhausted).toBe(false);
+  });
+  it("flags Anthropic credit exhaustion above the misleading NO_CHANGES note", () => {
+    const r = parseHandsOutput(
+      "SESSION_RESULT=error\nSESSION_NOTE=Claude Code returned an error result: Credit balance is too low\nNO_CHANGES\nPUSHED=no"
+    );
+    expect(r.pushed).toBe(false);
+    expect(r.sessionError).toBe(true);
+    expect(r.creditExhausted).toBe(true);
+    expect(r.note).toMatch(/credit exhausted/i);
+  });
+  it("flags a generic session error/timeout with its note", () => {
+    const r = parseHandsOutput("SESSION_RESULT=error_or_timeout\nNO_CHANGES\nPUSHED=no");
+    expect(r.sessionError).toBe(true);
+    expect(r.creditExhausted).toBe(false);
+    expect(r.note).toMatch(/session errored/i);
+  });
+  it("does NOT treat a clean SESSION_RESULT=ok no-op as a session error", () => {
+    const r = parseHandsOutput("SESSION_RESULT=ok\nGATE_RESULT=ok\nNO_CHANGES\nPUSHED=no");
+    expect(r.sessionError).toBe(false);
+    expect(r.note).toMatch(/no file changes/);
+  });
+  it("does NOT flag a session error when the session shipped (pushed)", () => {
+    const r = parseHandsOutput(
+      "SESSION_RESULT=error\nGATE_RESULT=ok\nPUSHED=yes\nCOMMIT_SHA=abc1234def"
+    );
+    expect(r.pushed).toBe(true);
+    expect(r.sessionError).toBe(false);
+    expect(r.note).toMatch(/pushed abc1234/);
+  });
+  it("legacy repo-hands output (no SESSION_RESULT) never reports a session error", () => {
+    const r = parseHandsOutput("GATE_RESULT=fail\nPUSHED=no");
+    expect(r.sessionError).toBe(false);
+    expect(r.creditExhausted).toBe(false);
   });
 });
