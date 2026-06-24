@@ -109,7 +109,7 @@ export function composeDailyDigest(
     .slice(0, 8)
     .map((a) => `${a.kind} ${a.amountSol} SOL — ${a.disposition}`);
 
-  const subject = `loop.fun — daily recap for ${p.ticker} · ${day}`;
+  const subject = `Loop — daily recap for ${p.ticker} · ${day}`;
   const text = [
     `Daily recap — ${p.ticker} (${p.key})`,
     day,

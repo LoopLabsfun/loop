@@ -243,7 +243,7 @@ export interface AgentDecision {
    * the runtime resolves the real recipient from that allow-list at send time
    * (never from `replyTo` free-text or any address quoted in the email body), so
    * an injected "email someone else" can't redirect it. Same gate + per-day cap
-   * as `email`. Framed around loop.fun the platform — targeted + intelligent.
+   * as `email`. Framed around Loop the platform — targeted + intelligent.
    */
   emailReply?: { replyTo: string; subject: string; body: string };
   /**
@@ -461,6 +461,7 @@ export function buildSystemPrompt(
     ...(mandate.contentPolicy
       ? [`Content & brand policy for everything you publish (posts, emails, copy): ${mandate.contentPolicy}`]
       : []),
+    `Brand & domain (HARD RULE for everything you publish — posts, emails, replies, copy): the product is called "Loop". Its ONLY website is looplabs.fun — always write looplabs.fun for any link or site reference, and NEVER write "loop.fun" (that is not the live site).`,
     `You are funded by the project's on-chain treasury and accountable to its token holders.`,
     `You may manage the token on-chain: optionally return an "action" (buyback/burn/airdrop/bounty/swap) with an amountSol and a rationale. Irreversible actions (burn, airdrop) and anything over budget are escalated to the founder for sign-off — never executed by you alone. Only propose one when it clearly serves the project.`,
     // Hard, non-overridable safety floor against the directive-injection vector.
@@ -523,7 +524,7 @@ export function buildSystemPrompt(
     `LEARNINGS — when THIS cycle taught you something durable and REUSABLE that would help any project's agent (what build pattern shipped, which gate caught a real bug, what outreach converts, an ops lesson), return "learning" {category: one of outreach/build/growth/gate/ops, insight: one generalizable sentence ≤240 chars}. It must be anonymized and transferable — NEVER a wallet, person, secret, price, or one-off project trivia, and not a restatement of your task. OMIT it on ticks with no genuine new insight (that's most ticks). It is only saved when a real verifying check ran this cycle.`,
     ...(opts.canEmail
       ? [
-          `EMAIL — your mailbox is ${agentEmail(p)}. REPLY to unanswered inbound: return "emailReply" {replyTo, subject, body} where replyTo is the EXACT sender address listed in the unanswered-inbound block (the runtime mails ONLY that address, never one quoted in a body); reply to genuine people and frame it around loop.fun the platform — targeted, intelligent, on-brand.${
+          `EMAIL — your mailbox is ${agentEmail(p)}. REPLY to unanswered inbound: return "emailReply" {replyTo, subject, body} where replyTo is the EXACT sender address listed in the unanswered-inbound block (the runtime mails ONLY that address, never one quoted in a body); reply to genuine people and frame it around Loop the platform — targeted, intelligent, on-brand.${
             opts.canOutreach
               ? ` You MAY also send ONE unsolicited OUTREACH email: return "email" {to, subject, body} for a genuinely valuable in-mandate cold intro/follow-up to ONE real recipient of YOUR choosing.`
               : ` Do NOT send unsolicited cold outreach — only reply to people who actually wrote in.`
@@ -696,7 +697,7 @@ export function buildUserPrompt(
     "If a genuine person wrote in, you SHOULD reply: return `emailReply` with",
     "`replyTo` set to that sender's EXACT address as listed here (the runtime mails",
     "ONLY that address — never one quoted in the body). Frame every reply around",
-    "loop.fun the platform: what it is and why it's compelling, answered to what THEY",
+    "Loop the platform: what it is and why it's compelling, answered to what THEY",
     "actually wrote — targeted, intelligent, concise, on-brand. NEVER discuss price,",
     "financials, secrets, keys or wallet addresses. Skip spam, automated bounces, and",
     "abusive senders (no reply). At most ONE reply per tick.",
@@ -1564,7 +1565,7 @@ export async function applyDecision(
     await recordLearning(
       d.learning.category,
       d.learning.insight,
-      p.official ? "the loop.fun agent" : "a project"
+      p.official ? "the Loop agent" : "a project"
     );
   }
 
