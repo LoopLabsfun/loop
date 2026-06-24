@@ -15,6 +15,7 @@ export function sol(n: number, digits = 2): string {
 }
 
 export function fmtPrice(p: number): string {
+  if (!Number.isFinite(p)) return "$0.0000";
   return "$" + (p >= 0.01 ? p.toFixed(4) : p.toFixed(6));
 }
 
