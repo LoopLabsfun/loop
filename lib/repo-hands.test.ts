@@ -201,4 +201,21 @@ describe("parseHandsOutput", () => {
     expect(r.sessionError).toBe(false);
     expect(r.creditExhausted).toBe(false);
   });
+  it("parses the session's billed cost from SESSION_COST_USD", () => {
+    const r = parseHandsOutput(
+      "SESSION_TURNS=7\nSESSION_RESULT=ok\nSESSION_COST_USD=0.184210\nGATE_RESULT=ok\nPUSHED=yes\nCOMMIT_SHA=abc1234def"
+    );
+    expect(r.costUsd).toBeCloseTo(0.18421, 5);
+  });
+  it("defaults costUsd to 0 when no cost marker is present (legacy / hard timeout)", () => {
+    expect(parseHandsOutput("GATE_RESULT=ok\nPUSHED=yes\nCOMMIT_SHA=abc1234def").costUsd).toBe(0);
+    expect(parseHandsOutput("SESSION_RESULT=error_or_timeout\nPUSHED=no").costUsd).toBe(0);
+  });
+  it("records cost even on a clean session error (billed before failing)", () => {
+    const r = parseHandsOutput(
+      "SESSION_RESULT=error\nSESSION_NOTE=some failure\nSESSION_COST_USD=0.05\nNO_CHANGES\nPUSHED=no"
+    );
+    expect(r.sessionError).toBe(true);
+    expect(r.costUsd).toBeCloseTo(0.05, 5);
+  });
 });

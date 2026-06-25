@@ -51,6 +51,24 @@ export async function POST(req: Request) {
 
   const hands = parseHandsOutput(stdout);
 
+  // Accrue the session's REAL billed Anthropic cost (SESSION_COST_USD ⇒
+  // hands.costUsd) into the compute ledger — this is THE place SDK-brain spend
+  // becomes visible (the durable Trigger.dev session bills in-sandbox; nothing
+  // else records it). Recorded before the branch so an errored-but-billed session
+  // still counts; failure-safe so a ledger write can never drop the persist. A
+  // hard timeout that kills node before the marker prints is an unavoidable
+  // under-count, not a correctness bug.
+  if (hands.costUsd > 0) {
+    try {
+      const { getComputeLedger, saveComputeLedger } = await import("@/lib/compute-ledger-store");
+      const { recordSpend } = await import("@/lib/compute-rail");
+      const ledger = await getComputeLedger(project.key);
+      await saveComputeLedger(project.key, recordSpend(ledger, hands.costUsd));
+    } catch {
+      /* ledger write failure must never block the persist */
+    }
+  }
+
   // Infra/brain failure (not a code outcome): the in-sandbox session errored,
   // timed out, or hit the Anthropic credit wall, so it never produced a usable
   // diff. Don't run the verifier gate (it would just re-hold a misleading

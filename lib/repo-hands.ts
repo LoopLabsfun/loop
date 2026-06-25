@@ -246,6 +246,13 @@ export interface HandsResult {
    * it in a misleading "no file changes" note.
    */
   creditExhausted: boolean;
+  /**
+   * The session's real billed Anthropic cost (SESSION_COST_USD, the SDK's
+   * cumulative total_cost_usd for the run). 0 when absent — the legacy repo-hands
+   * path emits no cost marker, and an infra failure before the result message
+   * leaves it unset. The finish route accrues this into the compute ledger.
+   */
+  costUsd: number;
 }
 
 /** Parse the sandbox stdout markers into a structured result. */
@@ -260,6 +267,9 @@ export function parseHandsOutput(stdout: string): HandsResult {
   // non-"ok" result with no push means the maker never produced a usable diff.
   const sessionResult = stdout.match(/SESSION_RESULT=(\S+)/)?.[1];
   const sessionNote = stdout.match(/SESSION_NOTE=(.+)/)?.[1]?.trim();
+  const costMatch = stdout.match(/SESSION_COST_USD=([0-9]*\.?[0-9]+)/);
+  const parsedCost = costMatch ? Number(costMatch[1]) : 0;
+  const costUsd = Number.isFinite(parsedCost) && parsedCost > 0 ? parsedCost : 0;
   const sessionError = !pushed && !!sessionResult && sessionResult !== "ok";
   const creditExhausted =
     sessionError && /credit balance is too low/i.test(sessionNote ?? "");
@@ -272,5 +282,5 @@ export function parseHandsOutput(stdout: string): HandsResult {
   else if (!gatePassed) note = "gate failed — not pushed (tree stays green)";
   else if (/PUSH_FAILED|REBASE_FAILED/.test(stdout)) note = "gate green but push failed (will retry next cycle)";
   else note = "no commit this cycle";
-  return { pushed, gatePassed, commitSha, note, sessionError, creditExhausted };
+  return { pushed, gatePassed, commitSha, note, sessionError, creditExhausted, costUsd };
 }
