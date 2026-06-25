@@ -49,15 +49,44 @@ export function AgentFace({
   useEffect(() => {
     if (f.asleep) return;
     let timer: ReturnType<typeof setTimeout>;
+    const blink = () => {
+      setBlinking(true);
+      setTimeout(() => setBlinking(false), 130);
+    };
     const schedule = () => {
       timer = setTimeout(() => {
-        setBlinking(true);
-        setTimeout(() => setBlinking(false), 130);
+        blink();
+        // ~30% of the time a quick second blink — natural, never metronomic.
+        if (Math.random() < 0.3) setTimeout(blink, 280);
         schedule();
-      }, 2400 + Math.random() * 2600);
+      }, 2400 + Math.random() * 2800);
     };
     schedule();
     return () => clearTimeout(timer);
+  }, [f.asleep]);
+
+  // Ambient life: every so often the mascot has a "thought" and shows a quip on
+  // its own — so it feels alive even when you're not poking it. Gentle cadence,
+  // skipped while asleep or while you're already hovering it.
+  const [spontaneous, setSpontaneous] = useState(false);
+  const [spontSeed, setSpontSeed] = useState(1);
+  useEffect(() => {
+    if (f.asleep) return;
+    let hide: ReturnType<typeof setTimeout>;
+    let next: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      next = setTimeout(() => {
+        setSpontSeed((n) => n + 1);
+        setSpontaneous(true);
+        hide = setTimeout(() => setSpontaneous(false), 2600);
+        tick();
+      }, 14000 + Math.random() * 12000);
+    };
+    tick();
+    return () => {
+      clearTimeout(next);
+      clearTimeout(hide);
+    };
   }, [f.asleep]);
 
   // Interactivity — the mascot TALKS. Hovering (or tapping) opens a speech bubble
@@ -89,8 +118,8 @@ export function AgentFace({
     bubbleTimer.current = setTimeout(() => setLingering(false), 2200);
   };
 
-  const bubbleOpen = hovered || lingering;
-  const line = speak(mood, { taskTitle: tasks[0]?.title, seed: poke });
+  const bubbleOpen = hovered || lingering || spontaneous;
+  const line = speak(mood, { taskTitle: tasks[0]?.title, seed: poke + spontSeed });
   // Curious wide eyes while hovered (unless mid-blink / asleep) — a small "noticed
   // you" tell that makes the interaction feel responsive.
   const eyes = blinking ? "—   —" : hovered && !f.asleep ? "◉   ◉" : f.eyes;
@@ -179,6 +208,9 @@ export function AgentFace({
         >
           <span className={`${TONE_TEXT[f.tone]} transition-all`}>{eyes}</span>
           <span className={`${TONE_TEXT[f.tone]} mt-[3px]`}>{f.mouth}</span>
+          {/* Body + arms — a posture per mood (arms up on a pump, slumped on a
+              dump, typing while building). Subtle so the eyes/mouth stay primary. */}
+          <span className={`${TONE_TEXT[f.tone]} mt-[3px] opacity-60`}>{f.arms}</span>
           {f.asleep && (
             <span className="absolute -top-[6px] -right-[3px] text-[10px] text-faint animate-pulseLoop">
               z

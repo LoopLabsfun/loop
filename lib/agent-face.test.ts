@@ -46,6 +46,7 @@ describe("faceFor", () => {
       expect(f.caption.length).toBeGreaterThan(0);
       expect(f.eyes.length).toBeGreaterThan(0);
       expect(f.mouth.length).toBeGreaterThan(0);
+      expect(f.arms.length).toBeGreaterThan(0);
       // never static — every mood carries an always-on motion
       expect(["breathe", "bob", "hop", "sink", "boing", "shiver"]).toContain(f.anim);
     }
@@ -103,8 +104,10 @@ describe("speak (mascot voice)", () => {
     const a = speak("online", { seed: 0 });
     const b = speak("online", { seed: 1 });
     expect(a).not.toBe(b);
-    // seed wraps and is stable
-    expect(speak("online", { seed: 3 })).toBe(speak("online", { seed: 0 }));
+    // seed wraps by the quip-array length and is stable (length-agnostic).
+    const n = MOOD_QUIPS.online.length;
+    expect(speak("online", { seed: n })).toBe(speak("online", { seed: 0 }));
+    expect(speak("online", { seed: n + 1 })).toBe(speak("online", { seed: 1 }));
   });
   it("ignores an empty task title", () => {
     expect(speak("building", { taskTitle: "   " })).toBe(MOOD_QUIPS.building[0]);

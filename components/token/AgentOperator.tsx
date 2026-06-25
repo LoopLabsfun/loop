@@ -76,6 +76,11 @@ export function AgentOperator({
   const stats = { email: agentEmail(p) };
   const sent = inbox.filter((m) => m.direction === "out").length;
   const received = inbox.length - sent;
+  // Real traction: how many DISTINCT things the agent has actually shipped
+  // (deduped by title, so a re-proposed same-title task never inflates the count).
+  const shipped = new Set(
+    tasks.filter((t) => t.status === "shipped").map((t) => t.title)
+  ).size;
   const visitors =
     metrics?.visitors != null
       ? new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
@@ -150,11 +155,16 @@ export function AgentOperator({
         </div>
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
             buyback/airdrop/bounty to holders), surfaced in Project Wallet. */}
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {/* Real metrics where we have a source, honest "—" otherwise.
-              Visitors = total Vercel Web Analytics visitors since launch; Holders
-              = live on-chain count of wallets holding the token; Email = real
-              sent/received from the agent's mailbox. */}
+              Shipped = distinct things the agent has built; Visitors = total Vercel
+              Web Analytics visitors since launch; Holders = live on-chain count of
+              wallets holding the token; Email = real sent/received from the mailbox. */}
+          <Stat
+            label="Shipped"
+            value={shipped ? String(shipped) : "—"}
+            title="Distinct features/fixes the agent has shipped (deduped by title)"
+          />
           <Stat
             label="Visitors"
             value={visitors}
