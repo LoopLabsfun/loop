@@ -2,6 +2,7 @@
 
 import { explorerUrl, explorerTx, shortAddr } from "@/lib/format";
 import { useInspector } from "@/lib/inspector";
+import { DEFAULT_POLICY } from "@/lib/agent-actions";
 import type { WalletAction } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 
@@ -50,15 +51,6 @@ export function ProjectWallet({
   // Net SOL deployed by executed actions (buyback in, others out).
   const deployed = actions
     .filter((a) => a.disposition === "executed")
-    .reduce((sum, a) => sum + a.amountSol, 0);
-  // Rolling 24 h deployed: executed actions whose relative-time label still
-  // falls inside the day tier ("now" / "Xm ago" / "Xh ago").
-  const deployed24h = actions
-    .filter(
-      (a) =>
-        a.disposition === "executed" &&
-        (a.at === "now" || a.at.endsWith("m ago") || a.at.endsWith("h ago"))
-    )
     .reduce((sum, a) => sum + a.amountSol, 0);
   // Irreversible actions (burn/airdrop) that are queued for founder sign-off.
   const escalated = actions.filter((a) => a.disposition === "escalated");
@@ -231,15 +223,23 @@ export function ProjectWallet({
             </span>
           )}
         </span>
-        <span className="font-mono text-ink flex items-center gap-2">
-          {deployed24h > 0 && (
-            <span className="text-faint" title="Deployed in the last 24 h">
-              {deployed24h.toFixed(2)} SOL 24h ·
-            </span>
-          )}
-          {deployed.toFixed(2)} SOL
-        </span>
+        <span className="font-mono text-ink">{deployed.toFixed(2)} SOL</span>
       </div>
+
+      {/* Guardrail caps — the on-chain spend limits the agent operates within.
+          Constant policy numbers, surfaced so holders can see exactly how much
+          the agent is allowed to deploy on-chain per action and per 24h. */}
+      {wallet && (
+        <div
+          className="px-5 py-[9px] border-t border-line-4 flex items-center justify-between text-[11px] text-faint"
+          title="On-chain spend guardrails the agent operates within. Anything over these caps — and every irreversible action — escalates to the founder before it can sign."
+        >
+          <span>On-chain guardrails</span>
+          <span className="font-mono text-muted">
+            ≤ {DEFAULT_POLICY.maxSolPerAction} SOL / action · ≤ {DEFAULT_POLICY.maxDailySol} SOL / 24h
+          </span>
+        </div>
+      )}
     </div>
   );
 }
