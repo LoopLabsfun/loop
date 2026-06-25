@@ -115,6 +115,16 @@ export async function GET(req: Request) {
       } catch (e) {
         console.error(`[agent-digest] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
       }
+      // Daily SOCIAL recap (once per UTC day, official + socially-ready only): an
+      // authored "what shipped today" summary to Telegram + Discord. Same self-
+      // guarding/idempotent posture as the founder digest; never affects the tick.
+      try {
+        const { sendDailyRecap } = await import("@/lib/agent-recap");
+        const rc = await sendDailyRecap(p, state);
+        if (rc.sent) console.log(`[agent-recap] ${JSON.stringify({ key: p.key, ...rc })}`);
+      } catch (e) {
+        console.error(`[agent-recap] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+      }
       // Listen to Discord: pull new #general/#ideas messages into memory BEFORE
       // the brain runs, so the decision (legacy) or the SDK brief sees the freshest
       // community chatter. Failure-safe + no-op when the bot isn't configured.

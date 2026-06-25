@@ -49,6 +49,11 @@ const LINK_DEFS = [
     label: "Telegram",
     href: "https://t.me/looplabs_fun",
   },
+  {
+    key: "discord",
+    label: "Discord",
+    href: "https://discord.gg/XZSr49zqd",
+  },
 ] as const satisfies readonly Omit<ExternalLink, "ariaLabel">[];
 
 /**
