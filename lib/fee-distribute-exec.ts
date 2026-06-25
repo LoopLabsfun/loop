@@ -1,0 +1,192 @@
+import "server-only";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEE DISTRIBUTION — EXECUTION (the autonomous, post-claim counterpart to the
+// founder-run scripts/distribute-fees.ts). After the cron sweeps creator fees
+// into the custodial creator==treasury wallet, this physically sends the AGENT
+// (65%) and PLATFORM (5%) shares to their own wallets, so the 30/65/5 split is
+// real money — closing the agent self-funding loop. The FOUNDER share stays in
+// the treasury (already where it belongs for LOOP).
+//
+// REAL SOL MOVES HERE, so it is hard-gated and bounded:
+//   • DISARMED unless FEE_DISTRIBUTE=1 (founder arms it explicitly).
+//   • amounts come ONLY from the ledger's claimable (earned − claimed), which
+//     itself only grows by amounts actually swept — so it can never send more
+//     than was genuinely earned, and a confirmed send is recorded as "claimed"
+//     before moving on (no double-send).
+//   • SAFETY BOLT: the signer (LAUNCH_SIGNER_SECRET) pubkey MUST equal the
+//     project's treasury/creator wallet — it never sends from any other wallet.
+//   • mainnet + Helius required; dust-floored; fully failure-safe (returns a
+//     note, never throws into the cron).
+// The planning math is the pure, unit-tested planFeeDistribution (lib/fee-distribute).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { supabaseAdmin } from "./supabase";
+import { planFeeDistribution, type FeeTransfer } from "./fee-distribute";
+import { parseSecretKeyJson } from "./vanity";
+
+export function feeDistributeArmed(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.FEE_DISTRIBUTE === "1";
+}
+
+export interface DistributeOutcome {
+  ok: boolean;
+  sent: { role: string; to: string; sol: number; sig: string }[];
+  skipped: string[];
+  note: string;
+}
+
+const num = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) ? v : 0;
+
+/**
+ * Distribute a project's accrued agent + platform fee shares on-chain. No-op
+ * (note explains why) when disarmed, unconfigured, or nothing is claimable.
+ * Never throws — the cron treats this as best-effort.
+ */
+export async function executeFeeDistribution(
+  projectKey = "loop"
+): Promise<DistributeOutcome> {
+  if (!feeDistributeArmed()) {
+    return { ok: false, sent: [], skipped: [], note: "disarmed (set FEE_DISTRIBUTE=1)" };
+  }
+  if (!supabaseAdmin) {
+    return { ok: false, sent: [], skipped: [], note: "no service-role client" };
+  }
+  const signerSecret = process.env.LAUNCH_SIGNER_SECRET;
+  const heliusKey = process.env.HELIUS_API_KEY;
+  if (!signerSecret || !heliusKey) {
+    return { ok: false, sent: [], skipped: [], note: "LAUNCH_SIGNER_SECRET / HELIUS_API_KEY missing" };
+  }
+
+  try {
+    const { data: proj } = await supabaseAdmin
+      .from("projects")
+      .select("treasury_wallet, creator_wallet, agent_wallet")
+      .eq("key", projectKey)
+      .maybeSingle();
+    if (!proj) return { ok: false, sent: [], skipped: [], note: `project ${projectKey} not found` };
+    const treasuryWallet =
+      (proj as { treasury_wallet?: string; creator_wallet?: string }).treasury_wallet ??
+      (proj as { creator_wallet?: string }).creator_wallet;
+    const agentWallet = (proj as { agent_wallet?: string }).agent_wallet;
+    const platformWallet = process.env.PLATFORM_WALLET;
+
+    const { data: ledger } = await supabaseAdmin
+      .from("fee_ledger")
+      .select("*")
+      .eq("project_key", projectKey)
+      .maybeSingle();
+    const lrow = ledger as Record<string, unknown> | null;
+    const claimableAgentSol = num(lrow?.earned_agent_sol) - num(lrow?.claimed_agent_sol);
+    const claimablePlatformSol = num(lrow?.earned_platform_sol) - num(lrow?.claimed_platform_sol);
+
+    const minTransferSol = (() => {
+      const n = Number(process.env.FEE_MIN_TRANSFER_SOL);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    })();
+    const plan = planFeeDistribution({
+      claimableAgentSol,
+      claimablePlatformSol,
+      agentWallet,
+      platformWallet,
+      minTransferSol,
+    });
+    if (!plan.transfers.length) {
+      return { ok: true, sent: [], skipped: plan.skipped, note: "nothing claimable to distribute" };
+    }
+
+    const secret = parseSecretKeyJson(signerSecret);
+    if (!secret) {
+      return { ok: false, sent: [], skipped: plan.skipped, note: "LAUNCH_SIGNER_SECRET must be a 64-byte JSON array" };
+    }
+    const { Keypair, Connection, SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } =
+      await import("@solana/web3.js");
+    const signer = Keypair.fromSecretKey(Uint8Array.from(secret));
+
+    // SAFETY BOLT: only ever send from the project's own treasury/creator wallet.
+    if (treasuryWallet && signer.publicKey.toBase58() !== treasuryWallet) {
+      return {
+        ok: false,
+        sent: [],
+        skipped: plan.skipped,
+        note: `signer ${signer.publicKey.toBase58()} != treasury ${treasuryWallet} — aborted`,
+      };
+    }
+
+    const conn = new Connection(`https://mainnet.helius-rpc.com/?api-key=${heliusKey}`, "confirmed");
+
+    // RESERVE GUARD: never distribute SOL the treasury can't spare. Only the
+    // balance ABOVE the reserve is distributable — so a payout can never overdraw
+    // the wallet, drop it below the agent's wake threshold, or starve tx fees.
+    // Reserve is configurable (FEE_DISTRIBUTE_RESERVE_SOL), default 0.05 SOL.
+    const reserveSol = (() => {
+      const n = Number(process.env.FEE_DISTRIBUTE_RESERVE_SOL);
+      return Number.isFinite(n) && n >= 0 ? n : 0.05;
+    })();
+    const balanceSol = (await conn.getBalance(signer.publicKey)) / LAMPORTS_PER_SOL;
+    let availableSol = Math.max(0, balanceSol - reserveSol);
+    if (availableSol <= 0) {
+      return {
+        ok: true,
+        sent: [],
+        skipped: [
+          ...plan.skipped,
+          `treasury ${balanceSol.toFixed(4)} SOL ≤ reserve ${reserveSol} — nothing distributable yet`,
+        ],
+        note: "below reserve — held until the treasury can spare it",
+      };
+    }
+
+    const sent: DistributeOutcome["sent"] = [];
+
+    for (const t of plan.transfers as FeeTransfer[]) {
+      // Only send a full share if it fits under the spendable headroom; else hold
+      // it (recorded as skipped) for a future cycle — never partial-send.
+      if (t.sol > availableSol) {
+        plan.skipped.push(`${t.role}: ${t.sol} SOL exceeds spendable headroom (${availableSol.toFixed(4)} SOL) — held`);
+        continue;
+      }
+      try {
+        const lamports = Math.round(t.sol * LAMPORTS_PER_SOL);
+        const tx = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: signer.publicKey,
+            toPubkey: new PublicKey(t.to),
+            lamports,
+          })
+        );
+        const sig = await conn.sendTransaction(tx, [signer]);
+        const latest = await conn.getLatestBlockhash();
+        await conn.confirmTransaction(
+          { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+          "confirmed"
+        );
+        // Record as "claimed" so it's never sent twice, even if a later transfer
+        // in this loop fails or the cron is interrupted.
+        const col = t.role === "agent" ? "claimed_agent_sol" : "claimed_platform_sol";
+        const prev = num(lrow?.[col]);
+        await supabaseAdmin
+          .from("fee_ledger")
+          .update({ [col]: prev + t.sol, updated_at: new Date().toISOString() })
+          .eq("project_key", projectKey);
+        if (lrow) lrow[col] = prev + t.sol;
+        availableSol = Math.max(0, availableSol - t.sol);
+        sent.push({ role: t.role, to: t.to, sol: t.sol, sig });
+      } catch (e) {
+        plan.skipped.push(`${t.role}: send failed — ${e instanceof Error ? e.message : "error"}`);
+      }
+    }
+
+    return {
+      ok: true,
+      sent,
+      skipped: plan.skipped,
+      note: `distributed ${sent.reduce((s, x) => s + x.sol, 0)} SOL across ${sent.length} transfer(s)`,
+    };
+  } catch (e) {
+    return { ok: false, sent: [], skipped: [], note: e instanceof Error ? e.message : "error" };
+  }
+}
