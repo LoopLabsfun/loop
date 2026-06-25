@@ -57,6 +57,10 @@ export function Hero({
             inbox. Trading fills the treasury; the agent works while it&apos;s
             funded.
           </p>
+          <p className="font-mono text-[13px] text-faint m-0 mb-5 max-w-[470px] [text-wrap:pretty]">
+            Loop is project&nbsp;#0 — funded by its own token, built by its own
+            agent, shipping in public.
+          </p>
           <p className="font-display font-semibold text-[17px] m-0 mb-8">
             Launch a <span className="text-accent">token</span>. Fund an{" "}
             <span className="text-accent">AI</span>. It runs the rest.
