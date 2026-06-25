@@ -181,6 +181,24 @@ create table if not exists public.x_mentions (
 comment on table public.x_mentions is 'X (Twitter) replies/mentions the agent ingests for memory + analysis. Written + read by the runtime (service_role) only; not publicly readable.';
 alter table public.x_mentions enable row level security;
 
+-- Discord ingest tracks whether the agent has already replied to a message.
+alter table public.discord_messages add column if not exists answered boolean not null default false;
+
+create table if not exists public.telegram_messages (
+  id bigint generated always as identity primary key,
+  project_key text not null references public.projects(key) on delete cascade,
+  update_id bigint not null,
+  chat_id text not null,
+  message_id text,
+  author_name text,
+  content text not null,
+  answered boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (project_key, update_id)
+);
+comment on table public.telegram_messages is 'Telegram messages addressed to the agent (questions) the bot ingests to answer. Written + read by the runtime (service_role) only; not publicly readable.';
+alter table public.telegram_messages enable row level security;
+
 create table if not exists public.agent_escalations (
   id bigint generated always as identity primary key,
   project_key text not null references public.projects(key) on delete cascade,

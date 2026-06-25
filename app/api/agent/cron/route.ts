@@ -194,6 +194,26 @@ export async function GET(req: Request) {
     chatsAnswered += await answerOpenChats(p);
   }
 
+  // Community Q&A: answer questions asked in Telegram + Discord, grounded in the
+  // agent's real knowledge (memory) and hard-railed against hallucination
+  // (lib/agent-answer). Gated by AGENT_COMMUNITY_ANSWER; per-channel failure-safe.
+  let communityAnswered = 0;
+  for (const p of projects) {
+    try {
+      const { answerDiscordQuestions } = await import("@/lib/discord-read");
+      communityAnswered += await answerDiscordQuestions(p);
+    } catch (e) {
+      console.error(`[agent-discord-answer] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+    }
+    try {
+      const { pollAndAnswerTelegram } = await import("@/lib/telegram-read");
+      communityAnswered += await pollAndAnswerTelegram(p);
+    } catch (e) {
+      console.error(`[agent-telegram-answer] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+    }
+  }
+  if (communityAnswered) console.log(`[agent-community-answer] ${JSON.stringify({ answered: communityAnswered })}`);
+
   // Economic loop: sweep accrued pump.fun creator fees into the treasury so the
   // agent keeps funding itself ("buyers refill it ⇒ it wakes"). ONE claim sweeps
   // all of the creator's tokens, so it runs once per cron, not per project. For
@@ -278,6 +298,7 @@ export async function GET(req: Request) {
       asleep,
       resolvedProposals,
       chatsAnswered,
+      communityAnswered,
       results,
       ...(feeClaim ? { feeClaim } : {}),
       ...(feeDistribution ? { feeDistribution } : {}),
