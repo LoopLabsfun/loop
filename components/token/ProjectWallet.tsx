@@ -51,6 +51,10 @@ export function ProjectWallet({
   const deployed = actions
     .filter((a) => a.disposition === "executed")
     .reduce((sum, a) => sum + a.amountSol, 0);
+  // Irreversible actions (burn/airdrop) that are queued for founder sign-off.
+  const pendingSignOff = actions.filter(
+    (a) => a.disposition === "escalated",
+  ).length;
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -165,9 +169,16 @@ export function ProjectWallet({
         )}
       </div>
 
-      {/* Footer — net deployed */}
+      {/* Footer — net deployed + pending sign-offs */}
       <div className="px-5 py-[11px] border-t border-line-4 flex items-center justify-between text-[12px]">
-        <span className="text-faint">Net deployed (executed)</span>
+        <span className="text-faint">
+          Net deployed (executed)
+          {pendingSignOff > 0 && (
+            <span className="text-warn ml-1">
+              · {pendingSignOff} awaiting sign-off
+            </span>
+          )}
+        </span>
         <span className="font-mono text-ink">{deployed.toFixed(2)} SOL</span>
       </div>
     </div>
