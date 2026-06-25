@@ -23,6 +23,14 @@ function fromBase64(b64: string): Uint8Array {
 
 /** Build a pump.fun swap tx; returns the serialized (unsigned) tx bytes. */
 export async function buildSwapTx(args: BuildSwapArgs): Promise<Uint8Array> {
+  if (!args.publicKey) throw new Error("Connect your wallet to swap");
+  if (!args.mint) throw new Error("Invalid token address");
+  if (!Number.isFinite(args.amount) || args.amount <= 0)
+    throw new Error("Enter an amount greater than zero");
+  const slippage = args.slippage ?? 10;
+  if (!Number.isFinite(slippage) || slippage < 0 || slippage > 100)
+    throw new Error("Slippage must be between 0 and 100");
+
   const res = await fetch("/api/swap", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -32,7 +40,7 @@ export async function buildSwapTx(args: BuildSwapArgs): Promise<Uint8Array> {
       mint: args.mint,
       amount: args.amount,
       denominatedInSol: args.action === "buy",
-      slippage: args.slippage ?? 10,
+      slippage,
     }),
   });
   const data = (await res.json().catch(() => ({}))) as { tx?: string; error?: string };
