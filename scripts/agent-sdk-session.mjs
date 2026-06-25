@@ -46,6 +46,14 @@ const model = process.env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-4-6";
 const maxTurns = Math.max(1, Math.min(Number(process.env.AGENT_SDK_MAX_TURNS) || 24, 60));
 const wallMs = Math.max(20_000, Number(process.env.AGENT_SDK_WALL_MS) || 150_000);
 
+// Reasoning effort (token economy): chosen per-task by lib/agent-effort and
+// passed in as AGENT_SDK_EFFORT. Lower effort ⇒ fewer/consolidated tool-calls and
+// less thinking — right for small polish, which is most of the backlog. Unset or
+// invalid ⇒ omit the option entirely so the SDK keeps its own default.
+const VALID_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const effortRaw = process.env.AGENT_SDK_EFFORT?.trim().toLowerCase();
+const effort = effortRaw && VALID_EFFORTS.has(effortRaw) ? effortRaw : undefined;
+
 // Hard wall-clock kill: abort the session so the wrapper still gets to gate
 // whatever was written (an incomplete edit just fails the gate → no push).
 const abort = new AbortController();
@@ -77,6 +85,7 @@ try {
       cwd: process.cwd(),
       model,
       maxTurns,
+      ...(effort ? { effort } : {}),
       // Fully headless: no human to approve tool use. We constrain the blast
       // radius with allowedTools + the post-session denylist + the green gate.
       permissionMode: "bypassPermissions",
@@ -108,5 +117,6 @@ try {
 
 console.log(`SESSION_TURNS=${turns}`);
 console.log(`SESSION_RESULT=${result}`);
+console.log(`SESSION_EFFORT=${effort ?? "default"}/${maxTurns}t`);
 if (note) console.log(`SESSION_NOTE=${note}`);
 if (costUsd > 0) console.log(`SESSION_COST_USD=${costUsd.toFixed(6)}`);
