@@ -53,10 +53,21 @@ describe("EXTERNAL_LINKS", () => {
     }
   });
 
-  it("includes the GitHub repo link", () => {
+  it("pins the GitHub entry to the canonical repo path", () => {
     const gh = EXTERNAL_LINKS.find((l) => l.key === "github");
     expect(gh).toBeDefined();
-    expect(gh!.href).toContain("github.com");
+    // Exact match so a typo or org rename can't silently drift.
+    expect(gh!.href).toBe("https://github.com/LoopLabsfun/loop");
+  });
+
+  it("no external link references a wrong brand domain", () => {
+    // Only these platform hosts are valid destinations for our social links.
+    // Any drift to an unknown domain — squatted, mistyped, stale org — fails here.
+    const ALLOWED_HOSTS = new Set(["github.com", "x.com", "t.me"]);
+    for (const link of EXTERNAL_LINKS) {
+      const { hostname } = new URL(link.href);
+      expect(ALLOWED_HOSTS.has(hostname)).toBe(true);
+    }
   });
 });
 
