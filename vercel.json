@@ -1,4 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git log -1 --pretty=%B | grep -qx '\\[no-deploy\\]' && exit 0 || exit 1"
+  "ignoreCommand": "git log -1 --pretty=%B | grep -qx '\\[no-deploy\\]' && exit 0 || exit 1",
+  "crons": [
+    { "path": "/api/agent/cron", "schedule": "*/30 * * * *" }
+  ]
 }
