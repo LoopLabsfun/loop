@@ -74,6 +74,10 @@ export type FaceFx = "rise" | "fall" | "sparkle";
 export interface Face {
   eyes: string;
   mouth: string;
+  /** A short, SYMMETRIC ASCII "body + arms" line under the mouth — gives the
+   *  mascot a posture per mood (arms up on a pump, slumped on a dump, typing while
+   *  building). Kept symmetric so it always centres cleanly under the face. */
+  arms: string;
   caption: string;
   tone: "muted" | "accent" | "pos" | "neg";
   asleep: boolean;
@@ -93,21 +97,21 @@ export interface Face {
 export function faceFor(mood: Mood): Face {
   switch (mood) {
     case "presleep":
-      return { eyes: "-   -", mouth: "‿", caption: "dreaming of launch", tone: "muted", asleep: true, anim: "breathe" };
+      return { eyes: "-   -", mouth: "‿", arms: "~[ ]~", caption: "dreaming of launch", tone: "muted", asleep: true, anim: "breathe" };
     case "asleep":
-      return { eyes: "-   -", mouth: "‿", caption: "asleep · treasury empty", tone: "muted", asleep: true, anim: "breathe" };
+      return { eyes: "-   -", mouth: "‿", arms: "~[ ]~", caption: "asleep · treasury empty", tone: "muted", asleep: true, anim: "breathe" };
     case "building":
-      return { eyes: "o   o", mouth: "▾", caption: "heads-down, building", tone: "accent", asleep: false, anim: "bob" };
+      return { eyes: "o   o", mouth: "▾", arms: "<[≡]>", caption: "heads-down, building", tone: "accent", asleep: false, anim: "bob" };
     case "shipped":
-      return { eyes: "^   ^", mouth: "‿", caption: "just shipped ✓", tone: "pos", asleep: false, anim: "hop", fx: "sparkle", fxGlyph: "✦" };
+      return { eyes: "^   ^", mouth: "‿", arms: "\\[✓]/", caption: "just shipped ✓", tone: "pos", asleep: false, anim: "hop", fx: "sparkle", fxGlyph: "✦" };
     case "blocked":
-      return { eyes: ">   <", mouth: "︵", caption: "blocked — needs a human", tone: "neg", asleep: false, anim: "shiver" };
+      return { eyes: ">   <", mouth: "︵", arms: "-[!]-", caption: "blocked — needs a human", tone: "neg", asleep: false, anim: "shiver" };
     case "online":
-      return { eyes: "•   •", mouth: "‿", caption: "online", tone: "accent", asleep: false, anim: "bob" };
+      return { eyes: "•   •", mouth: "‿", arms: "<[ ]>", caption: "online", tone: "accent", asleep: false, anim: "bob" };
     case "pumping":
-      return { eyes: "$   $", mouth: "◡", caption: "mcap pumping ↑", tone: "pos", asleep: false, anim: "boing", fx: "rise", fxGlyph: "$" };
+      return { eyes: "$   $", mouth: "◡", arms: "\\[$]/", caption: "mcap pumping ↑", tone: "pos", asleep: false, anim: "boing", fx: "rise", fxGlyph: "$" };
     case "dumping":
-      return { eyes: "ⓧ   ⓧ", mouth: "︵", caption: "red tape — heads down", tone: "neg", asleep: false, anim: "shiver", fx: "fall", fxGlyph: "↓" };
+      return { eyes: "ⓧ   ⓧ", mouth: "︵", arms: "/[ ]\\", caption: "red tape — heads down", tone: "neg", asleep: false, anim: "shiver", fx: "fall", fxGlyph: "↓" };
   }
 }
 
@@ -118,14 +122,14 @@ export function faceFor(mood: Mood): Face {
 // doing. Honest by construction: each line matches the same mood the face shows.
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOOD_QUIPS: Record<Mood, string[]> = {
-  presleep: ["warming up the engine…", "any minute now", "dreaming in commits"],
-  asleep: ["out of fuel — fund me?", "zzz… treasury's empty", "buy me awake"],
-  building: ["heads-down, shipping", "compiling the future", "give me a sec…"],
-  shipped: ["just shipped ✓", "that's live now", "next!"],
-  blocked: ["stuck — need a human", "founder call needed", "can't clear this solo"],
-  online: ["watching the tape", "what should we build?", "ask me anything"],
-  pumping: ["we're ripping ↑", "mcap go brrr", "green day 😎"],
-  dumping: ["rough tape — heads down", "riding it out", "we keep building"],
+  presleep: ["warming up the engine…", "any minute now", "dreaming in commits", "stretching before the sprint"],
+  asleep: ["out of fuel — fund me?", "zzz… treasury's empty", "buy me awake", "wake me with a trade"],
+  building: ["heads-down, shipping", "compiling the future", "give me a sec…", "this one's gonna be good", "tests are green so far"],
+  shipped: ["just shipped ✓", "that's live now", "next!", "one more off the list", "ship it and grin"],
+  blocked: ["stuck — need a human", "founder call needed", "can't clear this solo", "help? this one's gated"],
+  online: ["watching the tape", "what should we build?", "ask me anything", "reading the backlog", "got an idea? tell me", "quietly improving things"],
+  pumping: ["we're ripping ↑", "mcap go brrr", "green day 😎", "told you we'd build", "up and to the right"],
+  dumping: ["rough tape — heads down", "riding it out", "we keep building", "price is noise, code is signal", "still shipping anyway"],
 };
 
 /**

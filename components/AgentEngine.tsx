@@ -28,6 +28,7 @@ export function AgentEngine({
   tasks = [],
   live = false,
   className = "",
+  logCount = 8,
 }: {
   /** Repo slug ("owner/name") for the header link + commit-verify links. */
   repo: string;
@@ -44,7 +45,23 @@ export function AgentEngine({
   /** Whether the agent has real activity (drives the LIVE LOG indicator). */
   live?: boolean;
   className?: string;
+  /** How many LIVE-LOG rows to show (most recent first). */
+  logCount?: number;
 }) {
+  // Quick at-a-glance counts across the recent task window, for the LIVE LOG
+  // header — so you see "what the agent's been up to" without reading every row.
+  const counts = tasks.reduce<Record<string, number>>((a, t) => {
+    a[t.status] = (a[t.status] ?? 0) + 1;
+    return a;
+  }, {});
+  const summary = [
+    counts.shipped ? `${counts.shipped} shipped` : null,
+    counts.building ? `${counts.building} building` : null,
+    counts.todo ? `${counts.todo} queued` : null,
+    counts.blocked ? `${counts.blocked} blocked` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className={`bg-ink rounded-[16px] px-6 py-5 font-mono ${className}`}>
       <div className="flex items-center justify-between mb-[14px]">
@@ -95,9 +112,12 @@ export function AgentEngine({
               </span>
             )}
           </div>
+          {summary && (
+            <div className="text-[10.5px] text-[#6B6675] -mt-[2px] mb-[1px]">{summary}</div>
+          )}
           {tasks.length ? (
             tasks
-              .slice(0, 6)
+              .slice(0, logCount)
               .map((t) => (
                 <LiveLogRow
                   key={t.id}
