@@ -55,6 +55,25 @@ export function ProjectWallet({
   const pendingSignOff = actions.filter(
     (a) => a.disposition === "escalated",
   ).length;
+  // Per-kind breakdown of executed actions for the at-a-glance summary row.
+  const KIND_ORDER: WalletAction["kind"][] = [
+    "buyback",
+    "burn",
+    "airdrop",
+    "bounty",
+    "swap",
+  ];
+  const kindTotals = new Map<
+    WalletAction["kind"],
+    { count: number; sol: number }
+  >();
+  for (const a of actions.filter((a) => a.disposition === "executed")) {
+    const prev = kindTotals.get(a.kind) ?? { count: 0, sol: 0 };
+    kindTotals.set(a.kind, {
+      count: prev.count + 1,
+      sol: prev.sol + a.amountSol,
+    });
+  }
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -168,6 +187,30 @@ export function ProjectWallet({
           })
         )}
       </div>
+
+      {/* Per-kind executed summary — compact at-a-glance breakdown by action type */}
+      {kindTotals.size > 0 && (
+        <div className="px-5 py-[10px] border-t border-line-4 flex flex-wrap gap-x-4 gap-y-[6px]">
+          {KIND_ORDER.filter((k) => kindTotals.has(k)).map((k) => {
+            const m = KIND_META[k];
+            const t = kindTotals.get(k)!;
+            return (
+              <span key={k} className="text-[11.5px] text-muted">
+                <span className="font-mono mr-[3px]">{m.glyph}</span>
+                {m.label}
+                <span className="font-mono text-faint ml-[4px]">
+                  ×{t.count}
+                </span>
+                {t.sol > 0 && (
+                  <span className="font-mono text-ink ml-[4px]">
+                    {t.sol.toFixed(2)} SOL
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Footer — net deployed + pending sign-offs */}
       <div className="px-5 py-[11px] border-t border-line-4 flex items-center justify-between text-[12px]">
