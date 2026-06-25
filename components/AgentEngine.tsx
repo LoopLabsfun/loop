@@ -54,8 +54,18 @@ export function AgentEngine({
     a[t.status] = (a[t.status] ?? 0) + 1;
     return a;
   }, {});
+  // How many shipped tasks have a real matching commit — the trust signal.
+  const mc = matchCommits ?? commits;
+  const verifiedCount = tasks.filter(
+    (t) => t.status === "shipped" && commitHashForTitle(t.title, mc) !== null
+  ).length;
+  const shippedLabel = counts.shipped
+    ? verifiedCount > 0
+      ? `${counts.shipped} shipped (${verifiedCount} verified ↗)`
+      : `${counts.shipped} shipped`
+    : null;
   const summary = [
-    counts.shipped ? `${counts.shipped} shipped` : null,
+    shippedLabel,
     counts.building ? `${counts.building} building` : null,
     counts.todo ? `${counts.todo} queued` : null,
     counts.blocked ? `${counts.blocked} blocked` : null,
