@@ -200,7 +200,17 @@ export async function GET(req: Request) {
   let communityAnswered = 0;
   for (const p of projects) {
     try {
-      const { answerDiscordQuestions } = await import("@/lib/discord-read");
+      // Ingest Discord HERE too (not only in the cooldown-gated brain loop above):
+      // this loop runs every cron fire, so a tighter cron => fresh Discord questions
+      // get answered within the cron cadence instead of waiting for the next brain
+      // tick (~cooldown). Idempotent (cursor-based) — a redundant call on a non-
+      // cooldown fire just finds nothing new. Mirrors Telegram's poll-then-answer.
+      const { pollDiscordCommunity, answerDiscordQuestions } = await import("@/lib/discord-read");
+      try {
+        await pollDiscordCommunity(p.key);
+      } catch (e) {
+        console.error(`[agent-discord-read] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+      }
       communityAnswered += await answerDiscordQuestions(p);
     } catch (e) {
       console.error(`[agent-discord-answer] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
