@@ -23,6 +23,8 @@ import {
   MIN_BUILDING_GAP_MS,
   DECISION_SCHEMA,
   agentRuntimeConfigured,
+  xMinGapMs,
+  X_MIN_GAP_MS,
 } from "./agent-runtime";
 import type { Project } from "./types";
 import type { AgentTask, InboxMessage } from "./agent";
@@ -80,17 +82,17 @@ describe("buildSystemPrompt", () => {
     const s = buildSystemPrompt(project);
     expect(s).toContain("posts.x");
     expect(s).toContain("posts.telegram");
-    // X must be framed as optional/rare, not a per-tick filler.
+    // X must be framed as high-signal (a few a day), not a per-tick filler.
     expect(s).toContain("SELECTIVE");
-    expect(s).toMatch(/OPTIONAL and RARE/);
+    expect(s).toMatch(/ACTIVE and varied/);
   });
 
   it("in warm-up: demands a content plan first and forbids posting this tick", () => {
     const s = buildSystemPrompt(project, undefined, { warmup: true });
     expect(s).toContain("SOCIAL WARM-UP");
     expect(s).toMatch(/return "socialPlan"/);
-    // Warm-up REPLACES the normal posting voice — no "rare X" filler instruction.
-    expect(s).not.toMatch(/OPTIONAL and RARE/);
+    // Warm-up REPLACES the normal posting voice — no normal-cadence instruction.
+    expect(s).not.toMatch(/ACTIVE and varied/);
   });
 
   it("quiet mode takes precedence over warm-up", () => {
@@ -107,7 +109,7 @@ describe("buildSystemPrompt", () => {
     expect(s).toContain("STANDING CONTENT PLAN");
     expect(s).toContain("an autonomous factory");
     // A plan does not put it back in warm-up — normal selective posting resumes.
-    expect(s).toMatch(/OPTIONAL and RARE/);
+    expect(s).toMatch(/ACTIVE and varied/);
   });
 });
 
@@ -845,5 +847,11 @@ describe("schema + config", () => {
   });
   it("agentRuntimeConfigured reflects the env", () => {
     expect(typeof agentRuntimeConfigured()).toBe("boolean");
+  });
+  it("xMinGapMs reads AGENT_X_MIN_GAP_MIN; '0' disables the floor, else 3h default", () => {
+    expect(xMinGapMs({})).toBe(X_MIN_GAP_MS);
+    expect(xMinGapMs({ AGENT_X_MIN_GAP_MIN: "360" })).toBe(360 * 60_000);
+    expect(xMinGapMs({ AGENT_X_MIN_GAP_MIN: "0" })).toBe(0); // explicit opt-out
+    expect(xMinGapMs({ AGENT_X_MIN_GAP_MIN: "junk" })).toBe(X_MIN_GAP_MS);
   });
 });

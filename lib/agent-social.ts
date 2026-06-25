@@ -233,16 +233,18 @@ export async function authorSocial(
   }
 }
 
-/** Schema for the daily-recap call — a single short recap body. */
+/** Schema for the daily-recap call — a long body (TG/Discord) + a short X line. */
 const RECAP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  properties: { recap: { type: "string" } },
+  properties: { recap: { type: "string" }, x: { type: "string" } },
 } as const;
 
 export interface RecapResult {
-  /** The authored recap body, or null to stay silent. */
+  /** The authored recap body (TG/Discord), or null to stay silent. */
   text: string | null;
+  /** A short (≤X) punchy recap line for the timeline, or null. */
+  xText: string | null;
   costUsd: number;
 }
 
@@ -257,8 +259,8 @@ export async function authorRecap(
   shippedTitles: string[],
   opts: { plan?: string | null; recent?: string[] } = {}
 ): Promise<RecapResult> {
-  if (socialSilent() || !agentRuntimeConfigured()) return { text: null, costUsd: 0 };
-  if (!shippedTitles.length) return { text: null, costUsd: 0 };
+  if (socialSilent() || !agentRuntimeConfigured()) return { text: null, xText: null, costUsd: 0 };
+  if (!shippedTitles.length) return { text: null, xText: null, costUsd: 0 };
   try {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic();
@@ -269,11 +271,13 @@ export async function authorRecap(
     const system = [
       ...buildSocialSystemPrompt(p, { warmup: false, plan: opts.plan, mission }).split("\n"),
       ``,
-      `TASK — write ONE daily RECAP post (≤ ${MAX_TG} chars) that ties together what`,
-      `actually shipped today into a single coherent note a holder would care about —`,
-      `the through-line / momentum, not a flat changelog. Lead with what it MEANS, keep`,
-      `it concrete and a little witty, same hard rails. Return {"recap": "..."}. If the`,
-      `day's work is trivial or not worth a public summary, return {"recap": ""}.`,
+      `TASK — write a daily RECAP that ties together what actually shipped today into`,
+      `a single coherent note a holder would care about — the through-line / momentum,`,
+      `not a flat changelog. Lead with what it MEANS, concrete + a little witty, same`,
+      `hard rails. Return BOTH: "recap" — the Telegram/Discord version (≤ ${MAX_TG} chars,`,
+      `a short paragraph) — and "x" — a punchy timeline version (≤ ${MAX_X} chars, one or`,
+      `two lines, no link/cashtag). If the day's work is trivial or not worth a public`,
+      `summary, return {"recap": "", "x": ""}.`,
     ].join("\n");
     const recentBlock = (opts.recent ?? []).length
       ? `\n\nYOUR RECENT POSTS — do NOT repeat their angle/wording:\n${(opts.recent ?? [])
@@ -303,16 +307,20 @@ export async function authorRecap(
       .map((b) => b.text ?? "")
       .join("");
     let text: string | null = null;
+    let xText: string | null = null;
     try {
-      const obj = JSON.parse(raw) as { recap?: unknown };
+      const obj = JSON.parse(raw) as { recap?: unknown; x?: unknown };
       if (typeof obj.recap === "string" && obj.recap.trim()) {
         text = obj.recap.trim().slice(0, MAX_TG);
+      }
+      if (typeof obj.x === "string" && obj.x.trim()) {
+        xText = obj.x.trim().slice(0, MAX_X);
       }
     } catch {
       /* unparseable — stay silent */
     }
-    return { text, costUsd: tokensToUsd(res.usage, model) };
+    return { text, xText, costUsd: tokensToUsd(res.usage, model) };
   } catch {
-    return { text: null, costUsd: 0 };
+    return { text: null, xText: null, costUsd: 0 };
   }
 }

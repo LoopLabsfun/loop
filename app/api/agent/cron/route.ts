@@ -135,6 +135,16 @@ export async function GET(req: Request) {
       } catch (e) {
         console.error(`[agent-discord-read] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
       }
+      // Listen to X: pull new replies/mentions of @looplabsfun into memory before
+      // the brain runs, so the decision can ANALYZE audience responses. Failure-safe
+      // + no-op when X isn't configured.
+      try {
+        const { pollXMentions } = await import("@/lib/x-read");
+        const n = await pollXMentions(p.key);
+        if (n) console.log(`[agent-x-read] ${JSON.stringify({ key: p.key, newMentions: n })}`);
+      } catch (e) {
+        console.error(`[agent-x-read] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`);
+      }
       if (mode === "sdk") {
         // Durable path: decide + enqueue; the session + its persist happen later.
         const r = await enqueueSdkSession(p, {

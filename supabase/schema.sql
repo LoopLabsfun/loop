@@ -168,6 +168,19 @@ create table if not exists public.discord_messages (
 );
 comment on table public.discord_messages is 'Discord community messages the agent ingests for memory. Written + read by the runtime (service_role) only; not publicly readable.';
 
+create table if not exists public.x_mentions (
+  id bigint generated always as identity primary key,
+  project_key text not null references public.projects(key) on delete cascade,
+  tweet_id text not null,
+  author_id text,
+  author_username text,
+  text text not null,
+  created_at timestamptz not null default now(),
+  unique (project_key, tweet_id)
+);
+comment on table public.x_mentions is 'X (Twitter) replies/mentions the agent ingests for memory + analysis. Written + read by the runtime (service_role) only; not publicly readable.';
+alter table public.x_mentions enable row level security;
+
 create table if not exists public.agent_escalations (
   id bigint generated always as identity primary key,
   project_key text not null references public.projects(key) on delete cascade,
