@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { LoopContract } from "../LoopContract";
-import { WalletIcon } from "../AuthIcons";
+import { WalletIcon, GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../AuthIcons";
 import { useWallet } from "@/lib/wallet";
+import { EXTERNAL_LINKS } from "@/lib/links";
 import type { Network } from "@/lib/types";
 
 const SECTIONS: { id: string; label: string }[] = [
@@ -13,6 +14,13 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: "loop-how", label: "How it Works" },
   { id: "loop-cases", label: "Use Cases" },
 ];
+
+const COMMUNITY_ICONS: Record<string, JSX.Element> = {
+  github: <GitHubIcon size={18} />,
+  x: <XIcon size={16} />,
+  telegram: <TelegramIcon size={18} />,
+  discord: <DiscordIcon size={18} />,
+};
 
 export function Nav({
   onLaunch,
@@ -154,6 +162,24 @@ export function Nav({
           <div className="flex items-center justify-between py-[11px]">
             <span className="text-[15px] text-body">$LOOP contract</span>
             <LoopContract mint={loopMint} network={loopNetwork} />
+          </div>
+          <div className="flex items-center gap-5 py-[11px] border-t border-line-2">
+            {EXTERNAL_LINKS.map((link) => {
+              const icon = COMMUNITY_ICONS[link.key];
+              if (!icon) return null;
+              return (
+                <a
+                  key={link.key}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={link.ariaLabel}
+                  className="text-muted hover:text-ink transition-colors"
+                >
+                  {icon}
+                </a>
+              );
+            })}
           </div>
         </div>
       )}
