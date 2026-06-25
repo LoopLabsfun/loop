@@ -52,9 +52,9 @@ export function ProjectWallet({
     .filter((a) => a.disposition === "executed")
     .reduce((sum, a) => sum + a.amountSol, 0);
   // Irreversible actions (burn/airdrop) that are queued for founder sign-off.
-  const pendingSignOff = actions.filter(
-    (a) => a.disposition === "escalated",
-  ).length;
+  const escalated = actions.filter((a) => a.disposition === "escalated");
+  const pendingSignOff = escalated.length;
+  const pendingSignOffSol = escalated.reduce((sum, a) => sum + a.amountSol, 0);
   // Per-kind breakdown of executed actions for the at-a-glance summary row.
   const KIND_ORDER: WalletAction["kind"][] = [
     "buyback",
@@ -218,7 +218,7 @@ export function ProjectWallet({
           Net deployed (executed)
           {pendingSignOff > 0 && (
             <span className="text-warn ml-1">
-              · {pendingSignOff} awaiting sign-off
+              · {pendingSignOff} awaiting sign-off ({pendingSignOffSol.toFixed(2)} SOL)
             </span>
           )}
         </span>
