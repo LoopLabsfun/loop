@@ -5,11 +5,19 @@ import { useInspector } from "@/lib/inspector";
 import { DEFAULT_POLICY } from "@/lib/agent-actions";
 import type { WalletAction } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
+import { walletRunway, fmtRunwayDays } from "@/lib/wallet-runway";
 
 // The project's agent wallet + its on-chain positions (buyback / burn / airdrop
 // / bounty / swap). Reads structured rows from `agent_actions` (via getAgentState);
 // honest empty state until the agent acts. The agent runs these within the
 // guardrails — irreversible ones (burn/airdrop) escalate to the founder first.
+
+// Matches the relative-time labels produced by rel() in lib/agent-data.ts.
+// "now" (<60s), "Xm ago" (<60m), "Xh ago" (<24h) are within the last 24h;
+// "yesterday" and "Xd ago" are not.
+function isRecent(at: string): boolean {
+  return at === "now" || /^\d+[mh] ago$/.test(at);
+}
 
 const KIND_META: Record<
   WalletAction["kind"],
@@ -75,6 +83,15 @@ export function ProjectWallet({
       sol: prev.sol + a.amountSol,
     });
   }
+  // SOL deployed by executed actions in the last 24h — used for runway estimate.
+  const solDeployed24h = actions
+    .filter((a) => a.disposition === "executed" && isRecent(a.at))
+    .reduce((sum, a) => sum + a.amountSol, 0);
+  // Runway: null when balance is unknown or 24h deploy rate is zero.
+  const runway =
+    typeof agentSol === "number"
+      ? walletRunway(agentSol, solDeployed24h)
+      : null;
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -225,6 +242,15 @@ export function ProjectWallet({
         </span>
         <span className="font-mono text-ink">{deployed.toFixed(2)} SOL</span>
       </div>
+
+      {/* Runway estimate — only shown when we have a live balance AND a positive
+          24h deploy rate to extrapolate from. No guessing when either is absent. */}
+      {runway !== null && (
+        <div className="px-5 py-[9px] border-t border-line-4 flex items-center justify-between text-[11px] text-faint">
+          <span>Est. runway at current rate</span>
+          <span className="font-mono text-muted">{fmtRunwayDays(runway)}</span>
+        </div>
+      )}
 
       {/* Guardrail caps — the on-chain spend limits the agent operates within.
           Constant policy numbers, surfaced so holders can see exactly how much
