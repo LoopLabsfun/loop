@@ -140,17 +140,28 @@ export async function executeFeeDistribution(
       };
     }
 
+    // Partial-send floor: don't bother with a transfer below this (gas would
+    // dominate). Reuses the plan's dust floor.
+    const dust = (() => {
+      const n = Number(process.env.FEE_MIN_TRANSFER_SOL);
+      return Number.isFinite(n) && n > 0 ? n : 0.001;
+    })();
+    const round9 = (n: number) => Math.round(n * 1e9) / 1e9;
+
     const sent: DistributeOutcome["sent"] = [];
 
     for (const t of plan.transfers as FeeTransfer[]) {
-      // Only send a full share if it fits under the spendable headroom; else hold
-      // it (recorded as skipped) for a future cycle — never partial-send.
-      if (t.sol > availableSol) {
-        plan.skipped.push(`${t.role}: ${t.sol} SOL exceeds spendable headroom (${availableSol.toFixed(4)} SOL) — held`);
+      // Send as much of this share as the spendable headroom allows (partial is
+      // fine — the remainder stays claimable and flows next cycle), so a large
+      // accrued share isn't stuck forever behind a small treasury. Never exceed
+      // the headroom or the reserve.
+      const sendSol = round9(Math.min(t.sol, availableSol));
+      if (sendSol < dust) {
+        plan.skipped.push(`${t.role}: only ${availableSol.toFixed(4)} SOL headroom (< ${dust}) — held for next cycle`);
         continue;
       }
       try {
-        const lamports = Math.round(t.sol * LAMPORTS_PER_SOL);
+        const lamports = Math.round(sendSol * LAMPORTS_PER_SOL);
         const tx = new Transaction().add(
           SystemProgram.transfer({
             fromPubkey: signer.publicKey,
@@ -170,11 +181,11 @@ export async function executeFeeDistribution(
         const prev = num(lrow?.[col]);
         await supabaseAdmin
           .from("fee_ledger")
-          .update({ [col]: prev + t.sol, updated_at: new Date().toISOString() })
+          .update({ [col]: round9(prev + sendSol), updated_at: new Date().toISOString() })
           .eq("project_key", projectKey);
-        if (lrow) lrow[col] = prev + t.sol;
-        availableSol = Math.max(0, availableSol - t.sol);
-        sent.push({ role: t.role, to: t.to, sol: t.sol, sig });
+        if (lrow) lrow[col] = round9(prev + sendSol);
+        availableSol = round9(Math.max(0, availableSol - sendSol));
+        sent.push({ role: t.role, to: t.to, sol: sendSol, sig });
       } catch (e) {
         plan.skipped.push(`${t.role}: send failed — ${e instanceof Error ? e.message : "error"}`);
       }
