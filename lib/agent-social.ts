@@ -108,20 +108,55 @@ export function buildSocialSystemPrompt(
   ].join("\n");
 }
 
-export function buildSocialUserPrompt(work: SocialWork): string {
+export function buildSocialUserPrompt(work: SocialWork, recent: string[] = []): string {
+  const recentBlock = recent.length
+    ? [
+        ``,
+        `YOUR RECENT POSTS (most recent first) — do NOT repeat their angle, opening,`,
+        `or wording. Say something genuinely DIFFERENT, in a different shape. If this`,
+        `cycle's work is the same theme as one of these, prefer staying silent over a`,
+        `near-duplicate:`,
+        ...recent.slice(0, 6).map((r) => `— ${r.replace(/\s+/g, " ").slice(0, 200)}`),
+      ]
+    : [];
   return [
     `WORK THIS CYCLE:`,
     `• title: ${work.title}`,
     work.detail ? `• detail: ${work.detail}` : ``,
     `• status: ${work.shipped ? "SHIPPED (verified, pushed to main)" : "in progress / not shipped"}`,
     work.commitSha ? `• commit: ${work.commitSha.slice(0, 7)}` : ``,
+    ...recentBlock,
     ``,
     work.shipped
-      ? `Decide if this is post-worthy and, if so, author the posts.`
+      ? `Decide if this is post-worthy AND distinct from your recent posts; if so, author the posts.`
       : `Nothing shipped this cycle — return {"posts":{}} unless you are in warm-up.`,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Recent own-voice post bodies (telegram + twitter), newest first — fed back to
+ * the author so it deliberately varies angle/wording instead of relying only on
+ * the post-time dedup safety net. Best-effort: empty on any failure.
+ */
+export async function recentOwnPosts(projectKey: string, limit = 6): Promise<string[]> {
+  try {
+    const { supabaseAdmin } = await import("./supabase");
+    if (!supabaseAdmin) return [];
+    const { data } = await supabaseAdmin
+      .from("agent_posts")
+      .select("body")
+      .eq("project_key", projectKey)
+      .in("platform", ["telegram", "twitter"])
+      .order("created_at", { ascending: false })
+      .limit(Number.isFinite(limit) && limit > 0 ? limit : 6);
+    return ((data as { body?: string }[] | null) ?? [])
+      .map((r) => r.body ?? "")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /** Validate + clamp the model output into a safe SocialAuthor. */
@@ -166,12 +201,16 @@ export async function authorSocial(
     const mission = await loadMandate(p)
       .then((m) => m.mission)
       .catch(() => p.description);
+    // Show the author its recent posts so it varies angle/wording (anti-repetition
+    // at authoring time, not just the post-time dedup). Skipped on warm-up (no
+    // posts then) to keep that call minimal.
+    const recent = opts.warmup ? [] : await recentOwnPosts(p.key);
     const params = {
       model,
       max_tokens: 1400,
       output_config: { format: { type: "json_schema", schema: SOCIAL_SCHEMA } },
       system: buildSocialSystemPrompt(p, { ...opts, mission }),
-      messages: [{ role: "user", content: buildSocialUserPrompt(work) }],
+      messages: [{ role: "user", content: buildSocialUserPrompt(work, recent) }],
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const create = (client.messages.create as any).bind(client.messages);
@@ -191,5 +230,89 @@ export async function authorSocial(
     return { ...scoped, costUsd: tokensToUsd(res.usage, model) };
   } catch {
     return { costUsd: 0 };
+  }
+}
+
+/** Schema for the daily-recap call — a single short recap body. */
+const RECAP_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: { recap: { type: "string" } },
+} as const;
+
+export interface RecapResult {
+  /** The authored recap body, or null to stay silent. */
+  text: string | null;
+  costUsd: number;
+}
+
+/**
+ * Author a daily build-in-public RECAP from the day's shipped work — one cheap
+ * marketing-brain call, grounded in the mandate, varied against recent posts.
+ * Distinct shape from a single-ship post: it ties the day's shipments into one
+ * coherent "here's what moved today" note. Fail-safe: null on any error/silence.
+ */
+export async function authorRecap(
+  p: Project,
+  shippedTitles: string[],
+  opts: { plan?: string | null; recent?: string[] } = {}
+): Promise<RecapResult> {
+  if (socialSilent() || !agentRuntimeConfigured()) return { text: null, costUsd: 0 };
+  if (!shippedTitles.length) return { text: null, costUsd: 0 };
+  try {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const client = new Anthropic();
+    const model = chatModel();
+    const mission = await loadMandate(p)
+      .then((m) => m.mission)
+      .catch(() => p.description);
+    const system = [
+      ...buildSocialSystemPrompt(p, { warmup: false, plan: opts.plan, mission }).split("\n"),
+      ``,
+      `TASK — write ONE daily RECAP post (≤ ${MAX_TG} chars) that ties together what`,
+      `actually shipped today into a single coherent note a holder would care about —`,
+      `the through-line / momentum, not a flat changelog. Lead with what it MEANS, keep`,
+      `it concrete and a little witty, same hard rails. Return {"recap": "..."}. If the`,
+      `day's work is trivial or not worth a public summary, return {"recap": ""}.`,
+    ].join("\n");
+    const recentBlock = (opts.recent ?? []).length
+      ? `\n\nYOUR RECENT POSTS — do NOT repeat their angle/wording:\n${(opts.recent ?? [])
+          .slice(0, 6)
+          .map((r) => `— ${r.replace(/\s+/g, " ").slice(0, 160)}`)
+          .join("\n")}`
+      : ``;
+    const user = `SHIPPED TODAY (${shippedTitles.length}):\n${shippedTitles
+      .slice(0, 20)
+      .map((t) => `• ${t}`)
+      .join("\n")}${recentBlock}`;
+    const params = {
+      model,
+      max_tokens: 900,
+      output_config: { format: { type: "json_schema", schema: RECAP_SCHEMA } },
+      system,
+      messages: [{ role: "user", content: user }],
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const create = (client.messages.create as any).bind(client.messages);
+    const res = (await create(params)) as {
+      content: Array<{ type: string; text?: string }>;
+      usage?: TokenUsage;
+    };
+    const raw = res.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
+      .join("");
+    let text: string | null = null;
+    try {
+      const obj = JSON.parse(raw) as { recap?: unknown };
+      if (typeof obj.recap === "string" && obj.recap.trim()) {
+        text = obj.recap.trim().slice(0, MAX_TG);
+      }
+    } catch {
+      /* unparseable — stay silent */
+    }
+    return { text, costUsd: tokensToUsd(res.usage, model) };
+  } catch {
+    return { text: null, costUsd: 0 };
   }
 }

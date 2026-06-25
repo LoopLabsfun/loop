@@ -104,7 +104,13 @@ export async function enqueueSdkSession(
     const inboundParties = (state.inbox ?? [])
       .filter((m) => m.direction === "in" && !m.answered)
       .map((m) => m.party);
-    await applyDecision(p, decision, undefined, { inboundParties });
+    // authored-only here too: SDK mode never emits templated "🛠️ building / shipped"
+    // filler. Only the brain's OWN-voice post (d.posts, marketing-judged) goes out;
+    // if it didn't author one, the channel stays quiet (no low-signal changelog spam).
+    await applyDecision(p, decision, undefined, {
+      inboundParties,
+      postingPolicy: "authored-only",
+    });
     return { enqueued: false, note: `non-code (${decision.task.category}) — applied inline` };
   }
 

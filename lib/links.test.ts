@@ -63,11 +63,17 @@ describe("EXTERNAL_LINKS", () => {
   it("no external link references a wrong brand domain", () => {
     // Only these platform hosts are valid destinations for our social links.
     // Any drift to an unknown domain — squatted, mistyped, stale org — fails here.
-    const ALLOWED_HOSTS = new Set(["github.com", "x.com", "t.me"]);
+    const ALLOWED_HOSTS = new Set(["github.com", "x.com", "t.me", "discord.gg"]);
     for (const link of EXTERNAL_LINKS) {
       const { hostname } = new URL(link.href);
       expect(ALLOWED_HOSTS.has(hostname)).toBe(true);
     }
+  });
+
+  it("includes the real Discord invite", () => {
+    const dc = EXTERNAL_LINKS.find((l) => l.key === "discord");
+    expect(dc).toBeDefined();
+    expect(dc!.href).toContain("discord.gg/");
   });
 });
 

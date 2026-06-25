@@ -15,6 +15,7 @@ import {
   type LearningCategory,
 } from "./learnings";
 import { getTopLearnings, recordLearning } from "./agent-data";
+import { EXTERNAL_LINKS } from "./links";
 import { buildShipTweet } from "./x-recap";
 import { tokensToUsd, type TokenUsage } from "./anthropic-cost";
 import {
@@ -675,6 +676,11 @@ export function buildUserPrompt(
     "The repository's REAL file tree (source paths that already exist). Target",
     "these paths when you edit; never invent a path or re-create a file listed here:",
     treeBlock,
+    "",
+    "Loop's REAL, live public channels — these ALREADY EXIST and are wired into the",
+    "site. Never create a task to 'set up', 'stand up', launch, or 'find a real link'",
+    "for any of them; reference these EXACT URLs (and looplabs.fun) in posts/replies:",
+    EXTERNAL_LINKS.map((l) => `- ${l.label}: ${l.href}`).join("\n"),
     "",
     "Tasks you have already SHIPPED — do NOT pick any of these again:",
     shippedLines,
