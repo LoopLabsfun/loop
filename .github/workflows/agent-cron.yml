@@ -18,7 +18,10 @@ name: agent-cron
 
 on:
   schedule:
-    # Every 30 minutes. This is the SOLE heartbeat (the Vercel cron was removed).
+    # Every 30 minutes. BACKSTOP heartbeat: the reliable primary is the Vercel
+    # Pro cron (vercel.json `crons`, same */30 → /api/agent/cron). GitHub's
+    # scheduled runs throttle hard on public repos (observed ~1 run / 8h), so the
+    # Vercel cron carries the cadence and this just covers a Vercel cron outage.
     # The real spend throttle is the CODE cooldown (lib/agent-tick-throttle.ts,
     # AGENT_TICK_COOLDOWN_MIN, default 60) — the cron just has to fire often enough
     # to notice when that cooldown expires. */30 keeps per-fire overhead low (each
