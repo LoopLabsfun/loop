@@ -73,11 +73,16 @@ export default async function TokenRoute({
       ? {
           spentUsd: computeLedger.consumedUsd,
           sinceISO: SINCE_ISO,
-          startingCreditUsd: computeLedger.creditedUsd > 0 ? computeLedger.creditedUsd : null,
-          remainingUsd:
-            computeLedger.creditedUsd > 0
-              ? Math.max(0, computeLedger.creditedUsd - computeLedger.consumedUsd)
-              : null,
+          // There is NO Anthropic balance API for an individual account, so the
+          // manually-seeded compute_ledger can't track real "remaining credit":
+          // credited_usd goes stale between top-ups and, once over-drawn, the
+          // widget published a misleading "$0.00 left" that reads as a dead agent.
+          // So we DON'T publish a "remaining" off the manual ledger — only the
+          // best-effort cumulative spend (now that SDK-session cost is metered).
+          // The founder watches the true balance in the Anthropic console. The
+          // Admin Cost API path above keeps both, since it has a real source.
+          startingCreditUsd: null,
+          remainingUsd: null,
         }
       : null);
   return (
