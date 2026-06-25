@@ -69,6 +69,7 @@ const guidance = [
 let turns = 0;
 let result = "ok";
 let note = "";
+let costUsd = 0;
 try {
   const q = query({
     prompt: brief,
@@ -90,8 +91,12 @@ try {
   for await (const msg of q) {
     if (msg?.type === "assistant") turns += 1;
     if (msg?.type === "result") {
-      // Terminal SDK result message: capture subtype/cost if present.
+      // Terminal SDK result message: capture subtype + the session's real billed
+      // cost (total_cost_usd is cumulative for the whole session). Emitting it lets
+      // the runtime accrue actual Anthropic spend into the compute ledger.
       note = String(msg.subtype ?? "").slice(0, 80);
+      const c = Number(msg.total_cost_usd);
+      if (Number.isFinite(c) && c >= 0) costUsd = c;
     }
   }
 } catch (e) {
@@ -104,3 +109,4 @@ try {
 console.log(`SESSION_TURNS=${turns}`);
 console.log(`SESSION_RESULT=${result}`);
 if (note) console.log(`SESSION_NOTE=${note}`);
+if (costUsd > 0) console.log(`SESSION_COST_USD=${costUsd.toFixed(6)}`);

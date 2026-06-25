@@ -2111,6 +2111,12 @@ export async function runAgentTick(
   // `command` below; without it, a self-declared "shipped" is held at "building".
   let verify: { checkerId: string; checks: VerifyCheck[] } | undefined;
 
+  // Real Anthropic cost the IN-SANDBOX SDK session billed this tick (the SDK's
+  // total_cost_usd, surfaced as SESSION_COST_USD). tickCostUsd only covers the
+  // Vercel-side decision call, so without this the compute ledger silently
+  // under-counts every SDK-hands tick. Accrued alongside tickCostUsd below.
+  let handsCostUsd = 0;
+
   // Agent SDK hands (env-gated OFF via AGENT_SDK_HANDS) — Phase 1, PRECEDENCE path
   // for CODE tasks (feature/fix): instead of the brain emitting `edits`, delegate
   // the engineering to a bounded Claude Agent SDK session inside the sandbox that
@@ -2168,6 +2174,7 @@ export async function runAgentTick(
         AGENT_SDK_WALL_MS: String(sdkCfg.wallMs),
       }, { timeoutMs: sdkCfg.timeoutMs });
       const hands = parseHandsOutput(result.stdout);
+      handsCostUsd = hands.costUsd;
       decision.summary = `${decision.summary} — sdk-hands: ${hands.note}`.slice(0, 280);
       verify = {
         checkerId: "verifier:e2b-sdk-hands",
@@ -2339,12 +2346,13 @@ export async function runAgentTick(
     .filter((m) => m.direction === "in" && !m.answered)
     .map((m) => m.party);
   await applyDecision(p, decision, verify, { inboundParties });
-  if (tickCostUsd > 0) {
+  const spend = tickCostUsd + handsCostUsd;
+  if (spend > 0) {
     try {
       const { getComputeLedger, saveComputeLedger } = await import("./compute-ledger-store");
       const { recordSpend } = await import("./compute-rail");
       const ledger = await getComputeLedger(p.key);
-      await saveComputeLedger(p.key, recordSpend(ledger, tickCostUsd));
+      await saveComputeLedger(p.key, recordSpend(ledger, spend));
     } catch {
       /* ledger write failure must never abort the tick */
     }
