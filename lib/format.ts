@@ -128,7 +128,8 @@ export function commitUrl(repo: string, hash: string): string | null {
 }
 
 export function shortAge(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return `0s`;
+  if (!Number.isFinite(seconds) || seconds < 0) return `0s`;
+  seconds = Math.floor(seconds);
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   if (m < 60) return `${m}m`;

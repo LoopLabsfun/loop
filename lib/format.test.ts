@@ -114,6 +114,9 @@ describe("shortAge", () => {
     expect(shortAge(24 * 3600)).toBe("1d");
     expect(shortAge(72 * 3600)).toBe("3d");
   });
+  it("floors fractional seconds", () => {
+    expect(shortAge(45.9)).toBe("45s");
+  });
   it("clamps non-finite and negative input to 0s", () => {
     expect(shortAge(-1)).toBe("0s");
     expect(shortAge(NaN)).toBe("0s");
