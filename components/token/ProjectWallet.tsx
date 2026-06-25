@@ -51,6 +51,15 @@ export function ProjectWallet({
   const deployed = actions
     .filter((a) => a.disposition === "executed")
     .reduce((sum, a) => sum + a.amountSol, 0);
+  // Rolling 24 h deployed: executed actions whose relative-time label still
+  // falls inside the day tier ("now" / "Xm ago" / "Xh ago").
+  const deployed24h = actions
+    .filter(
+      (a) =>
+        a.disposition === "executed" &&
+        (a.at === "now" || a.at.endsWith("m ago") || a.at.endsWith("h ago"))
+    )
+    .reduce((sum, a) => sum + a.amountSol, 0);
   // Irreversible actions (burn/airdrop) that are queued for founder sign-off.
   const escalated = actions.filter((a) => a.disposition === "escalated");
   const pendingSignOff = escalated.length;
@@ -222,7 +231,14 @@ export function ProjectWallet({
             </span>
           )}
         </span>
-        <span className="font-mono text-ink">{deployed.toFixed(2)} SOL</span>
+        <span className="font-mono text-ink flex items-center gap-2">
+          {deployed24h > 0 && (
+            <span className="text-faint" title="Deployed in the last 24 h">
+              {deployed24h.toFixed(2)} SOL 24h ·
+            </span>
+          )}
+          {deployed.toFixed(2)} SOL
+        </span>
       </div>
     </div>
   );
