@@ -249,6 +249,29 @@ export async function GET(req: Request) {
     }
   }
 
+  // Physical fee distribution (closes the agent self-funding loop): send the
+  // accrued AGENT (65%) + PLATFORM (5%) shares from the treasury to their wallets,
+  // making the 30/65/5 split real money. HARD-GATED behind FEE_DISTRIBUTE=1 and
+  // bounded to the ledger's claimable (earned − claimed); the founder share stays
+  // in the treasury. Failure-safe: never affects the response.
+  let feeDistribution: { sent: number; total: number; note: string } | undefined;
+  if (process.env.FEE_DISTRIBUTE === "1") {
+    try {
+      const { executeFeeDistribution } = await import("@/lib/fee-distribute-exec");
+      const r = await executeFeeDistribution("loop");
+      feeDistribution = {
+        sent: r.sent.length,
+        total: r.sent.reduce((s, x) => s + x.sol, 0),
+        note: r.note,
+      };
+      if (r.sent.length || r.skipped.length) {
+        console.log(`[fee-distribute] ${JSON.stringify({ key: "loop", ...feeDistribution, skipped: r.skipped })}`);
+      }
+    } catch (e) {
+      console.error(`[fee-distribute] ${JSON.stringify({ key: "loop", error: e instanceof Error ? e.message : "distribute failed" })}`);
+    }
+  }
+
   return NextResponse.json(
     {
       ticked: results.length,
@@ -257,6 +280,7 @@ export async function GET(req: Request) {
       chatsAnswered,
       results,
       ...(feeClaim ? { feeClaim } : {}),
+      ...(feeDistribution ? { feeDistribution } : {}),
     },
     { headers: { "Cache-Control": "no-store" } }
   );
