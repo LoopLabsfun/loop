@@ -1,7 +1,8 @@
 import "server-only";
 
 import { supabaseAdmin } from "./supabase";
-import { isDiscordBotConfigured, findChannelId, fetchMessagesAfter } from "./discord-bot";
+import { isDiscordBotConfigured, findChannelId, fetchMessagesAfter, postToChannel } from "./discord-bot";
+import type { Project } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DISCORD READ → MEMORY — the INBOUND half of the Discord seam. Where
@@ -129,4 +130,54 @@ export function formatCommunityForPrompt(msgs: CommunityMessage[]): string {
   return msgs
     .map((m) => `- ${m.author} in #${m.channel}: ${m.content.replace(/\s+/g, " ").slice(0, 240)}`)
     .join("\n");
+}
+
+/**
+ * Answer recent UNANSWERED community questions in Discord — grounded in the
+ * agent's real knowledge (no hallucination, see lib/agent-answer). Reads the
+ * ingested discord_messages, picks question-like ones, posts a reply in the same
+ * channel, and marks them answered (so they're never answered twice — including
+ * when the model judges it shouldn't reply, SKIP). Gated by AGENT_COMMUNITY_ANSWER;
+ * bounded + failure-safe. Returns the number of replies sent.
+ */
+export async function answerDiscordQuestions(p: Project, max = 3): Promise<number> {
+  const { communityAnswerArmed, looksLikeQuestion, answerCommunityQuestion } = await import("./agent-answer");
+  if (!communityAnswerArmed() || !isDiscordBotConfigured() || !supabaseAdmin) return 0;
+  try {
+    const { data } = await supabaseAdmin
+      .from("discord_messages")
+      .select("id, channel_id, author_name, content")
+      .eq("project_key", p.key)
+      .eq("answered", false)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    const rows = (data as
+      | { id: number; channel_id: string; author_name?: string; content: string }[]
+      | null) ?? [];
+    const candidates = rows.filter((r) => looksLikeQuestion(r.content)).slice(0, max);
+    if (!candidates.length) {
+      // Mark the non-question backlog answered so it isn't rescanned forever.
+      const ids = rows.map((r) => r.id);
+      if (ids.length) {
+        await supabaseAdmin.from("discord_messages").update({ answered: true }).in("id", ids);
+      }
+      return 0;
+    }
+    let sent = 0;
+    for (const r of candidates) {
+      const { text } = await answerCommunityQuestion(p, r.content, "discord");
+      if (text) {
+        const res = await postToChannel(r.channel_id, {
+          content: text,
+          allowed_mentions: { parse: [] },
+        });
+        if (res.ok) sent++;
+      }
+      // Mark answered either way (a SKIP shouldn't be re-evaluated next tick).
+      await supabaseAdmin.from("discord_messages").update({ answered: true }).eq("id", r.id);
+    }
+    return sent;
+  } catch {
+    return 0;
+  }
 }
