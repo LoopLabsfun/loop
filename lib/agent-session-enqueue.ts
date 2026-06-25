@@ -20,6 +20,8 @@ import {
 } from "./agent-runtime";
 import { buildSdkHandsScript } from "./agent-sdk-hands";
 import { agentGitIdentity } from "./agent-git-identity";
+import { effortForTask } from "./agent-effort";
+import { commitMessageWithThrottle } from "./deploy-throttle";
 import type { AgentSessionPayload } from "../trigger/agent-session";
 
 export function brainMode(env: Record<string, string | undefined> = process.env): "legacy" | "sdk" {
@@ -122,10 +124,25 @@ export async function enqueueSdkSession(
     .replace(/\/$/, "");
   const prefix = decision.task.category === "fix" ? "fix" : "feat";
   const gitId = agentGitIdentity();
+
+  // Per-task reasoning effort + turn budget: spend tokens in proportion to the
+  // task's complexity (a typo fix at `low`, a multi-file feature at `high`),
+  // bounded by the AGENT_SDK_MAX_TURNS ceiling. Cheap polish stops costing what a
+  // hard feature costs, without capping the hard ones.
+  const plan = effortForTask(decision.task);
+
+  // Vercel build economy: batch the agent's commits into ~1 deploy per interval
+  // by stamping a `[no-deploy]` trailer on commits between deploys (lib/deploy-
+  // throttle + vercel.json ignoreCommand). The marker lives in the commit BODY,
+  // so the public build feed (subject-only) is unaffected and every SHA still
+  // lands on main. No-op unless DEPLOY_THROTTLE=1; failure-safe (errs to deploy).
+  const baseCommitMessage = `${prefix}(agent): ${decision.task.title}\n\nCo-Authored-By: Loop Agent <agent@looplabs.fun>`;
+  const commitMessage = await commitMessageWithThrottle(baseCommitMessage, p.repo);
+
   const script = buildSdkHandsScript({
     repoSlug,
     branch: "main",
-    commitMessage: `${prefix}(agent): ${decision.task.title}\n\nCo-Authored-By: Loop Agent <agent@looplabs.fun>`,
+    commitMessage,
     authorName: gitId.name,
     authorEmail: gitId.email,
     fullGate: process.env.AGENT_GATE_BUILD === "1",
@@ -140,7 +157,9 @@ export async function enqueueSdkSession(
     script,
     taskBrief: buildTaskBrief(decision.task),
     model: cfg.model,
-    maxTurns: cfg.maxTurns,
+    // Per-task budget (already clamped under the AGENT_SDK_MAX_TURNS ceiling).
+    maxTurns: plan.maxTurns,
+    effort: plan.effort,
     wallMs: cfg.wallMs,
     timeoutMs: cfg.timeoutMs,
     dryRun: opts.dryRun,
@@ -166,6 +185,6 @@ export async function enqueueSdkSession(
   return {
     enqueued: true,
     runId: handle.id,
-    note: `enqueued agent-session ${handle.id} — "${decision.task.title}"`,
+    note: `enqueued agent-session ${handle.id} [${plan.effort}/${plan.maxTurns}t · ${plan.reason}] — "${decision.task.title}"`,
   };
 }

@@ -29,6 +29,9 @@ export interface AgentSessionPayload {
   taskBrief: string;
   model: string;
   maxTurns: number;
+  /** Reasoning effort for the in-sandbox session ("low" | "medium" | "high"),
+   *  chosen per-task by lib/agent-effort. Omitted ⇒ the SDK's own default. */
+  effort?: string;
   wallMs: number;
   /** Execution ceiling for the sandbox run (npm ci + session + gate). */
   timeoutMs: number;
@@ -39,7 +42,7 @@ export const agentSession = task({
   id: "agent-session",
   maxDuration: 1500, // 25 min ceiling
   run: async (payload: AgentSessionPayload) => {
-    const { key, script, taskBrief, model, maxTurns, wallMs, timeoutMs } = payload;
+    const { key, script, taskBrief, model, maxTurns, effort, wallMs, timeoutMs } = payload;
     const template = process.env.E2B_TEMPLATE?.trim() || undefined;
     const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 900_000;
 
@@ -70,6 +73,9 @@ export const agentSession = task({
           TASK_BRIEF_B64: Buffer.from(taskBrief ?? "", "utf8").toString("base64"),
           AGENT_SDK_MODEL: model,
           AGENT_SDK_MAX_TURNS: String(maxTurns),
+          // Per-task reasoning effort (token economy). Empty ⇒ the session keeps
+          // the SDK's own default; the script reads AGENT_SDK_EFFORT.
+          AGENT_SDK_EFFORT: effort ?? "",
           AGENT_SDK_WALL_MS: String(wallMs),
         },
       });
