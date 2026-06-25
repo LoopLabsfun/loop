@@ -107,6 +107,58 @@ export async function sendDailyRecap(
 
     let posted = 0;
 
+    // X (timeline) — the recap is one of the day's high-signal tweets. Respects
+    // the same gap floor + fuzzy dedup as per-ship tweets, and AGENT_X_PAUSED.
+    if (authored.xText && process.env.AGENT_X_PAUSED !== "1") {
+      try {
+        const { isXConfigured, sendTweet } = await import("./x-send");
+        if (isXConfigured()) {
+          const { shouldPublishUpdate, xMinGapMs } = await import("./agent-runtime");
+          const xBody = `${RECAP_TAG} ${authored.xText}`;
+          const sim = (() => {
+            const v = Number(process.env.AGENT_POST_SIMILARITY);
+            return Number.isFinite(v) && v > 0 && v <= 1 ? v : undefined;
+          })();
+          // Last tweet (gap floor) + recent tweets (fuzzy dedup), straight from agent_posts.
+          const { data: lastRow } = await supabaseAdmin
+            .from("agent_posts")
+            .select("body, created_at")
+            .eq("project_key", p.key)
+            .eq("platform", "twitter")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const last = lastRow
+            ? { body: (lastRow as { body: string }).body, at: Date.parse((lastRow as { created_at: string }).created_at) }
+            : null;
+          let recentX: string[] | undefined;
+          if (sim) {
+            const { data } = await supabaseAdmin
+              .from("agent_posts")
+              .select("body")
+              .eq("project_key", p.key)
+              .eq("platform", "twitter")
+              .order("created_at", { ascending: false })
+              .limit(5);
+            recentX = ((data as { body?: string }[] | null) ?? []).map((r) => r.body ?? "").filter(Boolean);
+          }
+          if (
+            shouldPublishUpdate({ last, text: xBody, minGapMs: xMinGapMs(), recent: recentX, maxSimilarity: sim })
+          ) {
+            const res = await sendTweet(xBody);
+            if (res.ok) {
+              await supabaseAdmin
+                .from("agent_posts")
+                .insert({ project_key: p.key, platform: "twitter", body: xBody });
+              posted++;
+            }
+          }
+        }
+      } catch {
+        /* X unavailable — never abort the recap */
+      }
+    }
+
     // Telegram → the build-log chat/topic (same routing as per-ship posts).
     const buildlogChat = process.env.TELEGRAM_BUILDLOG_CHAT_ID;
     const buildlogThread = Number(process.env.TELEGRAM_BUILDLOG_THREAD_ID) || undefined;
