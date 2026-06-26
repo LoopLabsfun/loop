@@ -44,6 +44,9 @@ export interface Project {
   network?: Network;
   /** Verified launcher pubkey (Founder); enables founder-mode in the console. */
   creatorWallet?: string | null;
+  /** DB-backed kill switch the founder toggles from the admin console — the cron
+   *  no-ops the brain when true (a runtime-mutable counterpart to AGENT_PAUSED). */
+  agentPaused?: boolean;
   // Economics + steering (see lib/fees.ts, docs/loop-economics.md).
   /** Founder share of creator fees, 0..95 (agent = 95 − this; platform = 5). */
   feeFounderPct?: number;

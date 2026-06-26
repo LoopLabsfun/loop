@@ -4,6 +4,7 @@ import { buildLaunchMessage } from "./launch-message";
 import { buildDirectiveMessage } from "./directives";
 import { buildChatMessage } from "./chat";
 import { buildStakeMessage } from "./staking";
+import { buildAdminMessage } from "./admin-message";
 
 // Wallet-signature ownership proof. The launcher signs a canonical message with
 // their wallet; the server verifies the ed25519 signature before crediting the
@@ -114,5 +115,27 @@ export function verifyStakeProof(
   const ts = Number(m[1]);
   if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
   if (proof.message !== buildStakeMessage(projectKey, amount, ts)) return false;
+  return verifyWalletSignature(proof);
+}
+
+/**
+ * Full check for opening a FOUNDER admin session: valid ed25519 signature of the
+ * canonical (projectKey) admin message, and recent (anti-replay). The caller MUST
+ * additionally check `proof.pubkey === project.creatorWallet` — this verifies the
+ * signature is genuine, not that the signer is the founder. Mirrors
+ * verifyDirectiveProof. maxAge is tighter (5 min) since this gates agent controls.
+ */
+export function verifyAdminProof(
+  proof: LaunchProof,
+  projectKey: string,
+  opts: { maxAgeMs?: number; now?: number } = {}
+): boolean {
+  const maxAgeMs = opts.maxAgeMs ?? 5 * 60 * 1000;
+  const now = opts.now ?? Date.now();
+  const m = proof.message.match(/\nts:(\d+)$/);
+  if (!m) return false;
+  const ts = Number(m[1]);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
+  if (proof.message !== buildAdminMessage(projectKey, ts)) return false;
   return verifyWalletSignature(proof);
 }

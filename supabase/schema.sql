@@ -67,6 +67,11 @@ comment on column public.projects.agent_wallet is 'Agent wallet pubkey (provisio
 comment on column public.projects.content_policy is 'Founder/DAO content policy steering the agent.';
 comment on column public.projects.guardrails is 'Editable guardrails the agent rereads each cycle.';
 
+-- founder admin kill switch: the cron no-ops this project's brain when true
+-- (a DB-backed, runtime-mutable counterpart to the global AGENT_PAUSED env).
+alter table public.projects add column if not exists agent_paused boolean not null default false;
+comment on column public.projects.agent_paused is 'Founder kill switch (admin console): when true the cron skips this project''s brain — no Claude spend, no redeploy needed.';
+
 -- ── vanity_keypairs ──────────────────────────────────────────────────────────
 create table if not exists public.vanity_keypairs (
   id bigint generated always as identity primary key,
