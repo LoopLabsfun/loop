@@ -26,6 +26,26 @@ export function WalletIcon({ size = 15, className }: IconProps) {
   );
 }
 
+/** Generic person/profile glyph (monochrome) for the "your profile" entry. */
+export function ProfileIcon({ size = 15, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      aria-hidden
+      className={className}
+    >
+      <circle cx="8" cy="5.2" r="2.6" />
+      <path d="M3 13.4c0-2.5 2.2-4.2 5-4.2s5 1.7 5 4.2" />
+    </svg>
+  );
+}
+
 /** Official Solana mark — three bars with the purple→green brand gradient. */
 export function SolanaIcon({ size = 15, className }: IconProps) {
   return (
