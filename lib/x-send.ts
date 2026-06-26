@@ -41,7 +41,10 @@ export interface TweetResult {
  * Returns a result rather than throwing, so a failed post never breaks the
  * cycle that triggered it. No-op (skipped) when X isn't configured.
  */
-export async function sendTweet(text: string): Promise<TweetResult> {
+export async function sendTweet(
+  text: string,
+  replyToId?: string
+): Promise<TweetResult> {
   if (!isXConfigured()) return { ok: false, skipped: true };
   const creds: OAuth1Creds = {
     consumerKey: process.env.X_API_KEY!,
@@ -56,7 +59,12 @@ export async function sendTweet(text: string): Promise<TweetResult> {
         Authorization: oauth1Header("POST", TWEET_URL, creds),
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      // Chain a thread by replying to the prior tweet when replyToId is given.
+      body: JSON.stringify(
+        replyToId
+          ? { text, reply: { in_reply_to_tweet_id: replyToId } }
+          : { text }
+      ),
       cache: "no-store",
     });
     const json = (await res.json().catch(() => null)) as {
