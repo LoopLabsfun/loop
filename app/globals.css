@@ -70,6 +70,21 @@ body {
   width: max-content;
 }
 
+/* Attention ring when a hero CTA jumps to a section (#swap / #agent): a brief
+   accent ring that fades out so the eye lands on the right card after the scroll.
+   Respects prefers-reduced-motion via the global reset below. */
+.jump-target:target {
+  animation: jumpRing 1.4s ease-out;
+}
+@keyframes jumpRing {
+  from {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
