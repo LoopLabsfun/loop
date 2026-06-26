@@ -304,6 +304,9 @@ function TreasuryCard({
         />
         <Stat label="Next Check" value={agentActive ? "~2 min" : "—"} />
       </div>
+      <p className="font-mono text-[11px] text-faint mt-3 mb-0 leading-[1.5]">
+        Trading fees → treasury → the agent ships. Every trade funds the build.
+      </p>
     </div>
   );
 }
