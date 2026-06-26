@@ -8,7 +8,10 @@ import { useWallet } from "@/lib/wallet";
 import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
 import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
+import { apiFollow, apiEstablishSession } from "@/lib/social-client";
+import { NotificationBell } from "../NotificationBell";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
+import type { SocialUser } from "@/lib/social";
 
 // Twitter linking (Privy) only works when the user-side Privy layer is configured.
 // Lazy-loaded so the heavy Privy SDK never enters the base profile bundle — it
@@ -41,10 +44,14 @@ type LogFilter = "all" | "ship" | "decision" | "escalation";
 export function ProfileView({ data }: { data: ProfileViewData }) {
   const wallet = useWallet();
   const router = useRouter();
-  const { profile, launched, positions, portfolioUsd, builder, log } = data;
+  const { profile, launched, positions, portfolioUsd, builder, follow, followers, followingList, log } = data;
   const isOwner = wallet.connected && wallet.address === profile.wallet;
   const isFounder = launched.length > 0;
   const escalations = log.filter((l) => l.kind === "escalation").length;
+
+  // Local follower count so the Follow button updates the header optimistically.
+  const [youFollow, setYouFollow] = useState(follow.youFollow);
+  const [followerCount, setFollowerCount] = useState(follow.followers);
 
   const [editing, setEditing] = useState(false);
   const [filter, setFilter] = useState<LogFilter>("all");
@@ -62,12 +69,15 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
           <LoopMark width={24} height={15} stroke="var(--accent)" />
           <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
         </Link>
-        <button
-          onClick={wallet.toggle}
-          className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors"
-        >
-          {wallet.label}
-        </button>
+        <div className="flex items-center gap-[8px]">
+          {wallet.connected && <NotificationBell />}
+          <button
+            onClick={wallet.toggle}
+            className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors"
+          >
+            {wallet.label}
+          </button>
+        </div>
       </nav>
 
       <main className="max-w-[920px] mx-auto px-6 sm:px-8 py-7 flex flex-col gap-4">
@@ -80,11 +90,36 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                 "linear-gradient(110deg, oklch(0.96 0.04 285) 0%, oklch(0.94 0.06 285) 45%, oklch(0.965 0.018 285) 100%)",
             }}
           />
-          <div className="px-6 pb-5 -mt-[34px] flex gap-5 items-start flex-wrap">
-            <Avatar url={profile.avatarUrl} name={name} />
-            <div className="min-w-0 flex-1 pt-[40px]">
+          <div className="px-6 pb-5">
+            {/* Row 1 — avatar straddles the band; the action button sits opposite
+                it. Kept on its own row so a long display name can never collide
+                with the button (it lives full-width below). */}
+            <div className="-mt-[34px] flex items-end justify-between gap-3">
+              <Avatar url={profile.avatarUrl} name={name} />
+              <div className="pb-[2px]">
+                {isOwner ? (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="font-mono text-[12px] px-3 py-[8px] rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors"
+                  >
+                    Edit profile
+                  </button>
+                ) : (
+                  <FollowButton
+                    target={profile.wallet}
+                    following={youFollow}
+                    onChange={(now) => {
+                      setYouFollow(now);
+                      setFollowerCount((c) => Math.max(0, c + (now ? 1 : -1)));
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+            {/* Row 2 — identity, full width below. */}
+            <div className="mt-3 min-w-0">
               <div className="flex items-center gap-[9px] flex-wrap">
-                <span className="font-display font-bold text-[22px] tracking-[-0.02em] leading-none">{name}</span>
+                <span className="font-display font-bold text-[22px] tracking-[-0.02em] leading-none break-all">{name}</span>
                 {isFounder && <RoleChip kind="founder" />}
                 {positions.length > 0 && <RoleChip kind="holder" />}
                 {profile.twitterHandle ? (
@@ -107,18 +142,21 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                 <CopyWallet wallet={profile.wallet} />
                 {joined && <span className="font-mono text-[11px] text-faint">· since {joined}</span>}
               </div>
+              {/* Social proof — follower/following counts, inline under identity. */}
+              <div className="flex items-center gap-4 mt-[10px]">
+                <span className="text-[13px]">
+                  <span className="font-display font-bold tabular-nums">{followerCount}</span>{" "}
+                  <span className="text-muted">{followerCount === 1 ? "follower" : "followers"}</span>
+                </span>
+                <span className="text-[13px]">
+                  <span className="font-display font-bold tabular-nums">{follow.following}</span>{" "}
+                  <span className="text-muted">following</span>
+                </span>
+              </div>
               {profile.bio && (
                 <p className="text-[13px] text-body mt-[10px] mb-0 max-w-[560px] leading-[1.5]">{profile.bio}</p>
               )}
             </div>
-            {isOwner && (
-              <button
-                onClick={() => setEditing(true)}
-                className="font-mono text-[12px] px-3 py-[7px] rounded-[9px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors mt-[40px]"
-              >
-                Edit profile
-              </button>
-            )}
           </div>
         </div>
 
@@ -194,6 +232,23 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
             )}
           </Panel>
         </div>
+
+        {/* Network — who follows this wallet and who it follows. The social graph
+            made browsable; each row links to that wallet's profile. */}
+        {(followers.length > 0 || followingList.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Panel title="Followers" hint={String(follow.followers)}>
+              {followers.length === 0 ? <Empty>No followers yet.</Empty> : followers.map((u) => <SocialRow key={u.wallet} user={u} />)}
+            </Panel>
+            <Panel title="Following" hint={String(follow.following)}>
+              {followingList.length === 0 ? (
+                <Empty>Not following anyone yet.</Empty>
+              ) : (
+                followingList.map((u) => <SocialRow key={u.wallet} user={u} />)
+              )}
+            </Panel>
+          </div>
+        )}
 
         {/* Log & decisions */}
         {log.length > 0 && (
@@ -386,6 +441,98 @@ function CopyWallet({ wallet }: { wallet: string }) {
         explorer ↗
       </a>
     </span>
+  );
+}
+
+// Follow / unfollow another wallet. Optimistic toggle; on a 401 (no session) it
+// asks the wallet to sign ONE profile proof to open a 7-day session, then retries
+// — so following is one click after the first sign, never a popup per follow.
+function FollowButton({
+  target,
+  following,
+  onChange,
+}: {
+  target: string;
+  following: boolean;
+  onChange: (now: boolean) => void;
+}) {
+  const wallet = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [hover, setHover] = useState(false);
+
+  async function toggle() {
+    if (!wallet.connected || !wallet.address) {
+      wallet.connect();
+      return;
+    }
+    const next = !following;
+    setBusy(true);
+    onChange(next); // optimistic
+    try {
+      await apiFollow(target, next ? "follow" : "unfollow");
+    } catch (e) {
+      if (e instanceof Error && e.message === "no-session") {
+        // Establish a session from one signature, then retry once.
+        try {
+          const proof = await wallet.signProfileProof(wallet.address);
+          if (proof && (await apiEstablishSession(wallet.address, proof))) {
+            await apiFollow(target, next ? "follow" : "unfollow");
+          } else {
+            onChange(following); // revert
+          }
+        } catch {
+          onChange(following);
+        }
+      } else {
+        onChange(following); // revert on any other failure
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const label = !wallet.connected ? "Follow" : following ? (hover ? "Unfollow" : "Following") : "Follow";
+  return (
+    <button
+      onClick={toggle}
+      disabled={busy}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={`mt-[40px] font-display font-semibold text-[13px] px-4 h-[36px] rounded-[10px] transition-colors disabled:opacity-60 ${
+        following
+          ? hover
+            ? "bg-neg/10 text-neg border border-neg/30"
+            : "bg-surface text-muted border border-line-2"
+          : "bg-accent text-white hover:opacity-90"
+      }`}
+    >
+      {busy ? "…" : label}
+    </button>
+  );
+}
+
+// One wallet in a Followers/Following list: avatar + name, linking to its profile.
+function SocialRow({ user }: { user: SocialUser }) {
+  const name = user.displayName || shortAddr(user.wallet);
+  return (
+    <Link
+      href={`/u/${user.wallet}`}
+      className="flex items-center gap-[10px] py-[9px] border-b border-line-4 last:border-0 group"
+    >
+      {user.avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={user.avatarUrl} alt={name} className="w-[30px] h-[30px] rounded-[9px] object-cover border border-line-2 flex-none" />
+      ) : (
+        <span className="w-[30px] h-[30px] rounded-[9px] bg-accent-tint border border-accent-tint-border flex items-center justify-center font-display font-bold text-[13px] text-accent-text flex-none">
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium group-hover:text-accent-text transition-colors truncate">{name}</div>
+        {user.displayName && <div className="font-mono text-[10.5px] text-faint truncate">{shortAddr(user.wallet)}</div>}
+      </div>
+      {user.youFollow && <span className="font-mono text-[10px] text-faint">following</span>}
+    </Link>
   );
 }
 

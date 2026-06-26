@@ -672,10 +672,22 @@ function SocialBody({ post: s }: { post: SocialPost }) {
 }
 
 function HolderBody({ holder: h, net }: { holder: Holder; net: "mainnet" | "devnet" }) {
+  const title = h.loopName || h.name;
   return (
     <>
-      {h.name && (
-        <h3 className="font-display font-semibold text-[16px] text-ink m-0">{h.name}</h3>
+      {title && (
+        <div className="flex items-center gap-[10px]">
+          {h.loopAvatar && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={h.loopAvatar} alt="" className="w-[34px] h-[34px] rounded-[10px] object-cover border border-line-2 flex-none" />
+          )}
+          <h3 className="font-display font-semibold text-[16px] text-ink m-0">{title}</h3>
+          {h.loopName && (
+            <span className="font-mono text-[9.5px] px-[6px] py-[2px] rounded-[5px] bg-accent-tint text-accent-text border border-accent-tint-border">
+              loop profile
+            </span>
+          )}
+        </div>
       )}
       <Field label="Holds">
         <span className="font-mono text-[15px]">{(h.share * 100).toFixed(2)}%</span>{" "}

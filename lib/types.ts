@@ -142,6 +142,10 @@ export interface Holder {
   share: number;
   /** Primary Solana Name Service (.sol) name for `address`, if any (else null). */
   name?: string | null;
+  /** Loop profile display name for `address`, if the wallet set one (else null). */
+  loopName?: string | null;
+  /** Loop profile avatar URL for `address`, if set (else null). */
+  loopAvatar?: string | null;
 }
 
 /** A SOL payout to a holder (e.g. a wind-down distribution). */

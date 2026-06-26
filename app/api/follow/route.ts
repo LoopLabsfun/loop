@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { isSolanaAddress } from "@/lib/api-guards";
+import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
+import { follow, unfollow } from "@/lib/social";
+
+// Follow / unfollow another wallet. The ACTOR is taken from the user session
+// cookie (minted once at /api/session from a signed proof) — never from the
+// request body — so a caller can only act as the wallet they proved they own.
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export async function POST(req: Request) {
+  let body: { target?: string; action?: "follow" | "unfollow" };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+  const actor = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
+  if (!actor) {
+    return NextResponse.json({ error: "no session — sign in first" }, { status: 401 });
+  }
+  const target = body.target;
+  if (!isSolanaAddress(target)) {
+    return NextResponse.json({ error: "invalid target" }, { status: 400 });
+  }
+  const r = body.action === "unfollow" ? await unfollow(actor, target) : await follow(actor, target);
+  if (!r.ok) return NextResponse.json({ error: r.error ?? "failed" }, { status: 400 });
+  return NextResponse.json({ ok: true, following: body.action !== "unfollow" });
+}

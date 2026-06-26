@@ -3,6 +3,7 @@ import { supabaseAdmin } from "./supabase";
 import { getProjects } from "./queries";
 import { getSplBalance } from "./solana";
 import { getMarketStats } from "./market";
+import { getFollowState, getFollowers, getFollowing, type FollowState, type SocialUser } from "./social";
 import type { Network } from "./solana";
 import type { Profile, Project } from "./types";
 
@@ -56,6 +57,12 @@ export interface ProfileView {
   portfolioUsd: number | null;
   /** The self-funding loop summed across launched projects; null for non-founders. */
   builder: BuilderImpact | null;
+  /** Follower/following counts + whether the viewer follows this wallet. */
+  follow: FollowState;
+  /** Recent followers (newest first), enriched with profile basics. */
+  followers: SocialUser[];
+  /** Wallets this profile follows (newest first), enriched. */
+  followingList: SocialUser[];
   /** Recent log of the creator's projects (newest first); [] if they launched none. */
   log: CreatorLogItem[];
 }
@@ -208,16 +215,19 @@ async function getCreatorLog(launchedKeys: string[]): Promise<CreatorLogItem[]> 
 
 /** Everything the profile page renders for `wallet`, composed from existing
  *  sources. getProjects() already overrides snapshots with live balances. */
-export async function getProfileView(wallet: string): Promise<ProfileView> {
+export async function getProfileView(wallet: string, viewer?: string | null): Promise<ProfileView> {
   const projects = await getProjects();
   const launched = projects.filter((p) => p.creatorWallet === wallet);
-  const [profile, positions, log, builder] = await Promise.all([
+  const [profile, positions, log, builder, follow, followers, followingList] = await Promise.all([
     getProfile(wallet),
     getPositions(wallet, projects),
     getCreatorLog(launched.map((p) => p.key)),
     getBuilderImpact(launched),
+    getFollowState(wallet, viewer),
+    getFollowers(wallet, viewer),
+    getFollowing(wallet, viewer),
   ]);
   const priced = positions.filter((p) => p.valueUsd != null);
   const portfolioUsd = priced.length > 0 ? priced.reduce((s, p) => s + (p.valueUsd as number), 0) : null;
-  return { profile, launched, positions, portfolioUsd, builder, log };
+  return { profile, launched, positions, portfolioUsd, builder, follow, followers, followingList, log };
 }

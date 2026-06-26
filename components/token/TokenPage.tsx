@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { LoopMark } from "../LoopMark";
 import { ProfileIcon } from "../AuthIcons";
+import { NotificationBell } from "../NotificationBell";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -437,13 +438,16 @@ function TokenNav({
           ← All projects
         </Link>
         {connected && (
-          <Link
-            href="/profile"
-            title="Your Loop profile"
-            className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
-          >
-            <ProfileIcon size={17} />
-          </Link>
+          <>
+            <NotificationBell />
+            <Link
+              href="/profile"
+              title="Your Loop profile"
+              className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
+            >
+              <ProfileIcon size={17} />
+            </Link>
+          </>
         )}
         <button
           onClick={onToggle}
@@ -1805,16 +1809,29 @@ function TopHolders({
               key={h.address}
               onClick={() => inspect({ kind: "holder", holder: h })}
               title="Inspect this holder"
-              className="flex items-center justify-between font-mono text-[12.5px] w-full text-left hover:opacity-80 transition-opacity"
+              className="flex items-center justify-between gap-2 font-mono text-[12.5px] w-full text-left hover:opacity-80 transition-opacity"
             >
-              <span className="text-muted truncate">
-                {h.name ? (
-                  <span className="text-ink">{h.name}</span>
+              <span className="flex items-center gap-[8px] min-w-0">
+                {/* Loop profile identity (name + avatar) when the holder set one;
+                    else a .sol name; else the short address. A configured profile
+                    also gets the accent-tinted "loop" cue so it stands out. */}
+                {h.loopAvatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={h.loopAvatar} alt="" className="w-[20px] h-[20px] rounded-[6px] object-cover border border-line-2 flex-none" />
+                ) : h.loopName ? (
+                  <span className="w-[20px] h-[20px] rounded-[6px] bg-accent-tint border border-accent-tint-border flex items-center justify-center text-[10px] font-display font-bold text-accent-text flex-none">
+                    {h.loopName.slice(0, 1).toUpperCase()}
+                  </span>
+                ) : null}
+                {h.loopName ? (
+                  <span className="text-ink truncate">{h.loopName}</span>
+                ) : h.name ? (
+                  <span className="text-ink truncate">{h.name}</span>
                 ) : (
-                  shortAddr(h.address)
+                  <span className="text-muted truncate">{shortAddr(h.address)}</span>
                 )}
               </span>
-              <span className="tabular-nums">{(h.share * 100).toFixed(2)}%</span>
+              <span className="tabular-nums flex-none">{(h.share * 100).toFixed(2)}%</span>
             </button>
           ))}
         </div>

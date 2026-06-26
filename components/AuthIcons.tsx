@@ -46,6 +46,27 @@ export function ProfileIcon({ size = 15, className }: IconProps) {
   );
 }
 
+/** Generic bell glyph (monochrome) for the notification panel trigger. */
+export function BellIcon({ size = 15, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <path d="M8 2c-2.2 0-3.6 1.7-3.6 3.8 0 3-1.1 3.9-1.1 3.9h9.4s-1.1-.9-1.1-3.9C11.6 3.7 10.2 2 8 2Z" />
+      <path d="M6.6 12.2a1.5 1.5 0 0 0 2.8 0" />
+    </svg>
+  );
+}
+
 /** Official Solana mark — three bars with the purple→green brand gradient. */
 export function SolanaIcon({ size = 15, className }: IconProps) {
   return (

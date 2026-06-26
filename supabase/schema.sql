@@ -92,6 +92,40 @@ comment on table public.profiles is 'User profiles on Loop, keyed by wallet pubk
 alter table public.profiles enable row level security;
 create policy "profiles are publicly readable" on public.profiles for select using (true);
 
+-- ── follows ──────────────────────────────────────────────────────────────────
+-- Wallet-to-wallet follow graph. Public read; writes service-role only after a
+-- signed looplabs.fun profile proof of the follower (no anon write policy).
+create table if not exists public.follows (
+  follower   text not null,
+  following  text not null,
+  created_at timestamptz not null default now(),
+  primary key (follower, following),
+  constraint follows_no_self check (follower <> following)
+);
+create index if not exists follows_following_idx on public.follows (following, created_at desc);
+create index if not exists follows_follower_idx  on public.follows (follower,  created_at desc);
+alter table public.follows enable row level security;
+create policy "follows are publicly readable" on public.follows for select using (true);
+
+-- ── notifications ────────────────────────────────────────────────────────────
+-- Per-recipient feed. PRIVATE: RLS on with NO policies, so only the service role
+-- (behind a signed-proof API route) can read/write — a wallet's notifications are
+-- unreadable by anyone else.
+create table if not exists public.notifications (
+  id         bigint generated always as identity primary key,
+  recipient  text not null,
+  type       text not null,                 -- 'follow' | 'escalation' | ...
+  actor      text,
+  data       jsonb not null default '{}'::jsonb,
+  read       boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_recipient_idx on public.notifications (recipient, created_at desc);
+create index if not exists notifications_unread_idx on public.notifications (recipient) where read = false;
+create unique index if not exists notifications_follow_uniq
+  on public.notifications (recipient, actor) where type = 'follow';
+alter table public.notifications enable row level security;
+
 -- ── vanity_keypairs ──────────────────────────────────────────────────────────
 create table if not exists public.vanity_keypairs (
   id bigint generated always as identity primary key,
