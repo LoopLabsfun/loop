@@ -149,3 +149,16 @@ export interface Payout {
   address: string;
   sol: number;
 }
+
+/** A user profile on Loop, keyed by wallet pubkey (the platform identity). The
+ *  wallet alone always works; the rest is optional enrichment a user adds after a
+ *  signed `loop.fun profile` proof. Twitter is linked + verified separately. */
+export interface Profile {
+  wallet: string;
+  displayName: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  twitterHandle: string | null;
+  twitterVerified: boolean;
+  createdAt?: string | null;
+}
