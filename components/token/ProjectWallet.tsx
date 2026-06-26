@@ -6,6 +6,7 @@ import { DEFAULT_POLICY } from "@/lib/agent-actions";
 import type { WalletAction } from "@/lib/agent-data";
 import type { Project } from "@/lib/types";
 import { walletRunway, fmtRunwayDays } from "@/lib/wallet-runway";
+import { budgetStatus } from "@/lib/budget-status";
 
 // The project's agent wallet + its on-chain positions (buyback / burn / airdrop
 // / bounty / swap). Reads structured rows from `agent_actions` (via getAgentState);
@@ -87,6 +88,8 @@ export function ProjectWallet({
   const solDeployed24h = actions
     .filter((a) => a.disposition === "executed" && isRecent(a.at))
     .reduce((sum, a) => sum + a.amountSol, 0);
+  // Daily budget status: how much of the 24h guardrail cap has been used.
+  const dailyBudget = budgetStatus(solDeployed24h, DEFAULT_POLICY.maxDailySol);
   // Runway: null when balance is unknown or 24h deploy rate is zero.
   const runway =
     typeof agentSol === "number"
@@ -249,6 +252,24 @@ export function ProjectWallet({
         <div className="px-5 py-[9px] border-t border-line-4 flex items-center justify-between text-[11px] text-faint">
           <span>Est. runway at current rate</span>
           <span className="font-mono text-muted">{fmtRunwayDays(runway)}</span>
+        </div>
+      )}
+
+      {/* Daily budget progress — SOL deployed in the last 24h vs the daily cap */}
+      {wallet && (
+        <div className="px-5 py-[9px] border-t border-line-4">
+          <div className="flex items-center justify-between text-[11px] text-faint mb-[5px]">
+            <span>Daily budget used</span>
+            <span className={`font-mono ${dailyBudget.over ? "text-neg" : "text-muted"}`}>
+              {solDeployed24h.toFixed(2)} / {DEFAULT_POLICY.maxDailySol} SOL
+            </span>
+          </div>
+          <div className="h-[3px] rounded-full bg-line-3 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-[width] ${dailyBudget.over ? "bg-neg" : dailyBudget.pct >= 80 ? "bg-warn" : "bg-pos"}`}
+              style={{ width: `${dailyBudget.pct}%` }}
+            />
+          </div>
         </div>
       )}
 
