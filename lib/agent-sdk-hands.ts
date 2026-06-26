@@ -131,9 +131,14 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
           `if [ "$GATE_RESULT" != "ok" ]; then echo "PUSHED=no"; exit 0; fi`,
           // ── Commit + push (token re-introduced only here). Git identity was
           //    already set right after the clone, above. ──
+          // Write the commit message to a temp file and use -F to avoid embedding
+          // multi-line strings in the bash script (E2B's bash kernel processes
+          // lines individually, so a newline inside a -m '...' literal breaks the
+          // command at the line boundary, causing a silent commit failure).
+          `printf '%s' ${shquote(commitMessage)} > /tmp/agent-commit-msg.txt`,
           `git add -A`,
           `git diff --cached --quiet && { echo "NO_CHANGES"; echo "PUSHED=no"; exit 0; }`,
-          `git commit -m ${shquote(commitMessage)} || { echo "PUSHED=no"; exit 0; }`,
+          `git commit -F /tmp/agent-commit-msg.txt || { echo "COMMIT_FAILED"; echo "PUSHED=no"; exit 0; }`,
           `git pull --rebase "https://x-access-token:\${GH}@github.com/${repoSlug}.git" ${shquote(branch)} || { echo "REBASE_FAILED"; echo "PUSHED=no"; exit 0; }`,
           `git push "https://x-access-token:\${GH}@github.com/${repoSlug}.git" ${shquote(branch)} || { echo "PUSH_FAILED"; echo "PUSHED=no"; exit 0; }`,
           `echo "PUSHED=yes"`,
