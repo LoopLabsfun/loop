@@ -56,6 +56,19 @@ export async function getFollowState(wallet: string, viewer?: string | null): Pr
   };
 }
 
+/** Does `actor` follow `target`? */
+export async function isFollowing(actor: string, target: string): Promise<boolean> {
+  const sb = supabaseAdmin;
+  if (!sb || actor === target) return false;
+  const { data } = await sb
+    .from("follows")
+    .select("follower")
+    .eq("follower", actor)
+    .eq("following", target)
+    .maybeSingle();
+  return Boolean(data);
+}
+
 /** Enrich a set of wallets with profile basics + whether `viewer` follows each. */
 async function enrich(wallets: string[], viewer?: string | null): Promise<SocialUser[]> {
   const sb = supabaseAdmin;
@@ -128,6 +141,45 @@ export async function unfollow(actor: string, target: string): Promise<{ ok: boo
   const { error } = await sb.from("follows").delete().eq("follower", actor).eq("following", target);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+/** Reconcile open escalations into the founder's notification feed. Escalations
+ *  are created by the agent runtime (no in-app insert site), so instead of
+ *  hooking creation we sync on read: every open escalation on a project this
+ *  wallet launched becomes one notification, idempotently (deduped by the
+ *  escalation id stored in `data`). Cheap no-op for non-founders. */
+export async function syncEscalationNotifications(recipient: string): Promise<void> {
+  const sb = supabaseAdmin;
+  if (!sb) return;
+  const { data: projs } = await sb.from("projects").select("key").eq("creator_wallet", recipient);
+  const keys = ((projs ?? []) as { key: string }[]).map((p) => p.key);
+  if (keys.length === 0) return;
+  const { data: escs } = await sb
+    .from("agent_escalations")
+    .select("id,project_key,body")
+    .in("project_key", keys)
+    .eq("status", "open");
+  const open = (escs ?? []) as { id: number; project_key: string; body: string }[];
+  if (open.length === 0) return;
+  // Which escalations already have a notification? (dedupe by stored id)
+  const { data: existing } = await sb
+    .from("notifications")
+    .select("data")
+    .eq("recipient", recipient)
+    .eq("type", "escalation");
+  const seen = new Set(
+    ((existing ?? []) as { data: { escalationId?: number } }[]).map((n) => n.data?.escalationId).filter(Boolean)
+  );
+  const rows = open
+    .filter((e) => !seen.has(e.id))
+    .map((e) => ({
+      recipient,
+      type: "escalation",
+      actor: null,
+      data: { escalationId: e.id, projectKey: e.project_key, text: e.body.slice(0, 140) },
+      read: false,
+    }));
+  if (rows.length > 0) await sb.from("notifications").insert(rows);
 }
 
 /** The recipient's notifications (newest first), with actor profile basics. */

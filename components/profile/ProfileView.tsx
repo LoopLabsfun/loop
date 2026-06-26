@@ -8,8 +8,8 @@ import { useWallet } from "@/lib/wallet";
 import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
 import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
-import { apiFollow, apiEstablishSession } from "@/lib/social-client";
 import { NotificationBell } from "../NotificationBell";
+import { FollowButton } from "../FollowButton";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
 import type { SocialUser } from "@/lib/social";
 
@@ -444,95 +444,29 @@ function CopyWallet({ wallet }: { wallet: string }) {
   );
 }
 
-// Follow / unfollow another wallet. Optimistic toggle; on a 401 (no session) it
-// asks the wallet to sign ONE profile proof to open a 7-day session, then retries
-// — so following is one click after the first sign, never a popup per follow.
-function FollowButton({
-  target,
-  following,
-  onChange,
-}: {
-  target: string;
-  following: boolean;
-  onChange: (now: boolean) => void;
-}) {
-  const wallet = useWallet();
-  const [busy, setBusy] = useState(false);
-  const [hover, setHover] = useState(false);
-
-  async function toggle() {
-    if (!wallet.connected || !wallet.address) {
-      wallet.connect();
-      return;
-    }
-    const next = !following;
-    setBusy(true);
-    onChange(next); // optimistic
-    try {
-      await apiFollow(target, next ? "follow" : "unfollow");
-    } catch (e) {
-      if (e instanceof Error && e.message === "no-session") {
-        // Establish a session from one signature, then retry once.
-        try {
-          const proof = await wallet.signProfileProof(wallet.address);
-          if (proof && (await apiEstablishSession(wallet.address, proof))) {
-            await apiFollow(target, next ? "follow" : "unfollow");
-          } else {
-            onChange(following); // revert
-          }
-        } catch {
-          onChange(following);
-        }
-      } else {
-        onChange(following); // revert on any other failure
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const label = !wallet.connected ? "Follow" : following ? (hover ? "Unfollow" : "Following") : "Follow";
-  return (
-    <button
-      onClick={toggle}
-      disabled={busy}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={`mt-[40px] font-display font-semibold text-[13px] px-4 h-[36px] rounded-[10px] transition-colors disabled:opacity-60 ${
-        following
-          ? hover
-            ? "bg-neg/10 text-neg border border-neg/30"
-            : "bg-surface text-muted border border-line-2"
-          : "bg-accent text-white hover:opacity-90"
-      }`}
-    >
-      {busy ? "…" : label}
-    </button>
-  );
-}
-
-// One wallet in a Followers/Following list: avatar + name, linking to its profile.
+// One wallet in a Followers/Following list: avatar + name (linking to its
+// profile) plus an inline follow control. The button is a sibling of the link —
+// never nested inside the <a> — so the two don't fight over the click.
 function SocialRow({ user }: { user: SocialUser }) {
   const name = user.displayName || shortAddr(user.wallet);
   return (
-    <Link
-      href={`/u/${user.wallet}`}
-      className="flex items-center gap-[10px] py-[9px] border-b border-line-4 last:border-0 group"
-    >
-      {user.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={user.avatarUrl} alt={name} className="w-[30px] h-[30px] rounded-[9px] object-cover border border-line-2 flex-none" />
-      ) : (
-        <span className="w-[30px] h-[30px] rounded-[9px] bg-accent-tint border border-accent-tint-border flex items-center justify-center font-display font-bold text-[13px] text-accent-text flex-none">
-          {name.slice(0, 1).toUpperCase()}
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium group-hover:text-accent-text transition-colors truncate">{name}</div>
-        {user.displayName && <div className="font-mono text-[10.5px] text-faint truncate">{shortAddr(user.wallet)}</div>}
-      </div>
-      {user.youFollow && <span className="font-mono text-[10px] text-faint">following</span>}
-    </Link>
+    <div className="flex items-center gap-[10px] py-[9px] border-b border-line-4 last:border-0">
+      <Link href={`/u/${user.wallet}`} className="flex items-center gap-[10px] min-w-0 flex-1 group">
+        {user.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={user.avatarUrl} alt={name} className="w-[30px] h-[30px] rounded-[9px] object-cover border border-line-2 flex-none" />
+        ) : (
+          <span className="w-[30px] h-[30px] rounded-[9px] bg-accent-tint border border-accent-tint-border flex items-center justify-center font-display font-bold text-[13px] text-accent-text flex-none">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-medium group-hover:text-accent-text transition-colors truncate">{name}</div>
+          {user.displayName && <div className="font-mono text-[10.5px] text-faint truncate">{shortAddr(user.wallet)}</div>}
+        </div>
+      </Link>
+      <FollowButton target={user.wallet} following={user.youFollow} size="sm" />
+    </div>
   );
 }
 

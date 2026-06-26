@@ -2,13 +2,22 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
-import { follow, unfollow } from "@/lib/social";
+import { follow, unfollow, isFollowing } from "@/lib/social";
 
 // Follow / unfollow another wallet. The ACTOR is taken from the user session
 // cookie (minted once at /api/session from a signed proof) — never from the
 // request body — so a caller can only act as the wallet they proved they own.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+// Whether the signed-in wallet follows `?target=` — lets a follow control that
+// renders without server-side state (e.g. the holder drawer) resolve itself.
+export async function GET(req: Request) {
+  const target = new URL(req.url).searchParams.get("target");
+  const actor = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
+  if (!actor || !isSolanaAddress(target)) return NextResponse.json({ following: false });
+  return NextResponse.json({ following: await isFollowing(actor, target) });
+}
 
 export async function POST(req: Request) {
   let body: { target?: string; action?: "follow" | "unfollow" };
