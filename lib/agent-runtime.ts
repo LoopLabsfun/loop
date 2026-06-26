@@ -39,7 +39,14 @@ import {
 // so the simulated UI keeps working until the runtime is switched on. Server-
 // only; the key never reaches the browser. Heavy SDK is imported dynamically.
 
-const AGENT_MODEL = "claude-opus-4-8";
+// The decision/read-loop model — the agent's "brain" that reads the code and
+// picks the next task. This runs several times per tick (once per read round), so
+// it dominates the per-tick cost. Default Sonnet 4.6: it decides just as well for
+// far less money (Opus was ~5× the price and the single biggest cost driver).
+// Override with AGENT_DECISION_MODEL (e.g. back to claude-opus-4-8) when sharper
+// judgement is worth the spend.
+const AGENT_MODEL =
+  process.env.AGENT_DECISION_MODEL?.trim() || "claude-sonnet-4-6";
 
 /**
  * How deep the agent may EXPLORE the codebase before it acts (the "read loop").
