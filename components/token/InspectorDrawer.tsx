@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import {
   inspectKindMeta,
   useInspectorContext,
@@ -690,6 +691,14 @@ function HolderBody({ holder: h, net }: { holder: Holder; net: "mainnet" | "devn
           {h.address} ↗
         </a>
       </Field>
+      {/* A holder is a Loop identity — link to their wallet-keyed profile so the
+          holder list, the token page, and profiles form one connected graph. */}
+      <Link
+        href={`/u/${h.address}`}
+        className="mt-1 inline-flex items-center gap-[6px] h-[34px] px-3 rounded-[10px] border border-line-2 text-[13px] hover:bg-surface-2 transition-colors"
+      >
+        View Loop profile →
+      </Link>
     </>
   );
 }

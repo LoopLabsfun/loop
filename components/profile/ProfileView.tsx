@@ -7,7 +7,7 @@ import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
-import { explorerUrl, shortAddr } from "@/lib/format";
+import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
 
 // Twitter linking (Privy) only works when the user-side Privy layer is configured.
@@ -28,12 +28,20 @@ function compactNum(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+// USD for portfolio/position figures: cents under $1k (so a $0.61 bag reads
+// honestly), compact K/M above — compactUsd alone rounds small values to whole $.
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  if (n >= 1000) return compactUsd(n);
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 type LogFilter = "all" | "ship" | "decision" | "escalation";
 
 export function ProfileView({ data }: { data: ProfileViewData }) {
   const wallet = useWallet();
   const router = useRouter();
-  const { profile, launched, positions, log } = data;
+  const { profile, launched, positions, portfolioUsd, builder, log } = data;
   const isOwner = wallet.connected && wallet.address === profile.wallet;
   const isFounder = launched.length > 0;
   const escalations = log.filter((l) => l.kind === "escalation").length;
@@ -43,6 +51,9 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
   const shownLog = filter === "all" ? log : log.filter((l) => l.kind === filter);
 
   const name = profile.displayName || shortAddr(profile.wallet);
+  const joined = profile.createdAt
+    ? new Date(profile.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -59,79 +70,96 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
         </button>
       </nav>
 
-      <main className="max-w-[860px] mx-auto px-6 sm:px-8 py-7 flex flex-col gap-4">
-        {/* Identity */}
-        <div className="bg-surface border border-line-2 rounded-[16px] px-6 py-5 flex gap-5 items-start flex-wrap">
-          <Avatar url={profile.avatarUrl} name={name} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-[9px] flex-wrap">
-              <span className="font-display font-bold text-[20px] tracking-[-0.02em]">{name}</span>
-              {isFounder && (
-                <span className="font-mono text-[10px] px-2 py-[3px] rounded-[6px] bg-accent text-white">FOUNDER</span>
+      <main className="max-w-[920px] mx-auto px-6 sm:px-8 py-7 flex flex-col gap-4">
+        {/* Identity — a cover band the avatar sits on, then name + role + meta. */}
+        <div className="bg-surface border border-line-2 rounded-[18px] overflow-hidden">
+          <div
+            className="h-[88px]"
+            style={{
+              background:
+                "linear-gradient(110deg, oklch(0.96 0.04 285) 0%, oklch(0.94 0.06 285) 45%, oklch(0.965 0.018 285) 100%)",
+            }}
+          />
+          <div className="px-6 pb-5 -mt-[34px] flex gap-5 items-start flex-wrap">
+            <Avatar url={profile.avatarUrl} name={name} />
+            <div className="min-w-0 flex-1 pt-[40px]">
+              <div className="flex items-center gap-[9px] flex-wrap">
+                <span className="font-display font-bold text-[22px] tracking-[-0.02em] leading-none">{name}</span>
+                {isFounder && <RoleChip kind="founder" />}
+                {positions.length > 0 && <RoleChip kind="holder" />}
+                {profile.twitterHandle ? (
+                  <a
+                    href={`https://x.com/${profile.twitterHandle.replace(/^@/, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-[11.5px] text-accent-text inline-flex items-center gap-[4px] hover:underline"
+                  >
+                    @{profile.twitterHandle.replace(/^@/, "")}
+                    {profile.twitterVerified && <span className="text-pos" title="verified">✓</span>}
+                  </a>
+                ) : isOwner ? (
+                  <span className="font-mono text-[11px] text-faint" title="Linking Twitter via Privy is coming next">
+                    + link Twitter (soon)
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-3 mt-[7px] flex-wrap">
+                <CopyWallet wallet={profile.wallet} />
+                {joined && <span className="font-mono text-[11px] text-faint">· since {joined}</span>}
+              </div>
+              {profile.bio && (
+                <p className="text-[13px] text-body mt-[10px] mb-0 max-w-[560px] leading-[1.5]">{profile.bio}</p>
               )}
-              {profile.twitterHandle ? (
-                <a
-                  href={`https://x.com/${profile.twitterHandle.replace(/^@/, "")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-[11.5px] text-accent-text inline-flex items-center gap-[4px] hover:underline"
-                >
-                  @{profile.twitterHandle.replace(/^@/, "")}
-                  {profile.twitterVerified && <span className="text-pos" title="verified">✓</span>}
-                </a>
-              ) : isOwner ? (
-                <span
-                  className="font-mono text-[11px] text-faint"
-                  title="Linking Twitter via Privy is coming next"
-                >
-                  + link Twitter (soon)
-                </span>
-              ) : null}
             </div>
-            <a
-              href={explorerUrl(profile.wallet, "mainnet")}
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono text-[12px] text-muted hover:text-accent-text transition-colors"
-            >
-              {shortAddr(profile.wallet)} ↗
-            </a>
-            {profile.bio && <p className="text-[13px] text-body mt-2 mb-0 max-w-[520px] leading-[1.5]">{profile.bio}</p>}
+            {isOwner && (
+              <button
+                onClick={() => setEditing(true)}
+                className="font-mono text-[12px] px-3 py-[7px] rounded-[9px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors mt-[40px]"
+              >
+                Edit profile
+              </button>
+            )}
           </div>
-          {isOwner && (
-            <button
-              onClick={() => setEditing(true)}
-              className="font-mono text-[12px] px-3 py-[7px] rounded-[9px] border border-line-2 hover:bg-surface-2 transition-colors"
-            >
-              Edit profile
-            </button>
-          )}
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label="positions" value={String(positions.length)} />
-          <Stat label="launched" value={String(launched.length)} />
-          <Stat label="needs you" value={String(escalations)} accent={escalations > 0} />
-        </div>
+        {/* Builder impact — the self-funding loop, summed across launched projects.
+            Founder-only; it makes the platform's core thesis legible on a profile. */}
+        {builder && <ImpactStrip builder={builder} escalations={escalations} />}
+
+        {/* Portfolio summary — holders see their live worth on Loop up top. */}
+        {positions.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="portfolio" value={portfolioUsd != null ? fmtUsd(portfolioUsd) : "—"} big />
+            <Stat label="positions" value={String(positions.length)} />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Positions */}
-          <Panel title="Positions" hint="on-chain">
+          <Panel title="Positions" hint={portfolioUsd != null ? fmtUsd(portfolioUsd) : "on-chain"}>
             {positions.length === 0 ? (
-              <Empty>No Loop tokens held.</Empty>
+              <Empty>No Loop tokens held yet.</Empty>
             ) : (
               positions.map((p) => (
                 <Link
                   key={p.key}
                   href={`/token?p=${p.key}`}
-                  className="flex items-center justify-between py-[9px] border-b border-line-4 last:border-0 hover:opacity-80"
+                  className="flex items-center justify-between py-[10px] border-b border-line-4 last:border-0 group"
                 >
-                  <div>
-                    <div className="text-[13px] font-medium">{p.name}</div>
-                    <div className="font-mono text-[11px] text-accent-text">{p.ticker}</div>
+                  <div className="flex items-center gap-[10px] min-w-0">
+                    <TokenGlyph ticker={p.ticker} />
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium group-hover:text-accent-text transition-colors truncate">{p.name}</div>
+                      <div className="font-mono text-[11px] text-faint">{compactNum(p.amount)} {p.ticker.replace(/^\$/, "")}</div>
+                    </div>
                   </div>
-                  <div className="font-mono text-[12.5px] text-muted">{compactNum(p.amount)}</div>
+                  <div className="text-right flex-none">
+                    {p.valueUsd != null ? (
+                      <div className="font-mono text-[13px] tabular-nums">{fmtUsd(p.valueUsd)}</div>
+                    ) : (
+                      <div className="font-mono text-[12px] text-faint">{p.network === "devnet" ? "devnet" : "—"}</div>
+                    )}
+                  </div>
                 </Link>
               ))
             )}
@@ -301,22 +329,121 @@ function EditModal({
 }
 
 function Avatar({ url, name }: { url: string | null; name: string }) {
+  const ring = "w-[76px] h-[76px] rounded-[22px] flex-none ring-4 ring-surface shadow-[0_2px_12px_oklch(0.47_0.21_285_/_0.14)]";
   if (url) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={url} alt={name} className="w-[64px] h-[64px] rounded-[18px] object-cover border border-line-2 flex-none" />;
+    return <img src={url} alt={name} className={`${ring} object-cover border border-line-2`} />;
   }
   return (
-    <div className="w-[64px] h-[64px] rounded-[18px] bg-accent-tint border border-accent-tint-border flex items-center justify-center text-accent-text font-display font-bold text-[26px] flex-none">
+    <div
+      className={`${ring} bg-accent-tint border border-accent-tint-border flex items-center justify-center text-accent-text font-display font-bold text-[30px]`}
+    >
       {name.slice(0, 1).toUpperCase()}
     </div>
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function RoleChip({ kind }: { kind: "founder" | "holder" }) {
+  if (kind === "founder") {
+    return (
+      <span className="font-mono text-[10px] px-2 py-[3px] rounded-[6px] bg-accent text-white tracking-[0.02em]">FOUNDER</span>
+    );
+  }
   return (
-    <div className="bg-surface border border-line-2 rounded-[12px] px-4 py-3">
+    <span className="font-mono text-[10px] px-2 py-[3px] rounded-[6px] bg-accent-tint text-accent-text border border-accent-tint-border tracking-[0.02em]">
+      HOLDER
+    </span>
+  );
+}
+
+function CopyWallet({ wallet }: { wallet: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() =>
+          navigator.clipboard?.writeText(wallet).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            },
+            () => {}
+          )
+        }
+        title="Copy wallet address"
+        className="group font-mono text-[12px] text-muted hover:text-accent-text transition-colors inline-flex items-center gap-[5px]"
+      >
+        {shortAddr(wallet)}
+        <span className="text-faint group-hover:text-accent-text">{copied ? "✓" : "⧉"}</span>
+      </button>
+      <a
+        href={explorerUrl(wallet, "mainnet")}
+        target="_blank"
+        rel="noreferrer"
+        className="font-mono text-[11px] text-faint hover:text-accent-text transition-colors"
+      >
+        explorer ↗
+      </a>
+    </span>
+  );
+}
+
+// The self-funding loop, summed across a founder's projects — mirrors the token
+// page's LoopProof so the platform's core thesis reads the same on a profile.
+function ImpactStrip({
+  builder,
+  escalations,
+}: {
+  builder: NonNullable<ProfileViewData["builder"]>;
+  escalations: number;
+}) {
+  const items: { value: string; label: string; accent?: boolean }[] = [
+    { value: String(builder.shipped), label: builder.shipped === 1 ? "feature shipped" : "features shipped" },
+    { value: `${builder.treasurySol.toFixed(3)}◎`, label: "treasury funding it" },
+    { value: String(builder.liveTokens), label: builder.liveTokens === 1 ? "live token" : "live tokens" },
+  ];
+  if (escalations > 0) items.push({ value: String(escalations), label: "awaiting you", accent: true });
+  return (
+    <div className="rounded-[16px] border border-line-2 bg-surface px-5 py-4">
+      <div className="text-[9.5px] uppercase tracking-[0.06em] text-faint mb-3">↻ self-funding loop · what your agents shipped</div>
+      <div className="flex flex-wrap gap-x-9 gap-y-3">
+        {items.map((it) => (
+          <div key={it.label}>
+            <div
+              className={`font-display font-bold text-[22px] tracking-[-0.01em] tabular-nums leading-none ${
+                it.accent ? "text-accent-text" : "text-ink"
+              }`}
+            >
+              {it.value}
+            </div>
+            <div className="text-[10.5px] text-muted mt-[4px]">{it.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TokenGlyph({ ticker }: { ticker: string }) {
+  return (
+    <span className="w-[30px] h-[30px] rounded-[9px] bg-accent-tint border border-accent-tint-border flex items-center justify-center font-display font-bold text-[12px] text-accent-text flex-none">
+      {ticker.replace(/^\$/, "").slice(0, 2).toUpperCase()}
+    </span>
+  );
+}
+
+function Stat({ label, value, accent, big }: { label: string; value: string; accent?: boolean; big?: boolean }) {
+  return (
+    <div className="bg-surface border border-line-2 rounded-[14px] px-4 py-3">
       <div className="text-[10px] uppercase tracking-[0.04em] text-faint font-mono">{label}</div>
-      <div className={`font-display font-bold text-[19px] mt-[2px] ${accent ? "text-accent-text" : ""}`}>{value}</div>
+      <div
+        className={`font-display font-bold mt-[2px] tabular-nums ${big ? "text-[24px]" : "text-[19px]"} ${
+          accent ? "text-accent-text" : ""
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }
