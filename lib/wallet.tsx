@@ -32,6 +32,7 @@ import {
 import { useNetwork } from "./network";
 import { buildLaunchMessage } from "./launch-message";
 import { buildAdminMessage } from "./admin-message";
+import { buildProfileMessage } from "./profile-message";
 import { toBaseUnits, TOKEN_DECIMALS, buildChatMessage } from "./chat";
 import { buildDirectiveMessage } from "./directives";
 import { buildStakeMessage } from "./staking";
@@ -153,6 +154,9 @@ export interface WalletState {
   /** Sign the canonical founder-admin message for `projectKey` to open an admin
    *  session (the server also checks the pubkey === creator_wallet). null if unsupported. */
   signAdminProof: (projectKey: string) => Promise<LaunchProof | null>;
+  /** Sign the canonical profile message for `wallet` to edit that profile (the
+   *  server also checks pubkey === wallet). null if unsupported. */
+  signProfileProof: (wallet: string) => Promise<LaunchProof | null>;
   /**
    * Send `sol` SOL from the connected wallet to `to` on the active cluster
    * (a plain SystemProgram.transfer — used for project donations). Resolves
@@ -364,6 +368,9 @@ export function useWallet(): WalletState {
   const signAdminProof = (projectKey: string): Promise<LaunchProof | null> =>
     signProof(buildAdminMessage(projectKey, Date.now()));
 
+  const signProfileProof = (wallet: string): Promise<LaunchProof | null> =>
+    signProof(buildProfileMessage(wallet, Date.now()));
+
   return {
     connected,
     address,
@@ -376,6 +383,7 @@ export function useWallet(): WalletState {
     signChatProof,
     signDirectiveProof,
     signAdminProof,
+    signProfileProof,
     sendSol,
     sendSwapTx,
     sendSplToken,

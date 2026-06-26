@@ -72,6 +72,26 @@ comment on column public.projects.guardrails is 'Editable guardrails the agent r
 alter table public.projects add column if not exists agent_paused boolean not null default false;
 comment on column public.projects.agent_paused is 'Founder kill switch (admin console): when true the cron skips this project''s brain — no Claude spend, no redeploy needed.';
 
+-- ── profiles ─────────────────────────────────────────────────────────────────
+-- One row per user wallet. The wallet IS the identity on Loop (everything is
+-- wallet-signature gated); a profile enriches it with a display name, avatar, bio,
+-- and a linked + verified social. Writes are server-side only (service role) after
+-- a `loop.fun profile` signature check at /api/profile — same posture as launch,
+-- so there is no anon write policy. Public read so any profile page can render.
+create table if not exists public.profiles (
+  wallet text primary key,
+  display_name text,
+  bio text,
+  avatar_url text,
+  twitter_handle text,
+  twitter_verified boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+comment on table public.profiles is 'User profiles on Loop, keyed by wallet pubkey. Writes go through the service role after a signed loop.fun profile proof; anon can only read.';
+alter table public.profiles enable row level security;
+create policy "profiles are publicly readable" on public.profiles for select using (true);
+
 -- ── vanity_keypairs ──────────────────────────────────────────────────────────
 create table if not exists public.vanity_keypairs (
   id bigint generated always as identity primary key,
