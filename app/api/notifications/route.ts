@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
-import { getNotifications, getUnreadCount, markAllRead } from "@/lib/social";
+import { getNotifications, getUnreadCount, markAllRead, syncEscalationNotifications } from "@/lib/social";
 
 // Read / clear the signed-in wallet's PRIVATE notification feed. The recipient is
 // the user session cookie's wallet — notifications are never exposed to anyone
@@ -17,6 +17,8 @@ function wallet(): string | null {
 export async function GET() {
   const w = wallet();
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
+  // Fold any open escalations into the feed first (founder-only, idempotent).
+  await syncEscalationNotifications(w);
   const [items, unread] = await Promise.all([getNotifications(w), getUnreadCount(w)]);
   return NextResponse.json({ items, unread });
 }

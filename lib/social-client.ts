@@ -28,6 +28,17 @@ export async function apiFollow(target: string, action: "follow" | "unfollow"): 
   return Boolean(j.following);
 }
 
+/** Whether the signed-in wallet follows `target` (false when no session). */
+export async function apiFollowState(target: string): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/follow?target=${encodeURIComponent(target)}`);
+    if (!r.ok) return false;
+    return Boolean((await r.json()).following);
+  } catch {
+    return false;
+  }
+}
+
 /** Load the signed-in wallet's notifications. 401 ⇒ no session (throws). */
 export async function apiLoadNotifications(): Promise<{ items: Notification[]; unread: number }> {
   const r = await fetch("/api/notifications");

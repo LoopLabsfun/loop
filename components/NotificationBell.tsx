@@ -128,11 +128,18 @@ export function NotificationBell() {
 }
 
 function NotificationRow({ n }: { n: Notification }) {
-  const name = n.actorName || (n.actor ? shortAddr(n.actor) : "Someone");
-  const text = n.type === "follow" ? "started following you" : (n.data.text as string) || "sent you an update";
+  const isEsc = n.type === "escalation";
+  const name = isEsc
+    ? `$${String(n.data.projectKey ?? "").toUpperCase()} needs you`
+    : n.actorName || (n.actor ? shortAddr(n.actor) : "Someone");
+  const text = isEsc ? (n.data.text as string) || "an escalation is awaiting your sign-off" : "started following you";
   const inner = (
     <div className="flex items-start gap-[10px] px-4 py-[11px] border-b border-line-4 last:border-0 hover:bg-surface-2 transition-colors">
-      {n.actorAvatar ? (
+      {isEsc ? (
+        <span className="w-[30px] h-[30px] rounded-[9px] flex items-center justify-center font-display font-bold text-[15px] flex-none" style={{ background: "oklch(0.96 0.03 25)", color: "var(--neg)" }}>
+          !
+        </span>
+      ) : n.actorAvatar ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={n.actorAvatar} alt="" className="w-[30px] h-[30px] rounded-[9px] object-cover border border-line-2 flex-none" />
       ) : (
@@ -142,12 +149,15 @@ function NotificationRow({ n }: { n: Notification }) {
       )}
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] leading-[1.4]">
-          <span className="font-semibold">{name}</span> <span className="text-muted">{text}</span>
+          <span className="font-semibold">{name}</span>{" "}
+          <span className="text-muted">{isEsc ? "" : text}</span>
+          {isEsc && <span className="text-muted block mt-[1px] truncate">{text}</span>}
         </div>
         <div className="font-mono text-[10px] text-faint mt-[2px]">{rel(n.createdAt)}</div>
       </div>
       {!n.read && <span className="w-[7px] h-[7px] rounded-full bg-accent flex-none mt-[6px]" />}
     </div>
   );
-  return n.actor ? <Link href={`/u/${n.actor}`}>{inner}</Link> : inner;
+  const href = isEsc ? "/admin" : n.actor ? `/u/${n.actor}` : null;
+  return href ? <Link href={href}>{inner}</Link> : inner;
 }
