@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { LoopContract } from "../LoopContract";
 import { WalletIcon, ProfileIcon, GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../AuthIcons";
+import { NotificationBell } from "../NotificationBell";
 import { useWallet } from "@/lib/wallet";
 import { EXTERNAL_LINKS } from "@/lib/links";
 import type { Network } from "@/lib/types";
@@ -112,13 +113,16 @@ export function Nav({
           <span className="hidden sm:inline">Launch a Project</span>
         </button>
         {wallet.connected && (
-          <Link
-            href="/profile"
-            title="Your Loop profile"
-            className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
-          >
-            <ProfileIcon size={17} />
-          </Link>
+          <>
+            <NotificationBell />
+            <Link
+              href="/profile"
+              title="Your Loop profile"
+              className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
+            >
+              <ProfileIcon size={17} />
+            </Link>
+          </>
         )}
         <button
           onClick={wallet.toggle}
