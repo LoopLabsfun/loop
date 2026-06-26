@@ -93,10 +93,21 @@ export function TokenPage({
   const change = stats?.priceChange24h ?? 0;
 
   // v2 hero summary of the live agent: what it's building now (or the next queued
-  // item) + its most recent ship. Only used by the "merged" hero.
-  const buildingTask = agentState?.tasks?.find((t) => t.status === "building");
-  const heroTask = buildingTask ?? agentState?.tasks?.find((t) => t.status === "todo");
+  // item) + its most recent ship + the self-funding-loop proof. Only used by the
+  // "merged" hero. All derived from props already loaded — no extra fetch.
+  const allTasks = agentState?.tasks ?? [];
+  const buildingTask = allTasks.find((t) => t.status === "building");
+  const heroTask = buildingTask ?? allTasks.find((t) => t.status === "todo");
   const lastShip = commitFeed[0];
+  // The thesis, quantified: how much this token has actually built itself.
+  const shippedCount = allTasks.filter((t) => t.status === "shipped").length;
+  const onchainActions = agentState?.actions?.length ?? 0;
+  // Compute spend is the token funding its OWN development — framed as proof, not
+  // cost. Official-only (null elsewhere) ⇒ the strip degrades gracefully.
+  const computeSpentUsd = compute?.spentUsd ?? null;
+  // Honest liveness: relative time of the agent's current focus (when the building
+  // task started, else when the next item was queued). undefined ⇒ omit.
+  const heroTaskAt = heroTask?.at;
 
   return (
     <InspectorProvider project={p}>
@@ -112,8 +123,12 @@ export function TokenPage({
           preLaunch={preLaunch}
           building={Boolean(buildingTask)}
           heroTaskTitle={heroTask?.title}
+          heroTaskAt={heroTaskAt}
           tasks={agentState?.tasks}
           lastShip={lastShip}
+          shippedCount={shippedCount}
+          computeSpentUsd={computeSpentUsd}
+          onchainActions={onchainActions}
         />
       ) : (
       <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5 flex items-center justify-between gap-6 flex-wrap">
@@ -194,7 +209,7 @@ export function TokenPage({
         <div className="flex flex-col gap-4 min-w-0">
           {/* Agent — one feed: ask the agent ($LOOP-metered, answers in the side
               panel) AND steer it (directives/proposals/votes). */}
-          <div id="agent" className="scroll-mt-4">
+          <div id="agent" className="scroll-mt-4 rounded-[16px] jump-target">
             <AgentFeed
               project={p}
               directives={agentState?.directives}
@@ -323,7 +338,7 @@ export function TokenPage({
               />
             </div>
           )}
-          <div id="swap" className="scroll-mt-4">
+          <div id="swap" className="scroll-mt-4 rounded-[16px] jump-target">
             <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           </div>
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
@@ -432,11 +447,14 @@ function TokenNav({
   );
 }
 
-// v2 hero (founder-only /admin/v2 preview): identity + price + Buy on the left,
-// the LIVE agent (mascot + what it's building now + last ship) on the right — so a
-// first-time visitor sees "this token funds this agent, here it is working" at a
-// glance. Reuses the same HeaderStat / AgentFace / AgentStatusBadge as the classic
-// header so the data + behaviour stay identical; only the layout differs.
+// v2 hero (founder-only /admin/v2 preview): identity + contract + price + Buy on
+// the left, the LIVE agent on the right — mascot, what it's building now (with
+// freshness), the SELF-FUNDING-LOOP proof (features shipped · compute the token
+// spent building itself · on-chain actions), and the last ship. So a first-time
+// visitor grasps the whole thesis — "this token funds an agent that ships, here
+// it is working" — above the fold. Everything is project-data-driven (no LOOP
+// hardcoding) so it works verbatim for every future token. Reuses the same
+// HeaderStat / AgentFace / AgentStatusBadge as the classic header.
 function MergedHero({
   p,
   last,
@@ -445,8 +463,12 @@ function MergedHero({
   preLaunch,
   building,
   heroTaskTitle,
+  heroTaskAt,
   tasks,
   lastShip,
+  shippedCount,
+  computeSpentUsd,
+  onchainActions,
 }: {
   p: Project;
   last: number;
@@ -455,13 +477,17 @@ function MergedHero({
   preLaunch: boolean;
   building: boolean;
   heroTaskTitle?: string;
+  heroTaskAt?: string;
   tasks?: AgentState["tasks"];
   lastShip?: { hash: string; msg: string };
+  shippedCount: number;
+  computeSpentUsd: number | null;
+  onchainActions: number;
 }) {
   return (
     <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5">
       <div className="bg-surface border border-line-2 rounded-[16px] px-6 py-5 grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-6 items-stretch">
-        {/* Left — what is LOOP · price · buy */}
+        {/* Left — identity · contract · price · buy */}
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-[10px] flex-wrap">
             <div className="w-[42px] h-[42px] rounded-[12px] border border-line-2 bg-accent-tint flex items-center justify-center flex-none">
@@ -476,6 +502,13 @@ function MergedHero({
               <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">devnet</span>
             )}
           </div>
+
+          {/* Contract address — copyable, vanity suffix highlighted, explorer link.
+              A trust + anti-impersonation cue, and it shows off the "…Loop" vanity. */}
+          {p.mint && (
+            <CopyableCA mint={p.mint} network={p.network === "devnet" ? "devnet" : "mainnet"} />
+          )}
+
           <p className="text-[13px] text-muted mt-2 mb-0 max-w-[460px] leading-[1.5]">{p.description}</p>
 
           <div className="flex items-baseline gap-3 mt-4">
@@ -486,7 +519,7 @@ function MergedHero({
               <span className="font-mono text-[13px] text-faint">not launched</span>
             ) : (
               <span className="font-mono text-[13px]" style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}>
-                {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
+                {(change >= 0 ? "▲ " : "▼ ") + (change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
               </span>
             )}
           </div>
@@ -514,24 +547,27 @@ function MergedHero({
             />
           </div>
 
-          <div className="flex gap-[10px] mt-5">
+          {/* Buy is the primary action; selling something you don't own yet has no
+              place as a co-equal CTA on a first visit — demote it to a quiet link. */}
+          <div className="mt-auto pt-5">
             <a
               href="#swap"
-              className="flex-[2] h-[40px] rounded-[10px] bg-accent text-white font-display font-semibold text-[14px] flex items-center justify-center hover:opacity-90 transition-opacity"
+              className="w-full h-[44px] rounded-[10px] bg-accent text-white font-display font-semibold text-[15px] flex items-center justify-center hover:opacity-90 transition-opacity"
             >
               Buy {p.ticker}
             </a>
             <a
               href="#swap"
-              className="flex-1 h-[40px] rounded-[10px] border border-line-2 font-display font-semibold text-[14px] flex items-center justify-center hover:bg-surface-2 transition-colors"
+              className="block text-center font-mono text-[12px] text-faint hover:text-accent-text transition-colors mt-2"
             >
-              Sell
+              or sell {p.ticker} ↓
             </a>
           </div>
         </div>
 
-        {/* Right — the live agent: mascot + what it's doing now + last ship */}
-        <div className="flex flex-col min-w-0 lg:border-l border-line-2 lg:pl-6">
+        {/* Right — the live agent: status + what it's doing now + the self-funding
+            loop proof + last ship. The differentiator, given its own column. */}
+        <div className="flex flex-col min-w-0 border-t border-line-2 pt-5 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
           <div className="mb-3">
             <AgentStatusBadge project={p} />
           </div>
@@ -540,13 +576,24 @@ function MergedHero({
               <AgentFace project={p} tasks={tasks} size="md" market={{ changePct: change }} />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] text-faint mb-[2px]">{building ? "Building now" : "Next up"}</div>
+              <div className="text-[11px] text-faint mb-[2px]">
+                {building ? "Building now" : "Next up"}
+                {heroTaskAt && <span className="text-faint"> · {heroTaskAt}</span>}
+              </div>
               <div className="text-[13px] text-ink leading-[1.35]">{heroTaskTitle ?? "Steering the roadmap"}</div>
             </div>
           </div>
+
+          {/* The thesis, quantified — the self-funding loop made legible. */}
+          <LoopProof
+            shippedCount={shippedCount}
+            computeSpentUsd={computeSpentUsd}
+            onchainActions={onchainActions}
+          />
+
           {lastShip && (
             <div className="text-[11.5px] text-muted mt-3 pt-3 border-t border-line-4 leading-[1.5]">
-              <span className="text-pos">✓ last ship</span> · {lastShip.msg}
+              <span className="text-pos">✓ last ship</span> · {shipLabel(lastShip.msg)}
               <span className="font-mono text-faint"> · {lastShip.hash.slice(0, 7)}</span>
             </div>
           )}
@@ -559,6 +606,89 @@ function MergedHero({
         </div>
       </div>
     </section>
+  );
+}
+
+/** Strip a leading conventional-commit prefix ("feat(scope): ", "fix: ") so the
+ *  last-ship line reads as a product change, not a git subject. */
+function shipLabel(msg: string): string {
+  return msg.replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, "");
+}
+
+// The self-funding-loop proof: how much this token has actually built itself.
+// Generic across tokens — compute spend (official-only) and on-chain actions are
+// omitted when absent, so a brand-new token shows just its shipped count.
+function LoopProof({
+  shippedCount,
+  computeSpentUsd,
+  onchainActions,
+}: {
+  shippedCount: number;
+  computeSpentUsd: number | null;
+  onchainActions: number;
+}) {
+  const items: { value: string; label: string }[] = [
+    { value: String(shippedCount), label: shippedCount === 1 ? "feature shipped" : "features shipped" },
+  ];
+  if (computeSpentUsd != null && computeSpentUsd > 0) {
+    items.push({ value: usd(computeSpentUsd), label: "spent building itself" });
+  }
+  if (onchainActions > 0) {
+    items.push({ value: String(onchainActions), label: onchainActions === 1 ? "on-chain action" : "on-chain actions" });
+  }
+  return (
+    <div className="mt-4 rounded-[12px] border border-line-2 bg-surface-2/60 px-3 py-[10px]">
+      <div className="text-[9.5px] uppercase tracking-[0.06em] text-faint mb-2">↻ self-funding loop</div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {items.map((it) => (
+          <div key={it.label}>
+            <div className="font-display font-bold text-[17px] tracking-[-0.01em] tabular-nums text-ink leading-none">
+              {it.value}
+            </div>
+            <div className="text-[10.5px] text-muted mt-[3px]">{it.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Copyable contract address with the vanity suffix (last 4 chars) highlighted and
+// an explorer link. Client-only clipboard with a brief "copied" confirmation.
+function CopyableCA({ mint, network }: { mint: string; network: "mainnet" | "devnet" }) {
+  const [copied, setCopied] = useState(false);
+  const head = mint.slice(0, 4);
+  const tail = mint.slice(-4);
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <span className="text-[9.5px] uppercase tracking-[0.06em] text-faint">CA</span>
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(mint).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            },
+            () => {}
+          );
+        }}
+        title="Copy contract address"
+        className="group font-mono text-[11.5px] inline-flex items-center gap-[6px] px-2 h-[24px] rounded-[7px] bg-surface-2 border border-line-2 hover:border-accent/50 transition-colors"
+      >
+        <span className="text-muted">{head}…</span>
+        <span className="text-accent-text font-semibold">{tail}</span>
+        <span className="text-faint group-hover:text-accent-text">{copied ? "✓ copied" : "⧉"}</span>
+      </button>
+      <a
+        href={explorerUrl(mint, network)}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[11px] text-faint hover:text-accent-text transition-colors"
+      >
+        explorer ↗
+      </a>
+    </div>
   );
 }
 
