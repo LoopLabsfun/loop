@@ -31,6 +31,7 @@ import {
 } from "@solana/wallet-adapter-wallets";
 import { useNetwork } from "./network";
 import { buildLaunchMessage } from "./launch-message";
+import { buildAdminMessage } from "./admin-message";
 import { toBaseUnits, TOKEN_DECIMALS, buildChatMessage } from "./chat";
 import { buildDirectiveMessage } from "./directives";
 import { buildStakeMessage } from "./staking";
@@ -149,6 +150,9 @@ export interface WalletState {
   signChatProof: (projectKey: string, question: string) => Promise<LaunchProof | null>;
   /** Sign the canonical directive message for (project, text); null if unsupported. */
   signDirectiveProof: (projectKey: string, text: string) => Promise<LaunchProof | null>;
+  /** Sign the canonical founder-admin message for `projectKey` to open an admin
+   *  session (the server also checks the pubkey === creator_wallet). null if unsupported. */
+  signAdminProof: (projectKey: string) => Promise<LaunchProof | null>;
   /**
    * Send `sol` SOL from the connected wallet to `to` on the active cluster
    * (a plain SystemProgram.transfer — used for project donations). Resolves
@@ -357,6 +361,9 @@ export function useWallet(): WalletState {
   ): Promise<LaunchProof | null> =>
     signProof(buildDirectiveMessage(projectKey, text, Date.now()));
 
+  const signAdminProof = (projectKey: string): Promise<LaunchProof | null> =>
+    signProof(buildAdminMessage(projectKey, Date.now()));
+
   return {
     connected,
     address,
@@ -368,6 +375,7 @@ export function useWallet(): WalletState {
     signStakeProof,
     signChatProof,
     signDirectiveProof,
+    signAdminProof,
     sendSol,
     sendSwapTx,
     sendSplToken,

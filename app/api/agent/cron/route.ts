@@ -95,6 +95,14 @@ export async function GET(req: Request) {
     [];
   for (const p of projects) {
     try {
+      // Per-project kill switch (founder admin console). DB-backed counterpart to
+      // the global AGENT_PAUSED env: stops THIS project's brain (no Claude spend)
+      // without a redeploy. The free governance pass above still ran for it.
+      if (p.agentPaused) {
+        results.push({ key: p.key, ok: true, summary: "paused by founder (admin)" });
+        console.log(`[agent-paused] ${JSON.stringify({ key: p.key })}`);
+        continue;
+      }
       const state = await getAgentState(p);
       // Cooldown: skip the expensive brain work if this project already ticked
       // within the window (the agent writes a task row on every tick + at SDK

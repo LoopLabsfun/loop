@@ -29,6 +29,7 @@ interface ProjectRow {
   mint: string | null;
   network: string;
   creator_wallet: string | null;
+  agent_paused: boolean | null;
   fee_founder_pct: number | null;
   agent_wallet: string | null;
   content_policy: string | null;
@@ -60,6 +61,7 @@ function rowToProject(r: ProjectRow): Project {
     mint: r.mint,
     network: r.network === "devnet" ? "devnet" : "mainnet",
     creatorWallet: r.creator_wallet,
+    agentPaused: r.agent_paused ?? false,
     feeFounderPct: r.fee_founder_pct ?? undefined,
     agentWallet: r.agent_wallet,
     contentPolicy: r.content_policy,
