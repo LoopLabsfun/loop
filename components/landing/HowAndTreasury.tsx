@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { useInspector } from "@/lib/inspector";
 import { parseSolPerDay } from "@/lib/economics";
@@ -8,16 +9,40 @@ import { AgentEngine } from "../AgentEngine";
 import type { Project } from "@/lib/types";
 import type { AgentTask } from "@/lib/agent";
 
-// Natural 1→6 order so the DOM (and the single-column mobile layout) reads in
-// sequence. On ≥sm the grid flows column-first (see below) so it still renders
-// as 1-2-3 (left) / 4-5-6 (right) on desktop.
-const STEPS = [
-  { n: 1, title: "Launch a Project", body: "Submit a name, a vision, and an initial prompt." },
-  { n: 2, title: "Token is Created", body: "Loop launches your token on Pump.fun." },
-  { n: 3, title: "Rewards Connect", body: "Creator rewards stream into the project wallet." },
-  { n: 4, title: "AI Starts Building", body: "An agent codes, deploys, and runs outreach — on the treasury's budget." },
-  { n: 5, title: "Traders Fund It", body: "Trading activity generates fees and fills the treasury." },
-  { n: 6, title: "Project Evolves", body: "The more it grows, the more it gets funded." },
+// Three-step flywheel: Trade → Build → Grow.
+const FLYWHEEL = [
+  {
+    n: 1,
+    label: "Trade",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
+      </svg>
+    ),
+    body: "Trading fees and creator rewards stream into the project treasury.",
+  },
+  {
+    n: 2,
+    label: "Build",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </svg>
+    ),
+    body: "The AI agent codes, ships features, and runs outreach — funded by the treasury.",
+  },
+  {
+    n: 3,
+    label: "Grow",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+        <polyline points="17 6 23 6 23 12" />
+      </svg>
+    ),
+    body: "More value draws more traders, refilling the treasury. The loop repeats.",
+  },
 ];
 
 const compact = (n: number) =>
@@ -82,21 +107,27 @@ export function HowAndTreasury({
         <h2 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0 mb-[22px]">
           How Loop Works
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-flow-col sm:grid-rows-3 gap-x-6 gap-y-[18px]">
-          {STEPS.map((s) => (
-            <div key={s.n} className="flex gap-3">
-              <span className="flex-none w-7 h-7 rounded-full bg-accent-tint text-accent-text font-display font-semibold text-[13px] flex items-center justify-center">
-                {s.n}
-              </span>
-              <div>
-                <div className="font-display font-semibold text-[14.5px] mb-[3px]">
-                  {s.title}
+        <div className="flex flex-col sm:flex-row sm:items-stretch gap-2">
+          {FLYWHEEL.map((s, i) => (
+            <Fragment key={s.n}>
+              <div className="flex-1 flex flex-col items-center text-center gap-[10px] px-4 py-5 rounded-[12px] bg-surface-2">
+                <span className="font-display font-bold text-[36px] leading-none text-ghost select-none">
+                  {s.n < 10 ? `0${s.n}` : s.n}
+                </span>
+                <div className="w-10 h-10 rounded-full bg-accent-tint text-accent-text flex items-center justify-center">
+                  {s.icon}
                 </div>
-                <div className="text-[13px] text-muted leading-[1.45]">
-                  {s.body}
-                </div>
+                <div className="font-display font-bold text-[17px] tracking-[-0.01em]">{s.label}</div>
+                <div className="text-[13px] text-muted leading-[1.45]">{s.body}</div>
               </div>
-            </div>
+              {i < FLYWHEEL.length - 1 && (
+                <div className="hidden sm:flex items-center justify-center flex-none text-ghost">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </div>
+              )}
+            </Fragment>
           ))}
         </div>
         <div className="mt-6 px-5 py-4 rounded-[12px] bg-accent-tint border border-accent-tint-border text-center">
