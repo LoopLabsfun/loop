@@ -1,6 +1,7 @@
 import { LoopMarkAnimated } from "../LoopMark";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import type { Network } from "@/lib/types";
+import type { AgentTask } from "@/lib/agent";
 import { compactNum, sol, usd } from "@/lib/format";
 
 export function Hero({
@@ -13,6 +14,7 @@ export function Hero({
   treasuryTokenUsd,
   treasuryHistory,
   agentActive,
+  currentTask,
   onLaunch,
   onScroll,
 }: {
@@ -25,6 +27,7 @@ export function Hero({
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
   agentActive?: boolean;
+  currentTask?: AgentTask;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -96,6 +99,7 @@ export function Hero({
           treasuryTokenUsd={treasuryTokenUsd}
           treasuryHistory={treasuryHistory}
           agentActive={agentActive}
+          currentTask={currentTask}
         />
       </div>
     </section>
@@ -216,6 +220,7 @@ function TreasuryCard({
   treasuryTokenUsd,
   treasuryHistory,
   agentActive,
+  currentTask,
 }: {
   engine: LoopEngineState;
   solUsd: number;
@@ -226,6 +231,7 @@ function TreasuryCard({
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
   agentActive?: boolean;
+  currentTask?: AgentTask;
 }) {
   const net = (network ?? "mainnet").toUpperCase();
   // The treasury also holds the project's OWN token. Shown as a separate line —
@@ -304,6 +310,14 @@ function TreasuryCard({
         />
         <Stat label="Next Check" value={agentActive ? "~2 min" : "—"} />
       </div>
+      {currentTask && (
+        <div className="flex items-center gap-[8px] mt-3 px-[10px] py-[8px] rounded-[8px] bg-accent/[0.06] border border-accent/20">
+          <span className="w-[6px] h-[6px] shrink-0 rounded-full bg-accent animate-pulseFast" />
+          <span className="font-mono text-[11.5px] text-accent-text truncate">
+            building · {currentTask.title}
+          </span>
+        </div>
+      )}
       <p className="font-mono text-[11px] text-faint mt-3 mb-0 leading-[1.5]">
         Trading fees → treasury → the agent ships. Every trade funds the build.
       </p>
