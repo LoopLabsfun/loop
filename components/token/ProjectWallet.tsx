@@ -108,30 +108,42 @@ export function ProjectWallet({
             Project Wallet
           </span>
         </div>
-        {wallet ? (
-          <div className="flex items-center gap-2">
-            {typeof agentSol === "number" && (
-              <span
-                className="font-mono text-[12px] text-ink"
-                title="Live on-chain balance of the agent wallet"
-              >
-                {agentSol.toFixed(2)} SOL
-              </span>
-            )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {net === "mainnet" && p.mint && (
             <a
-              href={explorerUrl(wallet, net)}
+              href={`https://jup.ag/swap/SOL-${p.mint}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-mono text-[12px] text-accent-text hover:text-accent-d transition-colors"
+              className="font-mono text-[11.5px] px-[10px] py-[4px] rounded-[8px] border border-accent-tint-border text-accent-text hover:text-accent-d hover:border-accent-text transition-colors"
             >
-              {shortAddr(wallet)} ↗
+              Buy on Jupiter ↗
             </a>
-          </div>
-        ) : (
-          <span className="font-mono text-[11.5px] text-faint">
-            not provisioned yet
-          </span>
-        )}
+          )}
+          {wallet ? (
+            <div className="flex items-center gap-2">
+              {typeof agentSol === "number" && (
+                <span
+                  className="font-mono text-[12px] text-ink"
+                  title="Live on-chain balance of the agent wallet"
+                >
+                  {agentSol.toFixed(2)} SOL
+                </span>
+              )}
+              <a
+                href={explorerUrl(wallet, net)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[12px] text-accent-text hover:text-accent-d transition-colors"
+              >
+                {shortAddr(wallet)} ↗
+              </a>
+            </div>
+          ) : (
+            <span className="font-mono text-[11.5px] text-faint">
+              not provisioned yet
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Positions */}
