@@ -44,6 +44,15 @@ describe("fmtPrice", () => {
   it("uses 6 decimals below 0.01", () => {
     expect(fmtPrice(0.00029)).toBe("$0.000290");
   });
+  it("keeps significant figures for tiny prices (no misleading round-off)", () => {
+    // The bug: 0.0000062 collapsed to "$0.000006" (1 sig fig). Now it shows the
+    // real value with ~3 significant figures past the leading zeros.
+    expect(fmtPrice(0.0000062)).toBe("$0.00000620");
+    expect(fmtPrice(0.0000062)).not.toBe("$0.000006");
+    expect(fmtPrice(0.00001234)).toBe("$0.0000123");
+    // Existing precision in the 0.001–0.01 range is unchanged.
+    expect(fmtPrice(0.001234)).toBe("$0.001234");
+  });
   it("returns $0.0000 for non-finite inputs (NaN, Infinity)", () => {
     expect(fmtPrice(NaN)).toBe("$0.0000");
     expect(fmtPrice(Infinity)).toBe("$0.0000");
