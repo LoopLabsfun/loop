@@ -55,6 +55,7 @@ export function TokenPage({
   compute,
   feeLedger,
   visitors,
+  hero = "classic",
 }: {
   project: Project;
   market: LiveMarket;
@@ -71,6 +72,9 @@ export function TokenPage({
   feeLedger?: FeeLedger;
   /** Total Vercel visitors since launch, or null when unconfigured. */
   visitors?: number | null;
+  /** "classic" = the public v1 header; "merged" = the v2 hero (identity + price +
+   *  buy on the left, the live agent on the right). Founder-only /admin/v2 preview. */
+  hero?: "classic" | "merged";
 }) {
   // Real commits from the repo only — no static sample (empty state otherwise).
   const commitFeed = commits;
@@ -88,12 +92,30 @@ export function TokenPage({
   const last = stats?.priceUsd ?? 0;
   const change = stats?.priceChange24h ?? 0;
 
+  // v2 hero summary of the live agent: what it's building now (or the next queued
+  // item) + its most recent ship. Only used by the "merged" hero.
+  const buildingTask = agentState?.tasks?.find((t) => t.status === "building");
+  const heroTask = buildingTask ?? agentState?.tasks?.find((t) => t.status === "todo");
+  const lastShip = commitFeed[0];
+
   return (
     <InspectorProvider project={p}>
       <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
 
       <main>
-      {/* Header */}
+      {hero === "merged" ? (
+        <MergedHero
+          p={p}
+          last={last}
+          change={change}
+          stats={stats}
+          preLaunch={preLaunch}
+          building={Boolean(buildingTask)}
+          heroTaskTitle={heroTask?.title}
+          tasks={agentState?.tasks}
+          lastShip={lastShip}
+        />
+      ) : (
       <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5 flex items-center justify-between gap-6 flex-wrap">
         <div className="flex items-center gap-4">
           <div className="w-[60px] h-[60px] rounded-[14px] border border-line-2 bg-accent-tint flex items-center justify-center">
@@ -162,6 +184,7 @@ export function TokenPage({
           </div>
         </div>
       </section>
+      )}
 
       {/* Main grid */}
       <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px] gap-4 items-start">
@@ -171,12 +194,14 @@ export function TokenPage({
         <div className="flex flex-col gap-4 min-w-0">
           {/* Agent — one feed: ask the agent ($LOOP-metered, answers in the side
               panel) AND steer it (directives/proposals/votes). */}
-          <AgentFeed
-            project={p}
-            directives={agentState?.directives}
-            chat={chat}
-            tasks={agentState?.tasks}
-          />
+          <div id="agent" className="scroll-mt-4">
+            <AgentFeed
+              project={p}
+              directives={agentState?.directives}
+              chat={chat}
+              tasks={agentState?.tasks}
+            />
+          </div>
           {/* Agent Operator — what the agent does autonomously (tasks/inbox/social) */}
           <AgentOperator
             project={p}
@@ -287,16 +312,20 @@ export function TokenPage({
 
         {/* Right column */}
         <div className="flex flex-col gap-4">
-          {/* The agent's mascot, above the trade panel — reacts live to the tape. */}
-          <div className="bg-surface border border-line-2 rounded-[16px] p-[14px] flex items-center justify-center">
-            <AgentFace
-              project={p}
-              tasks={agentState?.tasks}
-              size="lg"
-              market={{ changePct: change }}
-            />
+          {/* The mascot: shown here in v1; in v2 it lives in the hero (single placement). */}
+          {hero !== "merged" && (
+            <div className="bg-surface border border-line-2 rounded-[16px] p-[14px] flex items-center justify-center">
+              <AgentFace
+                project={p}
+                tasks={agentState?.tasks}
+                size="lg"
+                market={{ changePct: change }}
+              />
+            </div>
+          )}
+          <div id="swap" className="scroll-mt-4">
+            <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           </div>
-          <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
           {p.official && <BoostTierCard project={p} preLaunch={preLaunch} />}
           <TreasuryStats project={p} solUsd={solUsd} compute={compute} />
@@ -400,6 +429,136 @@ function TokenNav({
         </button>
       </div>
     </nav>
+  );
+}
+
+// v2 hero (founder-only /admin/v2 preview): identity + price + Buy on the left,
+// the LIVE agent (mascot + what it's building now + last ship) on the right — so a
+// first-time visitor sees "this token funds this agent, here it is working" at a
+// glance. Reuses the same HeaderStat / AgentFace / AgentStatusBadge as the classic
+// header so the data + behaviour stay identical; only the layout differs.
+function MergedHero({
+  p,
+  last,
+  change,
+  stats,
+  preLaunch,
+  building,
+  heroTaskTitle,
+  tasks,
+  lastShip,
+}: {
+  p: Project;
+  last: number;
+  change: number;
+  stats: MarketStats | null;
+  preLaunch: boolean;
+  building: boolean;
+  heroTaskTitle?: string;
+  tasks?: AgentState["tasks"];
+  lastShip?: { hash: string; msg: string };
+}) {
+  return (
+    <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5">
+      <div className="bg-surface border border-line-2 rounded-[16px] px-6 py-5 grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-6 items-stretch">
+        {/* Left — what is LOOP · price · buy */}
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-[10px] flex-wrap">
+            <div className="w-[42px] h-[42px] rounded-[12px] border border-line-2 bg-accent-tint flex items-center justify-center flex-none">
+              <LoopMark width={26} height={16} stroke="var(--accent)" />
+            </div>
+            <h1 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0">{p.name}</h1>
+            <span className="font-mono text-[13px] text-accent-text">{p.ticker}</span>
+            {p.official && (
+              <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] bg-accent text-white">OFFICIAL</span>
+            )}
+            {p.network === "devnet" && (
+              <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">devnet</span>
+            )}
+          </div>
+          <p className="text-[13px] text-muted mt-2 mb-0 max-w-[460px] leading-[1.5]">{p.description}</p>
+
+          <div className="flex items-baseline gap-3 mt-4">
+            <span className="font-display font-bold text-[30px] tracking-[-0.02em] tabular-nums">
+              {preLaunch ? "—" : fmtPrice(last)}
+            </span>
+            {preLaunch ? (
+              <span className="font-mono text-[13px] text-faint">not launched</span>
+            ) : (
+              <span className="font-mono text-[13px]" style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 mt-3">
+            <HeaderStat
+              label="Market Cap"
+              value={stats ? compactUsd(stats.marketCap) : p.marketCap}
+              help="Token price × circulating supply — the market's live valuation of the project. It's also what the agent's mascot reacts to."
+            />
+            <HeaderStat
+              label="Liquidity"
+              value={stats ? compactUsd(stats.liquidityUsd) : p.liquidity}
+              help="Value pooled for trading. Deeper liquidity = lower slippage when you buy or sell."
+            />
+            <HeaderStat
+              label="Holders"
+              value={p.holders}
+              help="Distinct wallets holding the token. Click a wallet in the holders list to inspect it on-chain."
+            />
+            <HeaderStat
+              label="24h Volume"
+              value={stats ? compactUsd(stats.volume24hUsd) : p.volume24h}
+              help="Total traded value over the last 24 hours — how active the market is right now."
+            />
+          </div>
+
+          <div className="flex gap-[10px] mt-5">
+            <a
+              href="#swap"
+              className="flex-[2] h-[40px] rounded-[10px] bg-accent text-white font-display font-semibold text-[14px] flex items-center justify-center hover:opacity-90 transition-opacity"
+            >
+              Buy {p.ticker}
+            </a>
+            <a
+              href="#swap"
+              className="flex-1 h-[40px] rounded-[10px] border border-line-2 font-display font-semibold text-[14px] flex items-center justify-center hover:bg-surface-2 transition-colors"
+            >
+              Sell
+            </a>
+          </div>
+        </div>
+
+        {/* Right — the live agent: mascot + what it's doing now + last ship */}
+        <div className="flex flex-col min-w-0 lg:border-l border-line-2 lg:pl-6">
+          <div className="mb-3">
+            <AgentStatusBadge project={p} />
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-none">
+              <AgentFace project={p} tasks={tasks} size="md" market={{ changePct: change }} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] text-faint mb-[2px]">{building ? "Building now" : "Next up"}</div>
+              <div className="text-[13px] text-ink leading-[1.35]">{heroTaskTitle ?? "Steering the roadmap"}</div>
+            </div>
+          </div>
+          {lastShip && (
+            <div className="text-[11.5px] text-muted mt-3 pt-3 border-t border-line-4 leading-[1.5]">
+              <span className="text-pos">✓ last ship</span> · {lastShip.msg}
+              <span className="font-mono text-faint"> · {lastShip.hash.slice(0, 7)}</span>
+            </div>
+          )}
+          <a
+            href="#agent"
+            className="mt-auto inline-flex items-center justify-center gap-[6px] h-[34px] rounded-[10px] border border-line-2 text-[13px] hover:bg-surface-2 transition-colors"
+          >
+            Ask the agent
+          </a>
+        </div>
+      </div>
+    </section>
   );
 }
 
