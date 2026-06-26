@@ -775,6 +775,8 @@ export function buildUserPrompt(
     "non-follower would care about — aim for a few strong tweets a day (a posting",
     "floor spaces them), skip only trivial/internal ticks. Never reuse the same text",
     "across both channels, and vary the angle from your recent posts.",
+    "",
+    "RESPONSE FORMAT — reply with a SINGLE raw JSON object and NOTHING else: no markdown code fences, no ``` , no prose before or after it. Its keys are exactly the fields described above — `summary` (string) and `task` ({title, detail, category, status}) are required; include any optional fields you actually use (e.g. readFiles, posts, learning, backlog, action) and omit the rest. The object must be valid JSON.",
   ].join("\n");
 }
 
@@ -1232,10 +1234,12 @@ export async function decideNextAction(
     // edits"). Give it real room to emit full files + a test.
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    output_config: {
-      format: { type: "json_schema", schema: DECISION_SCHEMA },
-      ...(effort ? { effort } : {}),
-    },
+    // No `output_config.format` (json_schema): the decision schema is large and
+    // its grammar compilation TIMES OUT on Sonnet ("Grammar compilation timed
+    // out"), which blocks every tick. Instead the model returns a raw JSON object
+    // per the RESPONSE FORMAT instruction; parseDecisionJson tolerates fences/prose
+    // and coerceDecision validates the shape. Keep only the effort dial here.
+    ...(effort ? { output_config: { effort } } : {}),
     system: buildSystemPrompt(p, mandate, {
       canCommit: process.env.AGENT_REPO_HANDS === "1",
       readRounds: readLoopConfig().maxRounds,
@@ -1262,9 +1266,19 @@ export async function decideNextAction(
     .filter((b) => b.type === "text")
     .map((b) => b.text ?? "")
     .join("");
+  // Tolerant JSON extraction: with no structured-output grammar, a model may wrap
+  // the object in ```json fences or add a stray sentence. Strip fences, then take
+  // the outermost {...}. coerceDecision is the real shape validator.
+  const parseDecisionJson = (s: string): unknown => {
+    const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const body = (fenced ? fenced[1] : s).trim();
+    const a = body.indexOf("{");
+    const b = body.lastIndexOf("}");
+    return JSON.parse(a >= 0 && b > a ? body.slice(a, b + 1) : body);
+  };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseDecisionJson(text);
   } catch {
     throw new Error("Agent returned non-JSON output.");
   }
@@ -1340,7 +1354,7 @@ export async function decideNextAction(
         convo.push({ role: "assistant", content: ftext || "(no parseable decision)" });
         let grounded: AgentDecision | null = null;
         try {
-          grounded = coerceDecision(JSON.parse(ftext));
+          grounded = coerceDecision(parseDecisionJson(ftext));
         } catch {
           /* unparseable — keep the last good decision and stop reading */
         }
@@ -1387,7 +1401,7 @@ export async function decideNextAction(
       const xtext = textOf(forced);
       let xdec: AgentDecision | null = null;
       try {
-        xdec = coerceDecision(JSON.parse(xtext));
+        xdec = coerceDecision(parseDecisionJson(xtext));
       } catch {
         /* unparseable forcing turn — block below */
       }
