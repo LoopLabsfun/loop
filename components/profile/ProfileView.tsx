@@ -5,9 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
+import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
 import { explorerUrl, shortAddr } from "@/lib/format";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
+
+// Twitter linking (Privy) only works when the user-side Privy layer is configured.
+// Lazy-loaded so the heavy Privy SDK never enters the base profile bundle — it
+// loads on demand only when an owner opens the edit modal with Privy enabled.
+const PRIVY_ON = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
+const TwitterLink = dynamic(() => import("./TwitterLink").then((m) => m.TwitterLink), { ssr: false });
 
 // User profile page (Lot 1): identity + on-chain positions + launched projects +
 // the creator's agent log/decisions. Read-only for visitors; the owner (connected
@@ -265,6 +272,16 @@ function EditModal({
         <input className="loop-input mb-3" value={avatarUrl} maxLength={400} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…" />
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Bio</label>
         <textarea className="loop-input mb-4" value={bio} maxLength={160} rows={3} onChange={(e) => setBio(e.target.value)} placeholder="What you're building on Loop." />
+        <div className="border-t border-line-4 pt-4 mb-4">
+          <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-2">X / Twitter</label>
+          {PRIVY_ON ? (
+            <TwitterLink wallet={profile.wallet} currentHandle={profile.twitterHandle} onLinked={onSaved} />
+          ) : (
+            <div className="text-[12px] text-faint">
+              {profile.twitterHandle ? `linked: @${profile.twitterHandle.replace(/^@/, "")}` : "Linking via Privy is being switched on — coming shortly."}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="font-mono text-[12px] px-3 h-[36px] rounded-[10px] border border-line-2 hover:bg-surface-2">Cancel</button>
           <button
