@@ -20,8 +20,17 @@ export function sol(n: number, digits = 2): string {
 }
 
 export function fmtPrice(p: number): string {
-  if (!Number.isFinite(p)) return "$0.0000";
-  return "$" + (p >= 0.01 ? p.toFixed(4) : p.toFixed(6));
+  if (!Number.isFinite(p) || p <= 0) return "$0.0000";
+  if (p >= 0.01) return "$" + p.toFixed(4);
+  // Sub-cent: a fixed 6 decimals collapses a tiny price to a misleading value —
+  // e.g. 0.0000062 → "$0.000006" (one significant figure, looks wrong next to the
+  // live market cap). Scale the decimals to keep ~3 significant figures past the
+  // leading zeros, so the price shown is the real one. Plain decimals (not
+  // subscript notation) so it renders identically in the browser, the chart, and
+  // the satori OG image. Capped so an absurdly small price can't run away.
+  const leadingZeros = -Math.floor(Math.log10(p)) - 1;
+  const decimals = Math.min(Math.max(6, leadingZeros + 3), 12);
+  return "$" + p.toFixed(decimals);
 }
 
 const COMPACT_UNITS: [number, string][] = [
