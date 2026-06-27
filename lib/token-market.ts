@@ -7,7 +7,7 @@ import {
   getRecentTrades,
   type MarketStats,
 } from "./market";
-import { getTopHolders, getHolderCount, getTokenSupplyUi, getSolBalance } from "./solana";
+import { getTopHoldersCached, getHolderCountCached, getTokenSupplyUiCached, getSolBalanceCached } from "./solana";
 import { compactUsd, compactNum } from "./format";
 
 // Server-side aggregator for a launched token's live market. Combines the
@@ -43,10 +43,10 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   const [candles, trades, holders, holderCount, supply, agentSol] = await Promise.all([
     stats ? getCandles(stats.pairAddress, tf) : Promise.resolve<Candle[]>([]),
     stats ? getRecentTrades(stats.pairAddress) : Promise.resolve<Trade[]>([]),
-    getTopHolders(mint, net),
-    getHolderCount(mint, net),
-    getTokenSupplyUi(mint, net),
-    project.agentWallet ? getSolBalance(project.agentWallet, net) : Promise.resolve(null),
+    getTopHoldersCached(mint, net),
+    getHolderCountCached(mint, net),
+    getTokenSupplyUiCached(mint, net),
+    project.agentWallet ? getSolBalanceCached(project.agentWallet, net) : Promise.resolve(null),
   ]);
 
   // Attach .sol names + Loop profile identity to the top holders (two batched

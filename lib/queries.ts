@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { getSolBalance, getSplBalance, getTreasuryHistory } from "./solana";
+import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./solana";
 import { withLiveMarket } from "./token-market";
 import { PROJECT_LIST, PROJECTS } from "./projects";
 import type { Launchpad, Project, ProjectKey } from "./types";
@@ -82,9 +82,9 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
       // Spendable SOL first, so the token holding and the balance trajectory can
       // reuse it (the history then ends on exactly the SOL the card headlines, and
       // we avoid a duplicate balance read). Any read failing leaves that piece off.
-      const live = await getSolBalance(p.treasuryWallet, p.network);
+      const live = await getSolBalanceCached(p.treasuryWallet, p.network);
       const [tokenUi, history] = await Promise.all([
-        p.mint ? getSplBalance(p.treasuryWallet, p.mint, p.network) : Promise.resolve(null),
+        p.mint ? getSplBalanceCached(p.treasuryWallet, p.mint, p.network) : Promise.resolve(null),
         getTreasuryHistory(p.treasuryWallet, p.network, {
           knownLamports: live === null ? undefined : Math.round(live * 1e9),
         }),
