@@ -98,12 +98,15 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
               <Avatar url={profile.avatarUrl} name={name} />
               <div className="pb-[2px]">
                 {isOwner ? (
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="font-mono text-[12px] px-3 py-[8px] rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors"
-                  >
-                    Edit profile
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <ShareProfile username={profile.username} wallet={profile.wallet} />
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="font-mono text-[12px] px-3 py-[8px] rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors"
+                    >
+                      Edit profile
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     {wallet.connected && (
@@ -520,6 +523,40 @@ function BadgeChip({ badge: b }: { badge: Badge }) {
       <span className="text-[11px] leading-none">{BADGE_GLYPH[b.key] ?? "•"}</span>
       {b.label}
     </span>
+  );
+}
+
+// Share this profile — native share sheet where available, else copy the link.
+// Uses the @username URL when set (prettier), else the wallet URL. The shared
+// link unfurls via /profile-og.
+function ShareProfile({ username, wallet }: { username: string | null; wallet: string }) {
+  const [copied, setCopied] = useState(false);
+  async function share() {
+    const path = `/u/${username || wallet}`;
+    const url = typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "My Loop profile", url });
+        return;
+      } catch {
+        /* fall through to copy */
+      }
+    }
+    navigator.clipboard?.writeText(url).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      },
+      () => {}
+    );
+  }
+  return (
+    <button
+      onClick={share}
+      className="font-mono text-[12px] px-3 py-[8px] rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors"
+    >
+      {copied ? "✓ copied" : "Share"}
+    </button>
   );
 }
 

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { isSolanaAddress } from "@/lib/api-guards";
-import { getProfileView, resolveUsername } from "@/lib/profile-data";
+import { getProfileView, resolveUsername, getProfile } from "@/lib/profile-data";
+import { shortAddr } from "@/lib/format";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { ProfileView } from "@/components/profile/ProfileView";
 
@@ -23,9 +24,18 @@ export async function generateMetadata({
 }: {
   params: { wallet: string };
 }): Promise<Metadata> {
-  const w = params.wallet;
-  const short = w && w.length > 8 ? `${w.slice(0, 4)}…${w.slice(-4)}` : "Profile";
-  return { title: `${short} — Loop`, robots: { index: false } };
+  const wallet = await resolveParam(params.wallet);
+  const profile = wallet ? await getProfile(wallet) : null;
+  const name = profile?.displayName || (wallet ? shortAddr(wallet) : "Profile");
+  const title = `${name}${profile?.username ? ` (@${profile.username})` : ""} — Loop`;
+  const og = wallet ? [{ url: `/profile-og?w=${wallet}`, width: 1200, height: 630 }] : undefined;
+  return {
+    title,
+    description: `${name}'s profile on Loop — the autonomous software factory.`,
+    robots: { index: false },
+    openGraph: { title, images: og },
+    twitter: { card: "summary_large_image", title, images: og },
+  };
 }
 
 export default async function ProfileRoute({ params }: { params: { wallet: string } }) {
