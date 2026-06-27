@@ -3,6 +3,7 @@ import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
 import { PrivyAuthProvider } from "@/lib/privy";
+import { SessionSync } from "@/components/SessionSync";
 import { SITE_URL } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -94,7 +95,10 @@ export default function RootLayout({
       <body className="font-sans text-ink bg-canvas min-h-screen">
         <NetworkProvider>
           <PrivyAuthProvider>
-            <WalletProvider>{children}</WalletProvider>
+            <WalletProvider>
+              <SessionSync />
+              {children}
+            </WalletProvider>
           </PrivyAuthProvider>
         </NetworkProvider>
         <Analytics />
