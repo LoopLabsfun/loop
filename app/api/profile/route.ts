@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyProfileProof, type LaunchProof } from "@/lib/signature";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { supabaseAdmin } from "@/lib/supabase";
+import { limited } from "@/lib/rate-limit";
 
 // Edit a user PROFILE. The owner signs the canonical `loop.fun profile` message
 // with their wallet (lib/profile-message); we verify the ed25519 signature is
@@ -40,6 +41,8 @@ function normUsername(s: unknown): string | "" | false {
 }
 
 export async function POST(req: Request) {
+  const rl = limited("profile", req, { limit: 15, windowMs: 60_000 });
+  if (rl) return rl;
   let body: { wallet?: string; proof?: LaunchProof; username?: string; displayName?: string; bio?: string; avatarUrl?: string };
   try {
     body = await req.json();

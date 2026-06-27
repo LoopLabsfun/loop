@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { limited } from "@/lib/rate-limit";
 
 // Upload a profile avatar. The owner is taken from the signed user session cookie
 // (never the body), the file is validated + stored in the public `avatars` bucket
@@ -22,6 +23,8 @@ const EXT: Record<string, string> = {
 export async function POST(req: Request) {
   const wallet = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
   if (!wallet) return NextResponse.json({ error: "no session — sign in first" }, { status: 401 });
+  const rl = limited("avatar", req, { wallet, limit: 10, windowMs: 60_000 });
+  if (rl) return rl;
   const sb = supabaseAdmin;
   if (!sb) return NextResponse.json({ error: "storage not configured" }, { status: 503 });
 

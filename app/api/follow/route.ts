@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { follow, unfollow, isFollowing } from "@/lib/social";
+import { limited } from "@/lib/rate-limit";
 
 // Follow / unfollow another wallet. The ACTOR is taken from the user session
 // cookie (minted once at /api/session from a signed proof) — never from the
@@ -30,6 +31,8 @@ export async function POST(req: Request) {
   if (!actor) {
     return NextResponse.json({ error: "no session — sign in first" }, { status: 401 });
   }
+  const rl = limited("follow", req, { wallet: actor, limit: 40, windowMs: 60_000 });
+  if (rl) return rl;
   const target = body.target;
   if (!isSolanaAddress(target)) {
     return NextResponse.json({ error: "invalid target" }, { status: 400 });

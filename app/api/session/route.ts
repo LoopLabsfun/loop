@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyProfileProof, type LaunchProof } from "@/lib/signature";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { issueUserToken, USER_COOKIE } from "@/lib/user-session";
+import { limited } from "@/lib/rate-limit";
 
 // Open a USER session. The user signs the canonical `looplabs.fun profile`
 // message once; we verify the ed25519 signature is genuine + recent AND that the
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const rl = limited("session", req, { limit: 15, windowMs: 60_000 });
+  if (rl) return rl;
   let body: { wallet?: string; proof?: LaunchProof };
   try {
     body = await req.json();
