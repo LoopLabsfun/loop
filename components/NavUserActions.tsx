@@ -16,10 +16,10 @@ export function NavUserActions({ messagesHidden }: { messagesHidden?: boolean })
   return (
     <>
       <NotificationBell />
-      <Link href="/messages" title="Messages" className={`${messagesHidden ? "hidden sm:flex" : "flex"} ${ICON}`}>
+      <Link href="/messages" title="Messages" aria-label="Messages" className={`${messagesHidden ? "hidden sm:flex" : "flex"} ${ICON}`}>
         <MessageIcon size={17} />
       </Link>
-      <Link href="/profile" title="Your Loop profile" className={`hidden sm:flex ${ICON}`}>
+      <Link href="/profile" title="Your Loop profile" aria-label="Your Loop profile" className={`hidden sm:flex ${ICON}`}>
         <ProfileIcon size={17} />
       </Link>
     </>

@@ -96,6 +96,9 @@ export function NotificationBell() {
       <button
         onClick={onToggle}
         title="Notifications"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-haspopup="true"
+        aria-expanded={open}
         className="relative flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
       >
         <BellIcon size={17} />

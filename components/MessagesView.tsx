@@ -171,7 +171,7 @@ export function MessagesView() {
               ) : (
                 <>
                   <div className="px-4 h-[52px] flex items-center gap-[10px] border-b border-line-4 flex-none">
-                    <button onClick={() => setPeer(null)} className="md:hidden text-muted text-[18px] leading-none">←</button>
+                    <button onClick={() => setPeer(null)} aria-label="Back to conversations" className="md:hidden text-muted text-[18px] leading-none">←</button>
                     <Link href={`/u/${peer}`} className="flex items-center gap-[9px] min-w-0 hover:opacity-80">
                       <PeerAvatar name={peerLabel} url={peerConvo?.peerAvatar ?? null} sm />
                       <span className="font-display font-semibold text-[14px] truncate">{peerLabel}</span>
