@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { verifyProfileProof, type LaunchProof } from "@/lib/signature";
 import { isSolanaAddress } from "@/lib/api-guards";
-import { issueUserToken, USER_COOKIE } from "@/lib/user-session";
+import { issueUserToken, verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { limited } from "@/lib/rate-limit";
 
 // Open a USER session. The user signs the canonical `looplabs.fun profile`
@@ -11,6 +12,15 @@ import { limited } from "@/lib/rate-limit";
 // the cookie only ever authorizes actions on the signer's OWN wallet.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+// Who the current session cookie belongs to (or null). The cookie is httpOnly so
+// the client can't read the wallet from it directly — SessionSync calls this to
+// detect a STALE session (cookie wallet ≠ connected wallet) and clear it, which
+// is why follow/DM would otherwise act as a previously-connected wallet.
+export async function GET() {
+  const wallet = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
+  return NextResponse.json({ wallet });
+}
 
 export async function POST(req: Request) {
   const rl = limited("session", req, { limit: 15, windowMs: 60_000 });

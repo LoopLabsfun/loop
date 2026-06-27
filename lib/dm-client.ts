@@ -17,11 +17,13 @@ export async function apiDmThread(peer: string): Promise<DmMessage[]> {
   return (await r.json()).messages;
 }
 
-export async function apiDmSend(to: string, body: string): Promise<void> {
+// `actor` is the connected wallet — the server rejects (401) if the session
+// cookie is for another wallet, so a DM is never sent under a stale session.
+export async function apiDmSend(to: string, body: string, actor?: string | null): Promise<void> {
   const r = await fetch("/api/dm", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ to, body }),
+    body: JSON.stringify({ to, body, actor }),
   });
   if (r.status === 401) throw new Error("no-session");
   if (!r.ok) throw new Error((await r.json()).error || "send failed");

@@ -35,11 +35,17 @@ export async function POST(req: Request) {
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
   const rl = limited("dm", req, { wallet: w, limit: 20, windowMs: 60_000 });
   if (rl) return rl;
-  let body: { to?: string; body?: string };
+  let body: { to?: string; body?: string; actor?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+  // Stale-session guard (see /api/follow): if the cookie was minted for a
+  // different wallet than the one the client is connected as, treat it as
+  // no-session so the client re-signs — never send a DM as the wrong wallet.
+  if (body.actor && isSolanaAddress(body.actor) && body.actor !== w) {
+    return NextResponse.json({ error: "stale session — re-sign", stale: true }, { status: 401 });
   }
   if (!isSolanaAddress(body.to)) return NextResponse.json({ error: "invalid recipient" }, { status: 400 });
   if (typeof body.body !== "string" || !body.body.trim()) {

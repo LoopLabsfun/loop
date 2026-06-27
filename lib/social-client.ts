@@ -24,6 +24,19 @@ export function sessionWallet(): string | null {
   }
 }
 
+/** The wallet the current session cookie belongs to (server truth), or null.
+ *  The cookie is httpOnly so this is the only way the client can learn it —
+ *  used to detect a stale session left over from a previous wallet. */
+export async function apiSessionWallet(): Promise<string | null> {
+  try {
+    const r = await fetch("/api/session");
+    if (!r.ok) return null;
+    return (await r.json()).wallet ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Establish a 7-day user session from one signed profile proof. */
 export async function apiEstablishSession(wallet: string, proof: LaunchProof): Promise<boolean> {
   const r = await fetch("/api/session", {
@@ -50,12 +63,14 @@ export async function apiClearSession(): Promise<void> {
 }
 
 /** Follow / unfollow `target`. Returns the new following state, or throws on a
- *  missing session so the caller can establish one and retry. */
-export async function apiFollow(target: string, action: "follow" | "unfollow"): Promise<boolean> {
+ *  missing/stale session so the caller can establish one and retry. `actor` is
+ *  the connected wallet — the server rejects (401) if the cookie is for another
+ *  wallet, so the action is never written under a stale session. */
+export async function apiFollow(target: string, action: "follow" | "unfollow", actor?: string | null): Promise<boolean> {
   const r = await fetch("/api/follow", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ target, action }),
+    body: JSON.stringify({ target, action, actor }),
   });
   if (r.status === 401) throw new Error("no-session");
   const j = await r.json();

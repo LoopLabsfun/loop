@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { target?: string; action?: "follow" | "unfollow" };
+  let body: { target?: string; action?: "follow" | "unfollow"; actor?: string };
   try {
     body = await req.json();
   } catch {
@@ -30,6 +30,14 @@ export async function POST(req: Request) {
   const actor = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
   if (!actor) {
     return NextResponse.json({ error: "no session — sign in first" }, { status: 401 });
+  }
+  // Stale-session guard: the client tells us which wallet it's connected as. If
+  // the cookie was minted for a DIFFERENT wallet (e.g. a wallet switch in the
+  // same browser), treat it as no-session so the client re-establishes one for
+  // the wallet it's actually connected as — otherwise this follow would silently
+  // act as (and write under) the previously-connected wallet.
+  if (body.actor && isSolanaAddress(body.actor) && body.actor !== actor) {
+    return NextResponse.json({ error: "stale session — re-sign", stale: true }, { status: 401 });
   }
   const rl = limited("follow", req, { wallet: actor, limit: 40, windowMs: 60_000 });
   if (rl) return rl;
