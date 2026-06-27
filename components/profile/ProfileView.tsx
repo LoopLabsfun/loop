@@ -11,7 +11,7 @@ import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
 import { NavUserActions } from "../NavUserActions";
 import { FollowButton } from "../FollowButton";
 import { apiEstablishSession } from "@/lib/social-client";
-import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
+import type { ProfileView as ProfileViewData, Badge } from "@/lib/profile-data";
 import type { SocialUser } from "@/lib/social";
 
 // Twitter linking (Privy) only works when the user-side Privy layer is configured.
@@ -45,9 +45,8 @@ type LogFilter = "all" | "ship" | "decision" | "escalation";
 export function ProfileView({ data }: { data: ProfileViewData }) {
   const wallet = useWallet();
   const router = useRouter();
-  const { profile, launched, positions, portfolioUsd, builder, follow, followers, followingList, log } = data;
+  const { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log } = data;
   const isOwner = wallet.connected && wallet.address === profile.wallet;
-  const isFounder = launched.length > 0;
   const escalations = log.filter((l) => l.kind === "escalation").length;
 
   // Local follower count so the Follow button updates the header optimistically.
@@ -131,8 +130,6 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
             <div className="mt-3 min-w-0">
               <div className="flex items-center gap-[9px] flex-wrap">
                 <span className="font-display font-bold text-[22px] tracking-[-0.02em] leading-none break-all">{name}</span>
-                {isFounder && <RoleChip kind="founder" />}
-                {positions.length > 0 && <RoleChip kind="holder" />}
                 {profile.twitterHandle ? (
                   <a
                     href={`https://x.com/${profile.twitterHandle.replace(/^@/, "")}`}
@@ -176,6 +173,13 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                   <span className="text-muted">following</span>
                 </span>
               </div>
+              {badges.length > 0 && (
+                <div className="flex items-center gap-[6px] flex-wrap mt-[10px]">
+                  {badges.map((b) => (
+                    <BadgeChip key={b.key} badge={b} />
+                  ))}
+                </div>
+              )}
               {profile.bio && (
                 <p className="text-[13px] text-body mt-[10px] mb-0 max-w-[560px] leading-[1.5]">{profile.bio}</p>
               )}
@@ -492,15 +496,29 @@ function Avatar({ url, name }: { url: string | null; name: string }) {
   );
 }
 
-function RoleChip({ kind }: { kind: "founder" | "holder" }) {
-  if (kind === "founder") {
-    return (
-      <span className="font-mono text-[10px] px-2 py-[3px] rounded-[6px] bg-accent text-white tracking-[0.02em]">FOUNDER</span>
-    );
-  }
+const BADGE_GLYPH: Record<string, string> = {
+  founder: "✦",
+  builder: "↑",
+  holder: "◎",
+  diversified: "◇",
+  whale: "≋",
+  connector: "+",
+  early: "★",
+};
+
+function BadgeChip({ badge: b }: { badge: Badge }) {
+  const gold = b.tone === "gold";
   return (
-    <span className="font-mono text-[10px] px-2 py-[3px] rounded-[6px] bg-accent-tint text-accent-text border border-accent-tint-border tracking-[0.02em]">
-      HOLDER
+    <span
+      title={b.desc}
+      className={`font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] inline-flex items-center gap-[4px] tracking-[0.01em] cursor-default ${
+        gold
+          ? "bg-[oklch(0.96_0.07_85)] text-[oklch(0.45_0.12_75)] border border-[oklch(0.88_0.1_85)]"
+          : "bg-accent-tint text-accent-text border border-accent-tint-border"
+      }`}
+    >
+      <span className="text-[11px] leading-none">{BADGE_GLYPH[b.key] ?? "•"}</span>
+      {b.label}
     </span>
   );
 }

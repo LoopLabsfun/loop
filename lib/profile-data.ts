@@ -47,6 +47,16 @@ export interface CreatorLogItem {
   at: string;
 }
 
+/** An earned profile badge, derived from on-chain / platform signals. */
+export interface Badge {
+  key: string;
+  label: string;
+  /** One-line explanation shown on hover. */
+  desc: string;
+  /** Visual tone: accent (default) or gold for the rarer ones. */
+  tone?: "accent" | "gold";
+}
+
 export interface ProfileView {
   profile: Profile;
   /** Projects this wallet launched (creator_wallet === wallet). */
@@ -57,6 +67,8 @@ export interface ProfileView {
   portfolioUsd: number | null;
   /** The self-funding loop summed across launched projects; null for non-founders. */
   builder: BuilderImpact | null;
+  /** Earned badges (founder/builder/holder/whale/early/connector…). */
+  badges: Badge[];
   /** Follower/following counts + whether the viewer follows this wallet. */
   follow: FollowState;
   /** Recent followers (newest first), enriched with profile basics. */
@@ -222,6 +234,35 @@ async function getCreatorLog(launchedKeys: string[]): Promise<CreatorLogItem[]> 
   return [...escs, ...dedupedShips].slice(0, 16);
 }
 
+// The platform's first month — joining inside it earns the "Early Looper" badge.
+// LOOP's token was created 2026-06-16; the window closes a month later.
+const EARLY_CUTOFF = Date.parse("2026-07-16T00:00:00Z");
+
+/** Derive earned badges from already-loaded signals (no extra fetch). */
+function deriveBadges(args: {
+  launched: Project[];
+  positions: Position[];
+  portfolioUsd: number | null;
+  builder: BuilderImpact | null;
+  follow: FollowState;
+  createdAt: string | null | undefined;
+}): Badge[] {
+  const { launched, positions, portfolioUsd, builder, follow, createdAt } = args;
+  const badges: Badge[] = [];
+  if (launched.length > 0) badges.push({ key: "founder", label: "Founder", desc: "Launched a project on Loop", tone: "gold" });
+  if (builder && builder.shipped >= 10)
+    badges.push({ key: "builder", label: "Builder", desc: `Their agents shipped ${builder.shipped} features`, tone: "gold" });
+  if (positions.length > 0) badges.push({ key: "holder", label: "Holder", desc: "Holds a Loop project token" });
+  if (positions.length >= 3) badges.push({ key: "diversified", label: "Diversified", desc: "Holds 3+ Loop tokens" });
+  if (portfolioUsd != null && portfolioUsd >= 100)
+    badges.push({ key: "whale", label: "Whale", desc: "Holds $100+ across Loop tokens", tone: "gold" });
+  if (follow.followers >= 10) badges.push({ key: "connector", label: "Connector", desc: "10+ followers on Loop" });
+  const joined = createdAt ? Date.parse(createdAt) : NaN;
+  if (Number.isFinite(joined) && joined < EARLY_CUTOFF)
+    badges.push({ key: "early", label: "Early Looper", desc: "Joined in Loop's first month", tone: "gold" });
+  return badges;
+}
+
 /** Everything the profile page renders for `wallet`, composed from existing
  *  sources. getProjects() already overrides snapshots with live balances. */
 export async function getProfileView(wallet: string, viewer?: string | null): Promise<ProfileView> {
@@ -238,5 +279,6 @@ export async function getProfileView(wallet: string, viewer?: string | null): Pr
   ]);
   const priced = positions.filter((p) => p.valueUsd != null);
   const portfolioUsd = priced.length > 0 ? priced.reduce((s, p) => s + (p.valueUsd as number), 0) : null;
-  return { profile, launched, positions, portfolioUsd, builder, follow, followers, followingList, log };
+  const badges = deriveBadges({ launched, positions, portfolioUsd, builder, follow, createdAt: profile.createdAt });
+  return { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log };
 }
