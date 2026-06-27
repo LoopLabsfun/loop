@@ -1,32 +1,79 @@
-// Client fetch helper for the launch waitlist. Pure network call — the optional
-// connected wallet is passed by the caller (the form reads it from useWallet).
-// Lives outside lib/waitlist (which is server-only) so the client form can import
-// the shared cap without pulling `server-only` into the browser bundle.
+// Client-safe constants + submit helper for the launch waitlist (a pre-launch
+// project draft). Lives outside lib/waitlist (which is `server-only`) so the
+// client form can import the shared caps + the submit call without pulling
+// `server-only` into the browser bundle.
 
-/** Max length of the optional "what do you want to build?" idea field. */
+/** Field caps, shared by the client form (maxLength) and the server validator. */
 export const IDEA_MAX = 280;
+export const NAME_MAX = 60;
+export const TICKER_MAX = 12;
+export const PROMPT_MAX = 500;
+export const REPO_MAX = 200;
 
-export interface WaitlistFields {
-  wallet?: string | null;
+// Type-only import — elided at compile, so this never bundles tweetnacl/signature.ts.
+import type { LaunchProof } from "./signature";
+
+export interface WaitlistDraft {
+  name: string;
+  ticker: string;
+  prompt?: string | null;
+  repo?: string | null;
   email?: string | null;
   xHandle?: string | null;
   idea?: string | null;
   referrer?: string | null;
+  feeFounderPct?: number | null;
+  banner?: File | null;
+  tokenImage?: File | null;
+}
+
+export interface WaitlistResult {
+  /** The wallet already had a draft (re-submit refines it). */
+  already: boolean;
+  /** A welcome DM was opened on-platform (first submit only). */
+  messaged: boolean;
+  /** Banner image stored. */
+  banner: boolean;
+  /** Token image stored. */
+  tokenImage: boolean;
 }
 
 /**
- * Join the waitlist. `already` = the signer was on it already; `messaged` = we
- * opened a welcome DM on the platform (only on a fresh wallet signup).
+ * Submit a pre-launch draft. `wallet` + `proof` authenticate it (the wallet signed
+ * the canonical waitlist message). Sent as multipart so the optional banner/token
+ * images ride along in the ONE signed request (a single wallet popup).
  */
 export async function apiJoinWaitlist(
-  fields: WaitlistFields,
-): Promise<{ already: boolean; messaged: boolean }> {
-  const r = await fetch("/api/waitlist", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(fields),
-  });
+  wallet: string,
+  proof: LaunchProof,
+  draft: WaitlistDraft,
+): Promise<WaitlistResult> {
+  const fd = new FormData();
+  fd.set("wallet", wallet);
+  fd.set("proof", JSON.stringify(proof));
+  fd.set("name", draft.name);
+  fd.set("ticker", draft.ticker);
+  for (const [k, v] of [
+    ["prompt", draft.prompt],
+    ["repo", draft.repo],
+    ["email", draft.email],
+    ["xHandle", draft.xHandle],
+    ["idea", draft.idea],
+    ["referrer", draft.referrer],
+  ] as const) {
+    if (v) fd.set(k, v);
+  }
+  if (draft.feeFounderPct != null) fd.set("feeFounderPct", String(draft.feeFounderPct));
+  if (draft.banner) fd.set("banner", draft.banner);
+  if (draft.tokenImage) fd.set("tokenImage", draft.tokenImage);
+
+  const r = await fetch("/api/waitlist", { method: "POST", body: fd });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "Could not join the waitlist.");
-  return { already: Boolean(j.already), messaged: Boolean(j.messaged) };
+  if (!r.ok) throw new Error(j.error || "Could not save your pre-launch.");
+  return {
+    already: Boolean(j.already),
+    messaged: Boolean(j.messaged),
+    banner: Boolean(j.banner),
+    tokenImage: Boolean(j.tokenImage),
+  };
 }

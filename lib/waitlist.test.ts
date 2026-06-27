@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmail, normalizeXHandle, validateWaitlist, welcomeDmBody, IDEA_MAX } from "./waitlist";
+import {
+  normalizeEmail,
+  normalizeXHandle,
+  normalizeTicker,
+  normalizeMediaUrl,
+  validateWaitlist,
+  welcomeDmBody,
+  PROMPT_MAX,
+} from "./waitlist";
+import { DEFAULT_SPLIT, MAX_FOUNDER_PCT } from "./fees";
 
 const WALLET = "H8UMZSW2nZQm59G56UGmKAKVcgf5rcgEdFbVvcA9TSvC";
 
@@ -26,51 +35,92 @@ describe("normalizeXHandle", () => {
   });
 });
 
+describe("normalizeTicker", () => {
+  it("strips a leading $, uppercases, and keeps valid tickers", () => {
+    expect(normalizeTicker("$oscur")).toBe("OSCUR");
+    expect(normalizeTicker(" loop ")).toBe("LOOP");
+    expect(normalizeTicker("A1")).toBe("A1");
+  });
+  it("rejects empty, too-long, or illegal tickers", () => {
+    for (const v of ["", "$", "toolongticker", "bad-dash", "has space", 5, null]) {
+      expect(normalizeTicker(v as unknown)).toBeNull();
+    }
+  });
+});
+
+describe("normalizeMediaUrl", () => {
+  it("rejects non-https, oversized, or non-string urls", () => {
+    expect(normalizeMediaUrl("http://x.com/a.png")).toBeNull();
+    expect(normalizeMediaUrl("")).toBeNull();
+    expect(normalizeMediaUrl(5 as unknown)).toBeNull();
+    expect(normalizeMediaUrl("https://x.com/" + "a".repeat(500))).toBeNull();
+  });
+  it("requires the waitlist-media public prefix when SUPABASE_URL is set", () => {
+    const prev = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://abc.supabase.co";
+    const good = "https://abc.supabase.co/storage/v1/object/public/waitlist-media/w/banner.png";
+    expect(normalizeMediaUrl(good)).toBe(good);
+    expect(normalizeMediaUrl("https://evil.com/x.png")).toBeNull();
+    if (prev === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = prev;
+  });
+});
+
 describe("validateWaitlist", () => {
-  it("requires at least one contact (wallet, email, or X)", () => {
-    const r = validateWaitlist({ idea: "build me a thing" });
+  it("requires a project name", () => {
+    const r = validateWaitlist({ ticker: "LOOP" });
     expect(r.clean).toBeUndefined();
-    expect(r.error).toMatch(/reach you/i);
+    expect(r.error).toMatch(/name/i);
   });
 
-  it("accepts a wallet-only signup", () => {
-    const r = validateWaitlist({ wallet: WALLET });
+  it("requires a ticker", () => {
+    const r = validateWaitlist({ name: "My Project" });
+    expect(r.clean).toBeUndefined();
+    expect(r.error).toMatch(/ticker/i);
+  });
+
+  it("accepts name + ticker, normalizing both", () => {
+    const r = validateWaitlist({ name: "  Open Source Cursor ", ticker: "$oscur" });
     expect(r.error).toBeUndefined();
-    expect(r.clean?.wallet).toBe(WALLET);
-    expect(r.clean?.email).toBeNull();
+    expect(r.clean?.name).toBe("Open Source Cursor");
+    expect(r.clean?.ticker).toBe("OSCUR");
   });
 
-  it("accepts an email-only signup and normalizes it", () => {
-    expect(validateWaitlist({ email: " A@B.com " }).clean?.email).toBe("a@b.com");
+  it("clamps the fee split through makeSplit and defaults when unset", () => {
+    expect(validateWaitlist({ name: "P", ticker: "P", feeFounderPct: 999 }).clean?.feeFounderPct).toBe(MAX_FOUNDER_PCT);
+    expect(validateWaitlist({ name: "P", ticker: "P" }).clean?.feeFounderPct).toBe(DEFAULT_SPLIT.founderPct);
   });
 
-  it("drops an invalid email but still succeeds when another contact is present", () => {
-    const r = validateWaitlist({ wallet: WALLET, email: "not-an-email" });
-    expect(r.clean?.wallet).toBe(WALLET);
-    expect(r.clean?.email).toBeNull();
-  });
-
-  it("caps the idea to IDEA_MAX and trims", () => {
-    const r = validateWaitlist({ xHandle: "@me", idea: " " + "x".repeat(IDEA_MAX + 50) + " " });
-    expect(r.clean?.idea?.length).toBe(IDEA_MAX);
+  it("caps the prompt and keeps optional contacts", () => {
+    const r = validateWaitlist({
+      name: "P",
+      ticker: "P",
+      prompt: "x".repeat(PROMPT_MAX + 50),
+      email: " A@B.com ",
+      xHandle: "@me",
+    });
+    expect(r.clean?.prompt?.length).toBe(PROMPT_MAX);
+    expect(r.clean?.email).toBe("a@b.com");
+    expect(r.clean?.xHandle).toBe("me");
   });
 
   it("normalizes a referrer (wallet or X handle)", () => {
-    expect(validateWaitlist({ email: "a@b.com", referrer: "@ref" }).clean?.referrer).toBe("ref");
-    expect(validateWaitlist({ email: "a@b.com", referrer: WALLET }).clean?.referrer).toBe(WALLET);
-    expect(validateWaitlist({ email: "a@b.com", referrer: "!!" }).clean?.referrer).toBeNull();
+    expect(validateWaitlist({ name: "P", ticker: "P", referrer: "@ref" }).clean?.referrer).toBe("ref");
+    expect(validateWaitlist({ name: "P", ticker: "P", referrer: WALLET }).clean?.referrer).toBe(WALLET);
+    expect(validateWaitlist({ name: "P", ticker: "P", referrer: "!!" }).clean?.referrer).toBeNull();
   });
 });
 
 describe("welcomeDmBody", () => {
-  it("echoes the idea back when present", () => {
-    const b = welcomeDmBody("a tip jar for streamers");
-    expect(b).toContain("a tip jar for streamers");
-    expect(b).toMatch(/launch waitlist/i);
+  it("echoes the project + pitch back when present", () => {
+    const b = welcomeDmBody("Open Source Cursor", "an autonomous AI IDE");
+    expect(b).toContain("Open Source Cursor");
+    expect(b).toContain("an autonomous AI IDE");
+    expect(b).toMatch(/welcome to loop/i);
   });
-  it("falls back to a generic ask when there's no idea", () => {
-    const b = welcomeDmBody(null);
-    expect(b).toMatch(/what do you want to build/i);
+  it("falls back to a name-only ask when there's no pitch", () => {
+    const b = welcomeDmBody("MyProj", null);
+    expect(b).toContain("MyProj");
     expect(b).not.toContain('""');
   });
 });

@@ -106,10 +106,13 @@ alter table public.profiles enable row level security;
 create policy "profiles are publicly readable" on public.profiles for select using (true);
 
 -- ── launch_waitlist ──────────────────────────────────────────────────────────
--- Pre-launch interest capture (the standing "when can I launch my own project?"
--- demand) while public launches are closed. Needs one contact (wallet/email/X);
--- the optional `idea` is product signal. Service-role write via /api/waitlist;
--- RLS on with NO policies → never publicly readable (protects emails).
+-- Pre-launch project DRAFTS (the standing "when can I launch my own project?"
+-- demand) while public launches are closed. Now mirrors the launch form: a wallet
+-- signs the submit (creating an account), then drafts its project — name, ticker,
+-- build prompt, repo, fee split, banner + token image (stored in the waitlist-media
+-- bucket). email/X/idea stay as optional extra contact + product signal. One draft
+-- per wallet (re-submitting refines it). Service-role write via /api/waitlist; RLS
+-- on with NO policies → never publicly readable (protects contact details).
 create table if not exists public.launch_waitlist (
   id bigint generated always as identity primary key,
   wallet text,
@@ -117,12 +120,46 @@ create table if not exists public.launch_waitlist (
   x_handle text,
   idea text,
   referrer text,
+  -- pre-launch draft (added 2026-06-28)
+  name text,
+  ticker text,
+  banner_url text,
+  token_image_url text,
+  fee_founder_pct int,
+  prompt text,
+  repo text,
+  updated_at timestamptz,
   created_at timestamptz not null default now()
 );
+-- Idempotent column adds so replaying over a pre-2026-06-28 table upgrades it.
+alter table public.launch_waitlist add column if not exists name text;
+alter table public.launch_waitlist add column if not exists ticker text;
+alter table public.launch_waitlist add column if not exists banner_url text;
+alter table public.launch_waitlist add column if not exists token_image_url text;
+alter table public.launch_waitlist add column if not exists fee_founder_pct int;
+alter table public.launch_waitlist add column if not exists prompt text;
+alter table public.launch_waitlist add column if not exists repo text;
+alter table public.launch_waitlist add column if not exists updated_at timestamptz;
 create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
 create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
 alter table public.launch_waitlist enable row level security;
-comment on table public.launch_waitlist is 'Pre-launch interest capture (the "when can I launch" demand). Service-role write via /api/waitlist; never publicly readable.';
+comment on table public.launch_waitlist is 'Pre-launch project drafts (the "when can I launch" demand). Service-role write via /api/waitlist; never publicly readable.';
+
+-- ── waitlist-media storage bucket ────────────────────────────────────────────
+-- Public bucket holding pre-launch banner + token images. Public so the stored
+-- objects resolve at /storage/v1/object/public/waitlist-media/… (the only URLs
+-- normalizeMediaUrl in lib/waitlist accepts). Uploads are server-side via the
+-- service role (which bypasses storage RLS), so no anon write policy is needed;
+-- the 2 MB + image-only limits are defence-in-depth alongside the API validation.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'waitlist-media', 'waitlist-media', true, 2097152,
+  array['image/png','image/jpeg','image/webp','image/gif']
+)
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 -- ── follows ──────────────────────────────────────────────────────────────────
 -- Wallet-to-wallet follow graph. Public read; writes service-role only after a
