@@ -24,6 +24,13 @@ export interface CreateTokenInput {
   creator?: string | null;
   /** Cluster override (from the UI switch); falls back to LAUNCH_CLUSTER env. */
   cluster?: LaunchCluster;
+  /** Seed dev-buy in SOL, executed atomically with create (first candle + seeds
+   *  the treasury). 0/undefined = create only — the LOOP-launch bug we don't repeat. */
+  devBuySol?: number;
+  /** Real token logo (e.g. the pre-launch uploaded image); falls back to a placeholder. */
+  logo?: { bytes: Uint8Array; contentType: string; filename: string };
+  /** Social/site links carried into pump.fun metadata + DexScreener. */
+  links?: { website?: string; twitter?: string; telegram?: string };
 }
 
 export interface CreateTokenResult {
@@ -139,7 +146,16 @@ async function createOnPumpfun(
   }
   const { createOnPumpPortal } = await import("./pumpfun");
   const res = await createOnPumpPortal(
-    { name: input.name, symbol: input.ticker, description: input.prompt },
+    {
+      name: input.name,
+      symbol: input.ticker,
+      description: input.prompt,
+      // The pieces the app path used to drop — now threaded through so a launch
+      // does its first candle + real logo + links, not a bare create.
+      devBuySol: input.devBuySol,
+      logo: input.logo,
+      links: input.links,
+    },
     cluster
   );
   return {
