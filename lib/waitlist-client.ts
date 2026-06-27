@@ -1,5 +1,10 @@
 // Client fetch helper for the launch waitlist. Pure network call — the optional
 // connected wallet is passed by the caller (the form reads it from useWallet).
+// Lives outside lib/waitlist (which is server-only) so the client form can import
+// the shared cap without pulling `server-only` into the browser bundle.
+
+/** Max length of the optional "what do you want to build?" idea field. */
+export const IDEA_MAX = 280;
 
 export interface WaitlistFields {
   wallet?: string | null;

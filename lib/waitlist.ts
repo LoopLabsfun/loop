@@ -10,7 +10,8 @@ import { supabaseAdmin } from "./supabase";
 // no read policy, so emails are never publicly readable. Validators are pure +
 // exported for unit tests.
 
-export const IDEA_MAX = 280;
+export { IDEA_MAX } from "./waitlist-client";
+import { IDEA_MAX } from "./waitlist-client";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const X_RE = /^[A-Za-z0-9_]{1,15}$/; // X handles: 1–15 of [A-Za-z0-9_]
