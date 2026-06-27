@@ -456,6 +456,7 @@ function EditModal({
       const send = async () => {
         const fd = new FormData();
         fd.append("file", file);
+        fd.append("wallet", profile.wallet);
         return fetch("/api/profile/avatar", { method: "POST", body: fd });
       };
       let r = await send();

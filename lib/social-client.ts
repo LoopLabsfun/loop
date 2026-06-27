@@ -4,6 +4,26 @@ import type { Notification } from "./social";
 // Client fetch helpers for Loop's social layer. Pure network calls — the wallet
 // signing lives in the components (via useWallet) so these stay dependency-free.
 
+// Remember which wallet the active session belongs to, so a wallet switch in the
+// same browser can detect a now-stale session and clear it (the cookie is
+// httpOnly, so the client can't read the wallet from it directly).
+const SESSION_WALLET_KEY = "loop_session_wallet";
+
+export function rememberSessionWallet(wallet: string) {
+  try {
+    localStorage.setItem(SESSION_WALLET_KEY, wallet);
+  } catch {
+    /* ignore */
+  }
+}
+export function sessionWallet(): string | null {
+  try {
+    return localStorage.getItem(SESSION_WALLET_KEY);
+  } catch {
+    return null;
+  }
+}
+
 /** Establish a 7-day user session from one signed profile proof. */
 export async function apiEstablishSession(wallet: string, proof: LaunchProof): Promise<boolean> {
   const r = await fetch("/api/session", {
@@ -11,7 +31,22 @@ export async function apiEstablishSession(wallet: string, proof: LaunchProof): P
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ wallet, proof }),
   });
+  if (r.ok) rememberSessionWallet(wallet);
   return r.ok;
+}
+
+/** Clear the user session (cookie + remembered wallet). Called on wallet switch. */
+export async function apiClearSession(): Promise<void> {
+  try {
+    localStorage.removeItem(SESSION_WALLET_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    await fetch("/api/session", { method: "DELETE" });
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Follow / unfollow `target`. Returns the new following state, or throws on a

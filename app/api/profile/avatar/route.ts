@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { isSolanaAddress } from "@/lib/api-guards";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { limited } from "@/lib/rate-limit";
 
-// Upload a profile avatar. The owner is taken from the signed user session cookie
-// (never the body), the file is validated + stored in the public `avatars` bucket
-// via the service role under a wallet-scoped path, and the profile's avatar_url is
-// updated. Returns the public URL. Keeps image bytes server-side; the browser only
-// ever sends to us, never holds storage credentials.
+// Upload a profile avatar. The owner is the signed user-session wallet, and the
+// client MUST also state which wallet it's editing (`wallet` form field) — we
+// require the two to match. Without that check a stale 7-day session cookie from
+// a *previous* wallet would silently write the new image onto the OLD wallet's
+// profile (cross-account corruption). A mismatch → 401 so the client re-signs a
+// session for the wallet it's actually connected as, then retries. The file is
+// validated + stored in the public `avatars` bucket via the service role under a
+// wallet-scoped path; image bytes stay server-side.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -29,12 +33,19 @@ export async function POST(req: Request) {
   if (!sb) return NextResponse.json({ error: "storage not configured" }, { status: 503 });
 
   let file: File | null = null;
+  let target: string | null = null;
   try {
     const form = await req.formData();
     const f = form.get("file");
     if (f instanceof File) file = f;
+    const w = form.get("wallet");
+    if (typeof w === "string") target = w;
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+  // The session must belong to the wallet being edited — never a stale one.
+  if (!isSolanaAddress(target) || target !== wallet) {
+    return NextResponse.json({ error: "session does not match this wallet — re-sign" }, { status: 401 });
   }
   if (!file) return NextResponse.json({ error: "no file" }, { status: 400 });
   const ext = EXT[file.type];
