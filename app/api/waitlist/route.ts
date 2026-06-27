@@ -19,5 +19,5 @@ export async function POST(req: Request) {
   }
   const r = await joinWaitlist(body);
   if (!r.ok) return NextResponse.json({ error: r.error ?? "failed" }, { status: 400 });
-  return NextResponse.json({ ok: true, already: Boolean(r.already) });
+  return NextResponse.json({ ok: true, already: Boolean(r.already), messaged: Boolean(r.messaged) });
 }

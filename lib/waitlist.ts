@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
+import { sendDm } from "./dm";
 
 // Launch waitlist — captures the standing "when can I launch my own project?"
 // demand while public launches are closed (lib/launch-config). A signup needs at
@@ -80,9 +81,30 @@ export function validateWaitlist(input: WaitlistInput): { clean?: CleanWaitlist;
   };
 }
 
+/** The wallet the welcome DM is sent FROM — the official Loop account. Falls back
+ *  to PLATFORM_WALLET; when neither is set we just skip the DM (signup still works). */
+function dmSender(): string | null {
+  const w = (process.env.WAITLIST_DM_SENDER || process.env.PLATFORM_WALLET || "").trim();
+  return BASE58.test(w) ? w : null;
+}
+
+/** The first-contact DM body. Echoes the person's idea back so the conversation
+ *  starts with what THEY care about. Pure + exported for tests. */
+export function welcomeDmBody(idea: string | null): string {
+  const intro =
+    "Welcome to Loop 👋 You're on the launch waitlist — you'll be first in when the factory opens.";
+  return idea
+    ? `${intro}\n\nYou said you want to build:\n"${idea}"\n\nWhat's the first thing you'd want your agent to ship? Reply here — we read every one.`
+    : `${intro}\n\nWhat do you want to build? Reply here — we read every one.`;
+}
+
 /** Add someone to the launch waitlist. Idempotent: a duplicate wallet/email is
- *  treated as success ("already on the list"), never an error. */
-export async function joinWaitlist(input: WaitlistInput): Promise<{ ok: boolean; error?: string; already?: boolean }> {
+ *  treated as success ("already on the list"), never an error. On a FRESH signup
+ *  that includes a wallet, open a welcome DM from the official account so first
+ *  contact happens on our own platform (best-effort — never fails the signup). */
+export async function joinWaitlist(
+  input: WaitlistInput,
+): Promise<{ ok: boolean; error?: string; already?: boolean; messaged?: boolean }> {
   const { clean, error } = validateWaitlist(input);
   if (!clean) return { ok: false, error };
   const sb = supabaseAdmin;
@@ -102,5 +124,18 @@ export async function joinWaitlist(input: WaitlistInput): Promise<{ ok: boolean;
     }
     return { ok: false, error: dbErr.message };
   }
-  return { ok: true };
+
+  // First contact on-platform: open a DM only on a fresh signup that has a wallet
+  // identity (DMs are wallet-to-wallet) and only when a sender is configured.
+  let messaged = false;
+  const sender = dmSender();
+  if (clean.wallet && sender && sender !== clean.wallet) {
+    try {
+      const r = await sendDm(sender, clean.wallet, welcomeDmBody(clean.idea));
+      messaged = r.ok;
+    } catch {
+      /* best-effort: a DM failure must never break the signup */
+    }
+  }
+  return { ok: true, messaged };
 }

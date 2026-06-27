@@ -16,7 +16,7 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
   const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<null | { already: boolean }>(null);
+  const [done, setDone] = useState<null | { already: boolean; messaged: boolean }>(null);
 
   const hasContact = Boolean(wallet.address) || email.trim() !== "" || xHandle.trim() !== "";
 
@@ -46,9 +46,15 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
         <div className="font-display font-semibold text-[15px] text-accent-text mb-1">
           {done.already ? "You're already on the list ✓" : "You're on the list ✓"}
         </div>
-        <p className="text-[13px] text-muted leading-[1.5] m-0">
-          We&apos;ll reach out the moment project creation opens. Early signups get first access.
-        </p>
+        {done.messaged ? (
+          <p className="text-[13px] text-muted leading-[1.5] m-0">
+            We just opened a DM on Loop — <a href="/messages" className="text-accent-text font-semibold underline-offset-2 hover:underline">check your messages</a> and tell us what to build.
+          </p>
+        ) : (
+          <p className="text-[13px] text-muted leading-[1.5] m-0">
+            We&apos;ll reach out the moment project creation opens. Early signups get first access.
+          </p>
+        )}
       </div>
     );
   }
