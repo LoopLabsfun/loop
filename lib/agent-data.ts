@@ -8,6 +8,7 @@ import {
   type SocialPost,
   type TaskCategory,
   type TaskStatus,
+  type TaskSource,
 } from "./agent";
 import {
   rowToFeedItem,
@@ -135,6 +136,8 @@ interface TaskRow {
   detail: string;
   category: string;
   status: string;
+  priority?: number | null;
+  source?: string | null;
   created_at: string;
   last_outcome?: string | null;
 }
@@ -167,6 +170,7 @@ interface ActionRow {
 
 const CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
+const SOURCES: TaskSource[] = ["founder", "holder", "agent"];
 
 /**
  * Honest daily rollup from the task history: for each recent day, the titles of
@@ -339,6 +343,8 @@ export async function getAgentState(p: Project): Promise<AgentState> {
           ? (r.status as TaskStatus)
           : "todo",
         at: rel(r.created_at),
+        priority: typeof r.priority === "number" ? r.priority : undefined,
+        source: SOURCES.includes(r.source as TaskSource) ? (r.source as TaskSource) : undefined,
         lastOutcome: r.last_outcome ?? undefined,
       }));
 

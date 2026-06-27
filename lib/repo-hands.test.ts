@@ -161,6 +161,13 @@ describe("parseHandsOutput", () => {
     expect(r.gatePassed).toBe(false);
     expect(r.note).toMatch(/gate failed/);
   });
+  it("parses the CHANGED_FILES marker into a path list (for the altitude check)", () => {
+    const r = parseHandsOutput("CHANGED_FILES=components/X.tsx,lib/market.ts,\nGATE_RESULT=ok\nPUSHED=yes\nCOMMIT_SHA=abc1234");
+    expect(r.changedFiles).toEqual(["components/X.tsx", "lib/market.ts"]);
+  });
+  it("defaults changedFiles to [] when the marker is absent", () => {
+    expect(parseHandsOutput("GATE_RESULT=ok\nPUSHED=yes\nCOMMIT_SHA=abc1234").changedFiles).toEqual([]);
+  });
   it("reports no changes", () => {
     const r = parseHandsOutput("GATE_RESULT=ok\nNO_CHANGES\nPUSHED=no");
     expect(r.pushed).toBe(false);

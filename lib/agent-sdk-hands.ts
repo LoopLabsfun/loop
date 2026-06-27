@@ -112,6 +112,9 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `echo "PHASE=session t=$(($(date +%s)-SDK_T0))s"`,
     // Did it change anything?
     `CHANGED="$(git -C "$PWD" diff --name-only)"`,
+    // Surface the diff's paths so the persist layer can run the altitude
+    // (busywork) check on the SDK brain's change set.
+    `echo "CHANGED_FILES=$(printf '%s' "$CHANGED" | tr '\\n' ',')"`,
     `if [ -z "$CHANGED" ]; then echo "NO_CHANGES"; echo "PUSHED=no"; exit 0; fi`,
     // Denylist on the diff (the agent could write any path).
     `if printf '%s\\n' "$CHANGED" | grep -qiE ${shquote(DENY)}; then echo "DENYLIST_HIT"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; printf '%s\\n' "$CHANGED" | grep -iE ${shquote(DENY)}; exit 0; fi`,

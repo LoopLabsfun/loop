@@ -253,6 +253,12 @@ export interface HandsResult {
    * leaves it unset. The finish route accrues this into the compute ledger.
    */
   costUsd: number;
+  /**
+   * The paths the tick changed (`git diff --name-only` before commit), surfaced
+   * from the CHANGED_FILES marker. Lets the persist layer run the altitude
+   * (busywork) check on the SDK brain's diff. Empty when absent.
+   */
+  changedFiles: string[];
 }
 
 /** Parse the sandbox stdout markers into a structured result. */
@@ -270,6 +276,12 @@ export function parseHandsOutput(stdout: string): HandsResult {
   const costMatch = stdout.match(/SESSION_COST_USD=([0-9]*\.?[0-9]+)/);
   const parsedCost = costMatch ? Number(costMatch[1]) : 0;
   const costUsd = Number.isFinite(parsedCost) && parsedCost > 0 ? parsedCost : 0;
+  // CHANGED_FILES is a comma-joined `git diff --name-only` emitted by the SDK
+  // hands script (the legacy path omits it → empty).
+  const changedFiles = (stdout.match(/CHANGED_FILES=(.*)/)?.[1] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const sessionError = !pushed && !!sessionResult && sessionResult !== "ok";
   const creditExhausted =
     sessionError && /credit balance is too low/i.test(sessionNote ?? "");
@@ -282,5 +294,5 @@ export function parseHandsOutput(stdout: string): HandsResult {
   else if (!gatePassed) note = "gate failed — not pushed (tree stays green)";
   else if (/PUSH_FAILED|REBASE_FAILED/.test(stdout)) note = "gate green but push failed (will retry next cycle)";
   else note = "no commit this cycle";
-  return { pushed, gatePassed, commitSha, note, sessionError, creditExhausted, costUsd };
+  return { pushed, gatePassed, commitSha, note, sessionError, creditExhausted, costUsd, changedFiles };
 }
