@@ -411,3 +411,65 @@ export async function verifyTokenPayment(
   }
   return null;
 }
+
+/**
+ * Pure: how many lamports a transaction's native-balance deltas credited to the
+ * `to` account. `accountKeys`/`preBalances`/`postBalances` come index-aligned
+ * from a jsonParsed getTransaction. Returns the positive delta on `to`, or 0n
+ * when the account isn't present or didn't gain. No I/O — unit-testable.
+ */
+export function lamportsCredited(
+  accountKeys: { pubkey: string }[] | undefined,
+  preBalances: number[] | undefined,
+  postBalances: number[] | undefined,
+  to: string
+): bigint {
+  if (!accountKeys || !preBalances || !postBalances) return BigInt(0);
+  const i = accountKeys.findIndex((a) => a?.pubkey === to);
+  if (i < 0 || i >= preBalances.length || i >= postBalances.length) return BigInt(0);
+  const delta = BigInt(postBalances[i] ?? 0) - BigInt(preBalances[i] ?? 0);
+  return delta > BigInt(0) ? delta : BigInt(0);
+}
+
+/**
+ * Verify an on-chain SOL payment: that a confirmed transaction `signature`
+ * transferred at least `minLamports` from `from` (who must have SIGNED it) to
+ * `to`. Returns the lamports credited (≥ minLamports) or `null` when the tx is
+ * missing, failed, unsigned by `from`, underpaid, or the cluster is unconfigured.
+ * Used to gate pay-to-launch — the server trusts this, never the client's word.
+ *
+ * RPC propagation can lag confirmation, so it retries briefly (same as the SPL
+ * verifier above).
+ */
+export async function verifySolPayment(
+  signature: string,
+  opts: { from: string; to: string; minLamports: bigint; net?: Network }
+): Promise<bigint | null> {
+  const net = opts.net ?? DEFAULT_NETWORK;
+  if (!KEY || !signature || signature.length > 128) return null;
+  if (!BASE58.test(opts.from) || !BASE58.test(opts.to)) return null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tx = await rpc<{
+      meta: { err: unknown; preBalances?: number[]; postBalances?: number[] } | null;
+      transaction: { message: { accountKeys?: { pubkey: string; signer?: boolean }[] } } | null;
+    }>(net, "getTransaction", [
+      signature,
+      { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+    ]);
+    const meta = tx?.meta;
+    if (meta) {
+      if (meta.err) return null; // the transaction failed — no payment
+      const keys = tx?.transaction?.message?.accountKeys;
+      // The payer must have signed the tx — otherwise it's someone else's payment
+      // we'd be crediting to this creator.
+      const signedByFrom = (keys ?? []).some((k) => k?.pubkey === opts.from && k?.signer);
+      if (!signedByFrom) return null;
+      const credited = lamportsCredited(keys, meta.preBalances, meta.postBalances, opts.to);
+      return credited >= opts.minLamports && credited > BigInt(0) ? credited : null;
+    }
+    // tx not visible yet (propagation lag) — brief backoff, then retry.
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 600));
+  }
+  return null;
+}

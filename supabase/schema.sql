@@ -56,6 +56,14 @@ comment on column public.projects.network is 'mainnet | devnet — which cluster
 alter table public.projects add column if not exists creator_wallet text;
 comment on column public.projects.creator_wallet is 'Base58 pubkey of the wallet that signed the launch proof; null if unproven.';
 
+-- pay-to-launch: the on-chain SOL launch-fee payment signature (creator → platform
+-- wallet), verified server-side before insert. Null when untolled. The partial
+-- unique index is the REPLAY GUARD — one payment can fund at most one launch.
+alter table public.projects add column if not exists launch_payment_sig text;
+comment on column public.projects.launch_payment_sig is 'Signature of the verified on-chain SOL launch-fee payment; null when pay-to-launch is disabled.';
+create unique index if not exists projects_launch_payment_sig_key
+  on public.projects (launch_payment_sig) where launch_payment_sig is not null;
+
 -- per-project fee economics + steering
 alter table public.projects
   add column if not exists fee_founder_pct integer not null default 30,

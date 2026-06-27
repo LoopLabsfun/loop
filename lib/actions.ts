@@ -19,6 +19,8 @@ import {
   proposalQuorum,
 } from "./directives";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "./launch-config";
+import { launchFeeRequired, launchFeeLamports, launchFeeWallet } from "./launch-fee";
+import { verifySolPayment } from "./solana";
 import { toBaseUnits, chatBasePrice, TOKEN_DECIMALS } from "./chat";
 import {
   sanitizeStakeAmount,
@@ -38,8 +40,10 @@ import {
  * anon insert policy forbids).
  *
  * Pay-to-launch (no stake toll): the bonding-curve buy is the cost and seeds
- * the treasury — there's no LOOP holding to verify. Still TODO for real launch:
- * collect the launch payment / curve buy on-chain before minting.
+ * the treasury — there's no LOOP holding to verify. When a launch fee is
+ * configured (lib/launch-fee), a signed wallet proof + an on-chain SOL payment
+ * to the platform wallet are required and verified here (verifySolPayment),
+ * replay-guarded by `launch_payment_sig`; untolled otherwise.
  */
 export async function launchProjectAction(
   input: LaunchInput
@@ -76,6 +80,45 @@ export async function launchProjectAction(
   // LOOP-holding toll. The pump.fun bonding-curve buy is the cost and seeds the
   // project treasury; Loop earns via its 5% of the creator-fee split. Holding
   // LOOP is a governance + boost (default model tier), never a gate to publish.
+  //
+  // The launch TOLL closes the free-spam surface: when a launch fee is
+  // configured (lib/launch-fee), the creator must (1) prove wallet ownership and
+  // (2) have paid the fee on-chain to the platform wallet. Both are verified
+  // server-side — never the client's word — and the payment signature is
+  // replay-guarded so one payment funds exactly one launch. Disabled (no-op)
+  // until LAUNCH_FEE_SOL + LAUNCH_FEE_WALLET are set, so the LOOP-only phase and
+  // devnet keep launching untolled.
+  let launchPaymentSig: string | null = null;
+  if (launchFeeRequired()) {
+    if (!creatorWallet) {
+      throw new Error("A signed wallet proof is required to launch.");
+    }
+    const sig = (input.paymentSig ?? "").trim();
+    if (!sig) {
+      throw new Error("An on-chain launch payment is required.");
+    }
+    // Replay guard: a payment signature can fund at most one launch.
+    if (supabaseAdmin) {
+      const { data: dupe } = await supabaseAdmin
+        .from("projects")
+        .select("key")
+        .eq("launch_payment_sig", sig)
+        .maybeSingle();
+      if (dupe) throw new Error("That launch payment has already been used.");
+    }
+    const paid = await verifySolPayment(sig, {
+      from: creatorWallet,
+      to: launchFeeWallet()!,
+      minLamports: launchFeeLamports(),
+      net: cluster,
+    });
+    if (paid === null) {
+      throw new Error(
+        "Launch payment could not be verified on-chain. Make sure it has confirmed, then retry."
+      );
+    }
+    launchPaymentSig = sig;
+  }
 
   // Mint the token (no-op in simulated mode).
   const token = await createToken({
@@ -143,6 +186,8 @@ export async function launchProjectAction(
     treasury_wallet: token.treasuryWallet,
     network: token.cluster,
     creator_wallet: creatorWallet,
+    // The verified launch-fee payment (null when untolled) — replay-guarded above.
+    launch_payment_sig: launchPaymentSig,
     // Founder's creator-fee share (agent gets the rest after the 5% platform cut).
     fee_founder_pct: clean.feeFounderPct,
     // Deep steering: guardrails + content policy the agent rereads each cycle.
