@@ -107,6 +107,20 @@ export async function getRecentProfiles(viewer?: string | null, limit = 24): Pro
   return enrich(wallets, viewer);
 }
 
+/** Search profiles by username or display name (prefix-friendly), enriched. */
+export async function searchPeople(q: string, viewer?: string | null, limit = 12): Promise<SocialUser[]> {
+  const sb = supabaseAdmin;
+  const term = q.trim();
+  if (!sb || term.length < 2) return [];
+  const like = `%${term.replace(/[%_]/g, "")}%`;
+  const { data } = await sb
+    .from("profiles")
+    .select("wallet")
+    .or(`username.ilike.${like},display_name.ilike.${like}`)
+    .limit(limit);
+  return enrich(((data ?? []) as { wallet: string }[]).map((p) => p.wallet), viewer);
+}
+
 /** Wallets that follow `wallet` (newest first), enriched. */
 export async function getFollowers(wallet: string, viewer?: string | null, limit = 50): Promise<SocialUser[]> {
   const sb = supabaseAdmin;
