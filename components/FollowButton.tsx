@@ -35,8 +35,8 @@ export function FollowButton({
   const isSelf = wallet.connected && wallet.address === target;
 
   useEffect(() => {
-    if (autoState && wallet.connected) apiFollowState(target).then(setFollowing).catch(() => {});
-  }, [autoState, wallet.connected, target]);
+    if (autoState && wallet.connected) apiFollowState(target, wallet.address).then(setFollowing).catch(() => {});
+  }, [autoState, wallet.connected, wallet.address, target]);
 
   async function toggle(e: React.MouseEvent) {
     e.preventDefault();

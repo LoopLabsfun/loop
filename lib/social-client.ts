@@ -78,10 +78,12 @@ export async function apiFollow(target: string, action: "follow" | "unfollow", a
   return Boolean(j.following);
 }
 
-/** Whether the signed-in wallet follows `target` (false when no session). */
-export async function apiFollowState(target: string): Promise<boolean> {
+/** Whether the signed-in wallet follows `target` (false when no session). The
+ *  `actor` hint lets the server ignore a stale cookie for a different wallet. */
+export async function apiFollowState(target: string, actor?: string | null): Promise<boolean> {
   try {
-    const r = await fetch(`/api/follow?target=${encodeURIComponent(target)}`);
+    const q = `target=${encodeURIComponent(target)}${actor ? `&actor=${encodeURIComponent(actor)}` : ""}`;
+    const r = await fetch(`/api/follow?${q}`);
     if (!r.ok) return false;
     return Boolean((await r.json()).following);
   } catch {
@@ -89,9 +91,9 @@ export async function apiFollowState(target: string): Promise<boolean> {
   }
 }
 
-/** Load the signed-in wallet's notifications. 401 ⇒ no session (throws). */
-export async function apiLoadNotifications(): Promise<{ items: Notification[]; unread: number }> {
-  const r = await fetch("/api/notifications");
+/** Load the signed-in wallet's notifications. 401 ⇒ no/stale session (throws). */
+export async function apiLoadNotifications(actor?: string | null): Promise<{ items: Notification[]; unread: number }> {
+  const r = await fetch(`/api/notifications${actor ? `?actor=${encodeURIComponent(actor)}` : ""}`);
   if (r.status === 401) throw new Error("no-session");
   if (!r.ok) throw new Error("load failed");
   return r.json();

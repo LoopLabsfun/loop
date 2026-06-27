@@ -3,15 +3,18 @@ import type { Conversation, DmMessage } from "./dm";
 // Client fetch helpers for DMs. A 401 means no session — the caller establishes
 // one (apiEstablishSession) and retries, same flow as follow/notifications.
 
-export async function apiDmConversations(): Promise<{ conversations: Conversation[]; unread: number }> {
-  const r = await fetch("/api/dm");
+// `actor` (the connected wallet) lets the server ignore a stale cookie for a
+// different wallet — a 401 then drives the same re-sign flow as no-session.
+export async function apiDmConversations(actor?: string | null): Promise<{ conversations: Conversation[]; unread: number }> {
+  const r = await fetch(`/api/dm${actor ? `?actor=${encodeURIComponent(actor)}` : ""}`);
   if (r.status === 401) throw new Error("no-session");
   if (!r.ok) throw new Error("load failed");
   return r.json();
 }
 
-export async function apiDmThread(peer: string): Promise<DmMessage[]> {
-  const r = await fetch(`/api/dm?with=${encodeURIComponent(peer)}`);
+export async function apiDmThread(peer: string, actor?: string | null): Promise<DmMessage[]> {
+  const q = `with=${encodeURIComponent(peer)}${actor ? `&actor=${encodeURIComponent(actor)}` : ""}`;
+  const r = await fetch(`/api/dm?${q}`);
   if (r.status === 401) throw new Error("no-session");
   if (!r.ok) throw new Error("load failed");
   return (await r.json()).messages;

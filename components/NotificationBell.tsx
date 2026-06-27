@@ -33,14 +33,14 @@ export function NotificationBell() {
 
   const load = useCallback(async () => {
     try {
-      const { items, unread } = await apiLoadNotifications();
+      const { items, unread } = await apiLoadNotifications(wallet.address);
       setItems(items);
       setUnread(unread);
       setNeedsSession(false);
     } catch (e) {
       if (e instanceof Error && e.message === "no-session") setNeedsSession(true);
     }
-  }, []);
+  }, [wallet.address]);
 
   // Poll for the unread badge while connected (cheap; cookie-authed, no popup).
   useEffect(() => {

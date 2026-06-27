@@ -61,3 +61,25 @@ export function verifyUserToken(token: string | undefined | null, opts: { now?: 
 }
 
 export const USER_COOKIE = "loop_user";
+
+/**
+ * Stale-session guard. The cookie is the server's source of truth for WHO is
+ * acting, but the client knows which wallet it's actually connected as. When the
+ * two disagree — a wallet switch in the same browser left a cookie minted for the
+ * previous wallet — every social action would silently act as (and write under)
+ * the stale wallet. Returns true when `claimedActor` is a present, well-formed
+ * wallet that differs from the cookie's `sessionWallet`; callers treat that like
+ * "no session" (401) so the client re-signs for the wallet it's connected as.
+ *
+ * Pure (no I/O) so it's the same check on every route and unit-testable. A
+ * missing/blank/malformed `claimedActor` returns false — the hint is optional and
+ * never tightens auth on its own (the cookie still governs).
+ */
+export function isStaleSession(sessionWallet: string | null | undefined, claimedActor: string | null | undefined): boolean {
+  if (!sessionWallet) return false; // no session at all — handled by the 401 path
+  const claimed = typeof claimedActor === "string" ? claimedActor.trim() : "";
+  // Base58 wallet shape (32–44 chars, no 0/O/I/l) — mirrors isSolanaAddress so a
+  // junk hint can't trip the guard.
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(claimed)) return false;
+  return claimed !== sessionWallet;
+}

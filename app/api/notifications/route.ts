@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
+import { verifyUserToken, isStaleSession, USER_COOKIE } from "@/lib/user-session";
 import { getNotifications, getUnreadCount, markAllRead, syncEscalationNotifications } from "@/lib/social";
 
 // Read / clear the signed-in wallet's PRIVATE notification feed. The recipient is
@@ -14,9 +14,14 @@ function wallet(): string | null {
   return verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const w = wallet();
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
+  // Stale cookie ⇒ don't leak the previous wallet's private feed. Treated as
+  // no-session so the bell re-establishes for the connected wallet.
+  if (isStaleSession(w, new URL(req.url).searchParams.get("actor"))) {
+    return NextResponse.json({ error: "stale session", stale: true }, { status: 401 });
+  }
   // Fold any open escalations into the feed first (founder-only, idempotent).
   await syncEscalationNotifications(w);
   const [items, unread] = await Promise.all([getNotifications(w), getUnreadCount(w)]);
