@@ -151,6 +151,12 @@ export interface LaunchInput {
   contentPolicy?: string;
   /** Wallet ownership proof (signed launch message); verified server-side. */
   proof?: import("./signature").LaunchProof;
+  /**
+   * Signature of the on-chain SOL launch-fee payment (creator → platform launch
+   * wallet). Required, and verified on-chain, only when pay-to-launch is enabled
+   * (lib/launch-fee `launchFeeRequired`); ignored in the untolled prototype.
+   */
+  paymentSig?: string | null;
 }
 
 export interface LaunchResult {
