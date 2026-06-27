@@ -2,28 +2,83 @@ import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
 import { isFounder } from "@/lib/admin-guard";
 import { isSolanaAddress } from "@/lib/api-guards";
-import { resolveDraftLaunch, prelaunchPreflight } from "@/lib/prelaunch";
+import {
+  resolveDraftLaunch,
+  prelaunchPreflight,
+  listPrelaunches,
+  setPrelaunchStatus,
+  approvePrelaunch,
+} from "@/lib/prelaunch";
 
-// Founder-only PRE-LAUNCH preflight (read-only · spends no SOL). Given a draft's
-// wallet, it resolves the exact launch plan and reports readiness — the dry-run
-// that proves a launch is configured right (dev-buy funded, vanity available,
-// custody set, mainnet) BEFORE the live mint. Gated by the LOOP admin session
-// (same founder gate as /api/admin/control). The live mint is a separate route.
+// Founder-only PRE-LAUNCH curation, all gated by the LOOP admin session
+// (isFounder, same gate as /api/admin/control).
+//   GET            → list every draft (the curation panel)
+//   GET ?wallet=   → resolve one draft into a launch plan + READ-ONLY preflight
+//                    (the dry-run; spends no SOL)
+//   POST whitelist/reject → just flips status
+//   POST approve   → LIVE MINT (spends SOL). Requires confirm:true. Idempotent.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 300;
+
+async function gate(req: Request) {
+  const loop = await getProject("loop");
+  if (!loop) return { error: NextResponse.json({ error: "loop project not found" }, { status: 404 }) };
+  if (!isFounder(req, loop)) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  return { ok: true as const };
+}
 
 export async function GET(req: Request) {
-  const loop = await getProject("loop");
-  if (!loop) return NextResponse.json({ error: "loop project not found" }, { status: 404 });
-  if (!isFounder(req, loop)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const g = await gate(req);
+  if ("error" in g) return g.error;
 
   const wallet = new URL(req.url).searchParams.get("wallet");
-  if (!isSolanaAddress(wallet)) {
-    return NextResponse.json({ error: "valid ?wallet= required" }, { status: 400 });
+  if (wallet) {
+    if (!isSolanaAddress(wallet)) {
+      return NextResponse.json({ error: "valid ?wallet= required" }, { status: 400 });
+    }
+    const plan = await resolveDraftLaunch(wallet);
+    if (!plan) return NextResponse.json({ error: "no pre-launch draft for that wallet" }, { status: 404 });
+    const { ready, checks } = await prelaunchPreflight(plan);
+    return NextResponse.json({ ready, plan, checks });
   }
-  const plan = await resolveDraftLaunch(wallet);
-  if (!plan) return NextResponse.json({ error: "no pre-launch draft for that wallet" }, { status: 404 });
 
-  const { ready, checks } = await prelaunchPreflight(plan);
-  return NextResponse.json({ ready, plan, checks });
+  return NextResponse.json({ drafts: await listPrelaunches() });
+}
+
+export async function POST(req: Request) {
+  const g = await gate(req);
+  if ("error" in g) return g.error;
+
+  let body: { wallet?: string; action?: string; confirm?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+  const { wallet, action } = body;
+  if (!isSolanaAddress(wallet)) {
+    return NextResponse.json({ error: "valid wallet required" }, { status: 400 });
+  }
+
+  try {
+    if (action === "whitelist") {
+      await setPrelaunchStatus(wallet, "whitelisted");
+      return NextResponse.json({ ok: true, status: "whitelisted" });
+    }
+    if (action === "reject") {
+      await setPrelaunchStatus(wallet, "rejected");
+      return NextResponse.json({ ok: true, status: "rejected" });
+    }
+    if (action === "approve") {
+      if (body.confirm !== true) {
+        return NextResponse.json({ error: "approve requires confirm:true (spends SOL)" }, { status: 400 });
+      }
+      const res = await approvePrelaunch(wallet);
+      return NextResponse.json({ ok: true, ...res });
+    }
+    return NextResponse.json({ error: "unknown action" }, { status: 400 });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "failed" }, { status: 400 });
+  }
 }
