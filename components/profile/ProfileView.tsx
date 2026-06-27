@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
@@ -81,6 +81,16 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
       </nav>
 
       <main className="max-w-[920px] mx-auto px-6 sm:px-8 py-7 flex flex-col gap-4">
+        {/* New-user onboarding — a dismissible checklist shown on your OWN profile
+            until you've set it up and started following people. */}
+        {isOwner && (
+          <Onboarding
+            profile={profile}
+            following={follow.following}
+            onEdit={() => setEditing(true)}
+          />
+        )}
+
         {/* Identity — a cover band the avatar sits on, then name + role + meta. */}
         <div className="bg-surface border border-line-2 rounded-[18px] overflow-hidden">
           <div
@@ -321,6 +331,92 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
       {editing && isOwner && (
         <EditModal profile={profile} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); router.refresh(); }} />
       )}
+    </div>
+  );
+}
+
+// First-run checklist for a connected user on their own profile. Walks them
+// through identity → avatar → following, with live completion state. Dismissible
+// (remembered per wallet), and auto-hides once every step is done.
+function Onboarding({
+  profile,
+  following,
+  onEdit,
+}: {
+  profile: ProfileViewData["profile"];
+  following: number;
+  onEdit: () => void;
+}) {
+  const key = `loop_onboard_dismissed_${profile.wallet}`;
+  const [dismissed, setDismissed] = useState(true); // assume dismissed until we read storage (avoids flash)
+  useEffect(() => {
+    setDismissed(typeof window !== "undefined" && localStorage.getItem(key) === "1");
+  }, [key]);
+
+  const steps = [
+    { done: true, label: "Connect your wallet", hint: "Your wallet is your Loop identity.", action: null as null | { label: string; onClick: () => void } },
+    {
+      done: Boolean(profile.username || profile.displayName),
+      label: "Claim your @username & name",
+      hint: "So people can find and mention you.",
+      action: { label: "Set up profile", onClick: onEdit },
+    },
+    { done: Boolean(profile.avatarUrl), label: "Add an avatar", hint: "Put a face to your wallet.", action: { label: "Upload", onClick: onEdit } },
+    { done: following >= 3, label: "Follow 3 builders", hint: "Fill your feed with people shipping on Loop.", action: null },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const allDone = doneCount === steps.length;
+
+  if (dismissed || allDone) return null;
+
+  function dismiss() {
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      /* ignore */
+    }
+    setDismissed(true);
+  }
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="font-display font-semibold text-[15px]">Welcome to Loop 👋</div>
+          <div className="text-[12px] text-muted">Set up your profile to get the most out of it.</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] text-faint">{doneCount}/{steps.length}</span>
+          <button onClick={dismiss} className="font-mono text-[11px] text-faint hover:text-neg transition-colors">dismiss</button>
+        </div>
+      </div>
+      <div className="flex flex-col gap-[6px]">
+        {steps.map((s) => (
+          <div key={s.label} className="flex items-center gap-[10px] py-[6px]">
+            <span
+              className={`w-[20px] h-[20px] rounded-full flex items-center justify-center text-[11px] flex-none ${
+                s.done ? "bg-pos text-white" : "border border-line-2 text-faint"
+              }`}
+            >
+              {s.done ? "✓" : ""}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className={`text-[13px] ${s.done ? "text-faint line-through" : "text-ink"}`}>{s.label}</div>
+              {!s.done && <div className="text-[11px] text-muted">{s.hint}</div>}
+            </div>
+            {!s.done &&
+              (s.action ? (
+                <button onClick={s.action.onClick} className="font-mono text-[11px] px-2 h-[28px] rounded-[8px] bg-accent text-white hover:opacity-90 transition-opacity flex-none">
+                  {s.action.label}
+                </button>
+              ) : (
+                <Link href="/explore" className="font-mono text-[11px] px-2 h-[28px] inline-flex items-center rounded-[8px] border border-line-2 hover:bg-surface-2 transition-colors flex-none">
+                  Explore
+                </Link>
+              ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
