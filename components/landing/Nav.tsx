@@ -62,6 +62,9 @@ export function Nav({
               {s.label}
             </button>
           ))}
+          <Link href="/explore" className="hover:text-ink transition-colors">
+            Explore
+          </Link>
           <Link href="/activity" className="hover:text-ink transition-colors">
             Activity
           </Link>
@@ -150,6 +153,13 @@ export function Nav({
               {s.label}
             </button>
           ))}
+          <Link
+            href="/explore"
+            onClick={() => setMenuOpen(false)}
+            className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
+          >
+            Explore
+          </Link>
           <Link
             href="/activity"
             onClick={() => setMenuOpen(false)}
