@@ -144,9 +144,18 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                     {profile.twitterVerified && <span className="text-pos" title="verified">✓</span>}
                   </a>
                 ) : isOwner ? (
-                  <span className="font-mono text-[11px] text-faint" title="Linking Twitter via Privy is coming next">
-                    + link Twitter (soon)
-                  </span>
+                  PRIVY_ON ? (
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="font-mono text-[11px] text-accent-text hover:underline"
+                    >
+                      + link X
+                    </button>
+                  ) : (
+                    <span className="font-mono text-[11px] text-faint" title="Linking X via Privy is coming next">
+                      + link X (soon)
+                    </span>
+                  )
                 ) : null}
               </div>
               {profile.username && (
