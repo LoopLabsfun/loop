@@ -92,6 +92,21 @@ async function enrich(wallets: string[], viewer?: string | null): Promise<Social
   }));
 }
 
+/** Recently-joined profiles that have set at least a display name or username —
+ *  people worth discovering on Explore. Excludes the viewer. */
+export async function getRecentProfiles(viewer?: string | null, limit = 24): Promise<SocialUser[]> {
+  const sb = supabaseAdmin;
+  if (!sb) return [];
+  const { data } = await sb
+    .from("profiles")
+    .select("wallet,display_name,avatar_url,username")
+    .or("display_name.not.is.null,username.not.is.null")
+    .order("created_at", { ascending: false })
+    .limit(limit + 1);
+  const wallets = ((data ?? []) as { wallet: string }[]).map((p) => p.wallet).filter((w) => w !== viewer).slice(0, limit);
+  return enrich(wallets, viewer);
+}
+
 /** Wallets that follow `wallet` (newest first), enriched. */
 export async function getFollowers(wallet: string, viewer?: string | null, limit = 50): Promise<SocialUser[]> {
   const sb = supabaseAdmin;
