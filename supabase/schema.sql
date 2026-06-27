@@ -208,10 +208,15 @@ create table if not exists public.agent_tasks (
   detail text not null default '',
   category text not null default 'feature' check (category in ('feature','outreach','fix','ops')),
   status text not null default 'todo' check (status in ('todo','building','shipped','blocked')),
+  -- Backlog ranking: curated impact rank (higher works first) + provenance, so
+  -- founder/holder asks outrank agent self-groomed work (lib/agent-backlog).
+  priority smallint not null default 0,
+  source text not null default 'agent' check (source in ('founder','holder','agent')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 comment on table public.agent_tasks is 'Tasks the project agent plans and works. Written by the runtime (service_role); publicly readable.';
+create index if not exists agent_tasks_backlog_idx on public.agent_tasks (project_key, status, priority desc, created_at);
 
 create table if not exists public.agent_emails (
   id bigint generated always as identity primary key,

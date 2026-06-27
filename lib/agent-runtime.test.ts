@@ -116,7 +116,7 @@ describe("buildSystemPrompt", () => {
 describe("buildUserPrompt", () => {
   it("handles the empty cold-start case", () => {
     const s = buildUserPrompt([], []);
-    expect(s).toContain("no tasks yet");
+    expect(s).toContain("backlog empty");
     expect(s).toContain("(no directives)");
   });
   it("lists tasks and fences directives as untrusted data", () => {
@@ -132,6 +132,20 @@ describe("buildUserPrompt", () => {
     expect(s).toContain("<untrusted_directives>");
     // an unverified author is labelled as such, never echoed as a trusted source
     expect(s).toContain("unverified holder");
+  });
+  it("ranks the todo backlog by curated impact and names the top item", () => {
+    const tasks = [
+      { id: "1", title: "agent micro-polish", detail: "", category: "fix", status: "todo", at: "", source: "agent" },
+      { id: "2", title: "founder priority feature", detail: "", category: "feature", status: "todo", at: "", source: "founder" },
+      { id: "3", title: "holder request", detail: "", category: "feature", status: "todo", at: "", source: "holder" },
+    ] as AgentTask[];
+    const s = buildUserPrompt(tasks, []);
+    // The founder ask outranks the agent's self-groomed work and is named #1.
+    expect(s).toContain('#1: "founder priority feature"');
+    expect(s).toContain("★FOUNDER");
+    expect(s).toContain("BACKLOG IS THE SOURCE OF TRUTH");
+    // The founder line must appear before the agent's micro-polish line.
+    expect(s.indexOf("founder priority feature")).toBeLessThan(s.indexOf("agent micro-polish"));
   });
   it("makes a founder-queued (todo) proposal the build-next signal, and drops refused/done", () => {
     const directives = [
@@ -237,7 +251,7 @@ describe("buildUserPrompt", () => {
     })) as AgentTask[];
     const s = buildUserPrompt(full, []);
     expect(s).not.toMatch(/backlog is THIN/);
-    expect(s).toContain("standing queue"); // backlog framing always present
+    expect(s).toContain("BACKLOG IS THE SOURCE OF TRUTH"); // backlog framing always present
   });
 
   it("surfaces only UNANSWERED inbound mail for the agent to reply to", () => {

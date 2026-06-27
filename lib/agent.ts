@@ -17,6 +17,9 @@ import type { Project } from "./types";
 
 export type TaskCategory = "feature" | "outreach" | "fix" | "ops";
 export type TaskStatus = "todo" | "building" | "shipped" | "blocked";
+/** Who put a task on the backlog — founder/holder asks are curated and ranked
+ *  above whatever the agent grooms for itself (see lib/agent-backlog). */
+export type TaskSource = "founder" | "holder" | "agent";
 
 export interface AgentTask {
   id: string;
@@ -26,6 +29,14 @@ export interface AgentTask {
   status: TaskStatus;
   /** human label, e.g. "tonight", "2h ago" */
   at: string;
+  /**
+   * Curated impact rank: higher works first. Falls back to a per-source band
+   * (founder > holder > agent) when unset, so curated direction wins the tick
+   * over agent self-groomed busywork. See lib/agent-backlog `rankBacklog`.
+   */
+  priority?: number;
+  /** Provenance — drives the default priority band. */
+  source?: TaskSource;
   /**
    * Verifier outcome of the most recent tick on this task (episodic memory) —
    * e.g. "last attempt FAILED tsc — error TS2345…" or "held: no check ran".

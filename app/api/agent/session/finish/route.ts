@@ -139,7 +139,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    await applyDecision(project, decision, verify, { postingPolicy: "authored-only" });
+    await applyDecision(project, decision, verify, {
+      postingPolicy: "authored-only",
+      changedFiles: hands.changedFiles,
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "persist failed" },

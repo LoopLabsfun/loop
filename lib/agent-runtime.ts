@@ -15,6 +15,7 @@ import {
   type LearningCategory,
 } from "./learnings";
 import { getTopLearnings, recordLearning } from "./agent-data";
+import { rankBacklog, effectivePriority, isBusyworkOnly } from "./agent-backlog";
 import { EXTERNAL_LINKS } from "./links";
 import { buildShipTweet } from "./x-recap";
 import { tokensToUsd, type TokenUsage } from "./anthropic-cost";
@@ -604,18 +605,35 @@ export function buildUserPrompt(
   const shippedLines = shipped.length
     ? shipped.map((t) => `- ${t.title}`).join("\n")
     : "(none yet)";
-  const taskLines = tasks.length
-    ? tasks
+  // Episodic memory (B): show the last verifier outcome on an unfinished task so
+  // the agent fixes the actual failure instead of re-planning it.
+  const oc = (t: AgentTask) =>
+    t.lastOutcome && t.status !== "shipped" ? `\n    ↳ ${t.lastOutcome}` : "";
+  // The BACKLOG is the source of truth for "what next". Rank the `todo` queue by
+  // curated impact (founder/holder asks above agent self-groomed work) so the
+  // agent pulls a deterministic TOP item instead of re-deriving a goal each tick
+  // (its drift-into-busywork failure mode). A non-agent source / explicit
+  // priority is tagged so the agent sees the curation.
+  const { ranked: rankedTodo, top: backlogTop } = rankBacklog(tasks);
+  const srcTag = (t: AgentTask) => {
+    const src = t.source ?? "agent";
+    if (src === "founder") return ` ★FOUNDER p${effectivePriority(t)}`;
+    if (src === "holder") return ` ◆HOLDER p${effectivePriority(t)}`;
+    return ` p${effectivePriority(t)}`;
+  };
+  const todoLines = rankedTodo.length
+    ? rankedTodo
         .slice(0, 12)
-        .map((t) => {
-          // Episodic memory (B): show the last verifier outcome on an unfinished
-          // task so the agent fixes the actual failure instead of re-planning it.
-          const oc =
-            t.lastOutcome && t.status !== "shipped" ? `\n    ↳ ${t.lastOutcome}` : "";
-          return `- [${t.status}] (${t.category}) ${t.title}${oc}`;
-        })
+        .map((t, i) => `- #${i + 1} (${t.category})${srcTag(t)} ${t.title}${oc(t)}`)
         .join("\n")
-    : "(no tasks yet — you are just starting)";
+    : "(backlog empty — groom new tasks this tick)";
+  // In-flight work (building/blocked) shown separately so the agent finishes or
+  // unblocks it rather than re-opening it. Shipped is listed in its own block.
+  const inFlight = tasks.filter((t) => t.status === "building" || t.status === "blocked").slice(0, 8);
+  const inFlightLines = inFlight.length
+    ? inFlight.map((t) => `- [${t.status}] (${t.category}) ${t.title}${oc(t)}`).join("\n")
+    : "(nothing in flight)";
+  const taskLines = `IN FLIGHT — finish or unblock these first:\n${inFlightLines}\n\nBACKLOG — your ranked \`todo\` queue, highest curated impact first (work #1 unless a FOUNDER-QUEUED/ADOPTED directive below outranks it):\n${todoLines}`;
   // The repo's REAL file tree (source paths) — so the agent targets files that
   // actually exist instead of inventing paths or "initializing" a live repo.
   const treeBlock = tree.length
@@ -755,9 +773,11 @@ export function buildUserPrompt(
     "Shared learnings from across the Loop network (apply if relevant):",
     formatLearningsForPrompt(learnings),
     "",
-    `BACKLOG — your "todo" tasks above are your standing queue (currently ${todoCount}). Prefer picking your next action FROM that queue rather than inventing a fresh goal each tick.${
+    `BACKLOG IS THE SOURCE OF TRUTH — your \`todo\` queue above is RANKED by curated impact (currently ${todoCount} item${todoCount === 1 ? "" : "s"}). Take your next action FROM the TOP of that ranked queue${
+      backlogTop ? ` — right now that is #1: "${backlogTop.title}"` : ""
+    }. Do NOT invent a fresh goal, and do NOT pick a lower-ranked item, while a higher one is open — the ranking already encodes "what matters most". The ONLY thing that outranks backlog #1 is a FOUNDER-QUEUED or ADOPTED-BY-VOTE directive below (curated human steering). ${
       backlogThin
-        ? ` Your backlog is THIN: also return "backlog" — ${BACKLOG_TARGET - todoCount} or so NEXT tasks derived from YOUR mandate and the real product state. Each MUST be concrete and tightly scoped (shippable in one cycle) AND genuinely impactful — a specific, holder-visible improvement to the landing/value-prop, the trading/buy-sell flow, onboarding, the live data/treasury/health surfaces, the agent console, or a real feature/fix people would notice. NOT vague ("improve UX"), NOT another util/formatter/test-hardening or defensive-guard task, never a task already shipped or building above. Write them at the altitude of the impactful work above, not micro-polish. These persist as todo items for future ticks.`
+        ? `Your backlog is THIN: also return "backlog" — ${BACKLOG_TARGET - todoCount} or so NEXT tasks derived from YOUR mandate and the real product state. Each MUST be concrete and tightly scoped (shippable in one cycle) AND genuinely impactful — a specific, holder-visible improvement to the landing/value-prop, the trading/buy-sell flow, onboarding, the live data/treasury/health surfaces, the agent console, or a real feature/fix people would notice. NOT vague ("improve UX"), NOT another util/formatter/test-hardening or defensive-guard task, never a task already shipped or building above. Write them at the altitude of the impactful work above, not micro-polish. These persist as todo items for future ticks.`
         : ""
     }`,
     "Decide the single next action to take now — a GENUINELY NEW increment that",
@@ -1603,6 +1623,13 @@ export async function applyDecision(
      * template". Legacy leaves this unset and keeps the templated fallback.
      */
     postingPolicy?: "authored-only";
+    /**
+     * Files the tick actually changed, for the SDK brain — its sandbox commits
+     * directly so `d.edits` is empty here. Lets the altitude (busywork) check run
+     * on the same diff as the legacy `edits` path. (`git diff --name-only`,
+     * surfaced by parseHandsOutput.)
+     */
+    changedFiles?: string[];
   }
 ): Promise<void> {
   if (!supabaseAdmin) {
@@ -1634,7 +1661,19 @@ export async function applyDecision(
   const summary = gated.note ? `${d.summary} [${gated.note}]`.slice(0, 280) : d.summary;
   // Episodic memory (B): record this tick's verifier outcome on the task so the
   // agent sees it next cycle and adapts instead of re-planning identically.
-  const lastOutcome = summarizeTickOutcome(gated, verify);
+  let lastOutcome = summarizeTickOutcome(gated, verify);
+  // Definition-of-done = a HOLDER-VISIBLE change. If a code tick shipped but its
+  // diff touched ONLY trivial files (tests/util/docs/config), flag it in episodic
+  // memory so next tick ships a real, visible increment instead of repeating the
+  // low-altitude busywork pattern. Works for BOTH brains: the legacy path supplies
+  // `d.edits`, the SDK path supplies `opts.changedFiles` (its sandbox commits
+  // directly, so d.edits is empty).
+  if (isCodeTask && gated.status === "shipped") {
+    const paths = d.edits?.length ? d.edits.map((e) => e.path) : opts?.changedFiles ?? [];
+    if (isBusyworkOnly(paths)) {
+      lastOutcome = `${lastOutcome} · ALTITUDE: shipped only low-value files (${paths.join(", ")}) — next tick ship a holder-visible increment, not util/test/docs busywork`.slice(0, 400);
+    }
+  }
 
   // NOTE: a social post (agent_posts) is recorded ONLY when it was genuinely
   // published to a real channel (Telegram/X) further down — never on every tick.
