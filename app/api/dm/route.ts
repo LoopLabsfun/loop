@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isSolanaAddress } from "@/lib/api-guards";
-import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
+import { verifyUserToken, isStaleSession, USER_COOKIE } from "@/lib/user-session";
 import { sendDm, getConversations, getThread, markThreadRead, getUnreadDmCount } from "@/lib/dm";
 import { limited } from "@/lib/rate-limit";
 
@@ -20,7 +20,13 @@ function me(): string | null {
 export async function GET(req: Request) {
   const w = me();
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
-  const peer = new URL(req.url).searchParams.get("with");
+  const url = new URL(req.url);
+  // Stale cookie ⇒ don't expose the previous wallet's threads/inbox. Treated as
+  // no-session so the client re-signs for the wallet it's connected as.
+  if (isStaleSession(w, url.searchParams.get("actor"))) {
+    return NextResponse.json({ error: "stale session", stale: true }, { status: 401 });
+  }
+  const peer = url.searchParams.get("with");
   if (peer) {
     if (!isSolanaAddress(peer)) return NextResponse.json({ error: "invalid peer" }, { status: 400 });
     const [messages] = await Promise.all([getThread(w, peer), markThreadRead(w, peer)]);
@@ -41,10 +47,9 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
-  // Stale-session guard (see /api/follow): if the cookie was minted for a
-  // different wallet than the one the client is connected as, treat it as
-  // no-session so the client re-signs — never send a DM as the wrong wallet.
-  if (body.actor && isSolanaAddress(body.actor) && body.actor !== w) {
+  // Stale-session guard (shared helper; see /api/follow): never send a DM as the
+  // wrong wallet when a wallet switch left a stale cookie.
+  if (isStaleSession(w, body.actor)) {
     return NextResponse.json({ error: "stale session — re-sign", stale: true }, { status: 401 });
   }
   if (!isSolanaAddress(body.to)) return NextResponse.json({ error: "invalid recipient" }, { status: 400 });

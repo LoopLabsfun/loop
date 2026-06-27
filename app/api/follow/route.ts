@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isSolanaAddress } from "@/lib/api-guards";
-import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
+import { verifyUserToken, isStaleSession, USER_COOKIE } from "@/lib/user-session";
 import { follow, unfollow, isFollowing } from "@/lib/social";
 import { limited } from "@/lib/rate-limit";
 
@@ -14,9 +14,14 @@ export const runtime = "nodejs";
 // Whether the signed-in wallet follows `?target=` — lets a follow control that
 // renders without server-side state (e.g. the holder drawer) resolve itself.
 export async function GET(req: Request) {
-  const target = new URL(req.url).searchParams.get("target");
+  const url = new URL(req.url);
+  const target = url.searchParams.get("target");
   const actor = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
-  if (!actor || !isSolanaAddress(target)) return NextResponse.json({ following: false });
+  // A stale cookie (different wallet than the one connected) must not report the
+  // wrong wallet's follow state — treat it as "not following".
+  if (!actor || isStaleSession(actor, url.searchParams.get("actor")) || !isSolanaAddress(target)) {
+    return NextResponse.json({ following: false });
+  }
   return NextResponse.json({ following: await isFollowing(actor, target) });
 }
 
@@ -31,12 +36,10 @@ export async function POST(req: Request) {
   if (!actor) {
     return NextResponse.json({ error: "no session — sign in first" }, { status: 401 });
   }
-  // Stale-session guard: the client tells us which wallet it's connected as. If
-  // the cookie was minted for a DIFFERENT wallet (e.g. a wallet switch in the
-  // same browser), treat it as no-session so the client re-establishes one for
-  // the wallet it's actually connected as — otherwise this follow would silently
-  // act as (and write under) the previously-connected wallet.
-  if (body.actor && isSolanaAddress(body.actor) && body.actor !== actor) {
+  // Stale-session guard (shared helper, applied on every session route): the
+  // client tells us which wallet it's connected as; if the cookie was minted for
+  // a DIFFERENT wallet, treat it as no-session so the client re-establishes one.
+  if (isStaleSession(actor, body.actor)) {
     return NextResponse.json({ error: "stale session — re-sign", stale: true }, { status: 401 });
   }
   const rl = limited("follow", req, { wallet: actor, limit: 40, windowMs: 60_000 });

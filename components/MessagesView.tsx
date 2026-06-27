@@ -40,21 +40,21 @@ export function MessagesView() {
 
   const loadConvos = useCallback(async () => {
     try {
-      const { conversations } = await apiDmConversations();
+      const { conversations } = await apiDmConversations(wallet.address);
       setConvos(conversations);
       setNeedsSession(false);
     } catch (e) {
       if (e instanceof Error && e.message === "no-session") setNeedsSession(true);
     }
-  }, []);
+  }, [wallet.address]);
 
   const loadThread = useCallback(async (p: string) => {
     try {
-      setThread(await apiDmThread(p));
+      setThread(await apiDmThread(p, wallet.address));
     } catch (e) {
       if (e instanceof Error && e.message === "no-session") setNeedsSession(true);
     }
-  }, []);
+  }, [wallet.address]);
 
   // Initial load + polling while connected.
   useEffect(() => {
