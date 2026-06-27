@@ -18,6 +18,16 @@ export interface MatchCommit {
 }
 
 /**
+ * Build an X intent URL pre-filled with a "just shipped" share for the given
+ * task title. Text: "🛠️ Just shipped: {title} @Looplabsfun looplabs.fun".
+ * Pure; exported for testing and for the LIVE LOG share button.
+ */
+export function shareOnXUrl(title: string): string {
+  const text = `🛠️ Just shipped: ${title} @Looplabsfun looplabs.fun`;
+  return `https://x.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+/**
  * The short SHA of the first commit whose message contains `title` (normalized),
  * or null when none matches. A short-title floor avoids matching trivial titles
  * against unrelated commits. Pure; exported for testing.
