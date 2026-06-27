@@ -14,8 +14,13 @@ export interface WaitlistFields {
   referrer?: string | null;
 }
 
-/** Join the waitlist. Returns `{ already }` when the signer was on it already. */
-export async function apiJoinWaitlist(fields: WaitlistFields): Promise<{ already: boolean }> {
+/**
+ * Join the waitlist. `already` = the signer was on it already; `messaged` = we
+ * opened a welcome DM on the platform (only on a fresh wallet signup).
+ */
+export async function apiJoinWaitlist(
+  fields: WaitlistFields,
+): Promise<{ already: boolean; messaged: boolean }> {
   const r = await fetch("/api/waitlist", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -23,5 +28,5 @@ export async function apiJoinWaitlist(fields: WaitlistFields): Promise<{ already
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || "Could not join the waitlist.");
-  return { already: Boolean(j.already) };
+  return { already: Boolean(j.already), messaged: Boolean(j.messaged) };
 }

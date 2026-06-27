@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmail, normalizeXHandle, validateWaitlist, IDEA_MAX } from "./waitlist";
+import { normalizeEmail, normalizeXHandle, validateWaitlist, welcomeDmBody, IDEA_MAX } from "./waitlist";
 
 const WALLET = "H8UMZSW2nZQm59G56UGmKAKVcgf5rcgEdFbVvcA9TSvC";
 
@@ -59,5 +59,18 @@ describe("validateWaitlist", () => {
     expect(validateWaitlist({ email: "a@b.com", referrer: "@ref" }).clean?.referrer).toBe("ref");
     expect(validateWaitlist({ email: "a@b.com", referrer: WALLET }).clean?.referrer).toBe(WALLET);
     expect(validateWaitlist({ email: "a@b.com", referrer: "!!" }).clean?.referrer).toBeNull();
+  });
+});
+
+describe("welcomeDmBody", () => {
+  it("echoes the idea back when present", () => {
+    const b = welcomeDmBody("a tip jar for streamers");
+    expect(b).toContain("a tip jar for streamers");
+    expect(b).toMatch(/launch waitlist/i);
+  });
+  it("falls back to a generic ask when there's no idea", () => {
+    const b = welcomeDmBody(null);
+    expect(b).toMatch(/what do you want to build/i);
+    expect(b).not.toContain('""');
   });
 });
