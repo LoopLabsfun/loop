@@ -3,7 +3,32 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import Link from "next/link";
 import { useWallet } from "@/lib/wallet";
+import { shortAddr } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
+
+// founder/agent/platform split label from the single founder lever (platform = 5).
+const splitOf = (f: number | null) => `${f ?? 30}/${100 - 5 - (f ?? 30)}/5`;
+
+interface Draft {
+  wallet: string;
+  name: string;
+  ticker: string;
+  status: string;
+  email: string | null;
+  xHandle: string | null;
+  prompt: string | null;
+  repo: string | null;
+  bannerUrl: string | null;
+  tokenImageUrl: string | null;
+  feeFounderPct: number | null;
+  projectKey: string | null;
+  createdAt: string;
+}
+interface Check {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
 
 // FOUNDER ADMIN CONSOLE (founder-only, hidden) — the live, self-serve view of the
 // agent the founder asked for: status + a unified feed of what it's doing, what's
@@ -189,6 +214,9 @@ function Console({
     ms == null ? "never" : `${Math.round((Date.now() - ms) / 60000)}m ago`;
   return (
     <div className="flex flex-col gap-4">
+      {/* Pre-launch curation — drafts from the waitlist, preflight + approve&mint. */}
+      <PrelaunchPanel />
+
       {/* Status + controls */}
       <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -312,6 +340,165 @@ function Console({
       )}
       <p className="text-[11px] text-faint text-center mt-2">Auto-refreshes every 15s.</p>
     </div>
+  );
+}
+
+function PrelaunchPanel() {
+  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // `${wallet}:${action}`
+  const [pf, setPf] = useState<Record<string, { ready: boolean; checks: Check[] }>>({});
+  const [result, setResult] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin/prelaunch", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "load failed");
+      setDrafts(j.drafts);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "load failed");
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function preflight(wallet: string) {
+    setBusy(`${wallet}:preflight`);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/admin/prelaunch?wallet=${wallet}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "preflight failed");
+      setPf((p) => ({ ...p, [wallet]: { ready: j.ready, checks: j.checks } }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "preflight failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function act(wallet: string, action: string, confirmMsg?: string) {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusy(`${wallet}:${action}`);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/prelaunch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet, action, confirm: action === "approve" }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      if (action === "approve") {
+        setResult((m) => ({
+          ...m,
+          [wallet]: `Launched → ${j.key}${j.mint ? ` · ${j.mint.slice(0, 4)}…${j.mint.slice(-4)}` : ""}${j.simulated ? " (simulated)" : ""}`,
+        }));
+      }
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : `${action} failed`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const n = drafts?.length ?? 0;
+  return (
+    <Panel title={`Pre-launch · ${n}`} accent>
+      {err && <div className="text-[12px] text-neg font-mono mb-2">{err}</div>}
+      {drafts == null ? (
+        <Empty>Loading…</Empty>
+      ) : n === 0 ? (
+        <Empty>No drafts yet.</Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {drafts.map((d) => {
+            const isBusy = (a: string) => busy === `${d.wallet}:${a}`;
+            const launched = d.status === "launched";
+            const p = pf[d.wallet];
+            return (
+              <div key={d.wallet} className="border border-line-3 rounded-[10px] p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {d.tokenImageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={d.tokenImageUrl} alt="" className="w-7 h-7 rounded-full object-cover border border-line-3" />
+                  )}
+                  <span className="font-display font-semibold text-[14px]">{d.name}</span>
+                  <span className="font-mono text-[12px] text-accent-text">${d.ticker}</span>
+                  <span className="font-mono text-[10px] px-2 py-[2px] rounded-full bg-surface-2 text-muted">{d.status}</span>
+                  <span className="font-mono text-[11px] text-faint ml-auto">{shortAddr(d.wallet)}</span>
+                </div>
+                <div className="text-[11.5px] text-faint font-mono mt-1">
+                  {[d.xHandle ? `@${d.xHandle}` : "", d.email ?? "", `split ${splitOf(d.feeFounderPct)}`].filter(Boolean).join("  ·  ")}
+                </div>
+                {d.prompt && <div className="text-[12px] text-muted mt-1">{d.prompt}</div>}
+
+                {p && (
+                  <div className="mt-2 flex flex-col gap-[2px]">
+                    {p.checks.map((c, i) => (
+                      <div key={i} className="font-mono text-[11px] flex items-center gap-2">
+                        <span className={c.ok ? "text-pos" : "text-neg"}>{c.ok ? "✓" : "✗"}</span>
+                        <span className="text-body">{c.label}</span>
+                        <span className="text-faint">{c.detail}</span>
+                      </div>
+                    ))}
+                    <div className={`font-mono text-[11px] mt-1 ${p.ready ? "text-pos" : "text-neg"}`}>
+                      {p.ready ? "READY ✓" : "NOT READY — fix the ✗ before minting"}
+                    </div>
+                  </div>
+                )}
+
+                {result[d.wallet] && <div className="text-[12px] text-pos font-mono mt-2">{result[d.wallet]}</div>}
+
+                {!launched ? (
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <Btn onClick={() => preflight(d.wallet)} busy={isBusy("preflight")}>Preflight</Btn>
+                    <Btn onClick={() => act(d.wallet, "whitelist")} busy={isBusy("whitelist")}>Whitelist</Btn>
+                    <Btn onClick={() => act(d.wallet, "reject")} busy={isBusy("reject")}>Reject</Btn>
+                    <Btn
+                      onClick={() =>
+                        act(
+                          d.wallet,
+                          "approve",
+                          `Launch ${d.name} ($${d.ticker}) for REAL? This mints on mainnet and spends the seed dev-buy SOL from the platform wallet.`,
+                        )
+                      }
+                      busy={isBusy("approve")}
+                      danger
+                    >
+                      Approve &amp; mint
+                    </Btn>
+                  </div>
+                ) : (
+                  d.projectKey && (
+                    <a href={`/token?p=${d.projectKey}`} className="inline-block mt-2 font-mono text-[12px] text-accent-text hover:underline">
+                      View project →
+                    </a>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function Btn({ children, onClick, busy, danger }: { children: ReactNode; onClick: () => void; busy?: boolean; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className={`font-mono text-[11.5px] px-2.5 py-[5px] rounded-[8px] border transition-colors disabled:opacity-50 ${
+        danger ? "border-neg/40 text-neg hover:bg-neg/10" : "border-line-2 hover:bg-surface-2"
+      }`}
+    >
+      {busy ? "…" : children}
+    </button>
   );
 }
 
