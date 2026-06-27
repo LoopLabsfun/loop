@@ -8,7 +8,7 @@ import { useWallet } from "@/lib/wallet";
 import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
 import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
-import { NotificationBell } from "../NotificationBell";
+import { NavUserActions } from "../NavUserActions";
 import { FollowButton } from "../FollowButton";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
 import type { SocialUser } from "@/lib/social";
@@ -70,7 +70,7 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
           <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
         </Link>
         <div className="flex items-center gap-[8px]">
-          {wallet.connected && <NotificationBell />}
+          <NavUserActions messagesHidden />
           <button
             onClick={wallet.toggle}
             className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors"
@@ -105,14 +105,24 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                     Edit profile
                   </button>
                 ) : (
-                  <FollowButton
-                    target={profile.wallet}
-                    following={youFollow}
-                    onChange={(now) => {
-                      setYouFollow(now);
-                      setFollowerCount((c) => Math.max(0, c + (now ? 1 : -1)));
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    {wallet.connected && (
+                      <Link
+                        href={`/messages?to=${profile.wallet}`}
+                        className="font-mono text-[12px] px-3 h-[36px] inline-flex items-center rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors"
+                      >
+                        Message
+                      </Link>
+                    )}
+                    <FollowButton
+                      target={profile.wallet}
+                      following={youFollow}
+                      onChange={(now) => {
+                        setYouFollow(now);
+                        setFollowerCount((c) => Math.max(0, c + (now ? 1 : -1)));
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             </div>

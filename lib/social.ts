@@ -24,7 +24,7 @@ export interface FollowState {
   youFollow: boolean;
 }
 
-export type NotificationType = "follow" | "escalation";
+export type NotificationType = "follow" | "escalation" | "dm";
 
 export interface Notification {
   id: number;

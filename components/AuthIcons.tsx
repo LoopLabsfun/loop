@@ -46,6 +46,15 @@ export function ProfileIcon({ size = 15, className }: IconProps) {
   );
 }
 
+/** Generic speech-bubble glyph (monochrome) for the messages entry. */
+export function MessageIcon({ size = 15, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden className={className}>
+      <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 2.2V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
+
 /** Generic bell glyph (monochrome) for the notification panel trigger. */
 export function BellIcon({ size = 15, className }: IconProps) {
   return (

@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { LoopMark } from "./LoopMark";
 import { useWallet } from "@/lib/wallet";
-import { NotificationBell } from "./NotificationBell";
-import { ProfileIcon } from "./AuthIcons";
+import { NavUserActions } from "./NavUserActions";
 import { ActivityFeed } from "./ActivityFeed";
 import type { ActivityItem } from "@/lib/activity";
 
@@ -19,18 +18,7 @@ export function ActivityView({ items }: { items: ActivityItem[] }) {
           <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
         </Link>
         <div className="flex items-center gap-[8px]">
-          {wallet.connected && (
-            <>
-              <NotificationBell />
-              <Link
-                href="/profile"
-                title="Your Loop profile"
-                className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
-              >
-                <ProfileIcon size={17} />
-              </Link>
-            </>
-          )}
+          <NavUserActions messagesHidden />
           <button
             onClick={wallet.toggle}
             className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors"

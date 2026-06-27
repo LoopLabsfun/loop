@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { LoopMark } from "../LoopMark";
-import { ProfileIcon } from "../AuthIcons";
-import { NotificationBell } from "../NotificationBell";
+import { NavUserActions } from "../NavUserActions";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -437,18 +436,7 @@ function TokenNav({
         >
           ← All projects
         </Link>
-        {connected && (
-          <>
-            <NotificationBell />
-            <Link
-              href="/profile"
-              title="Your Loop profile"
-              className="hidden sm:flex items-center justify-center w-[38px] h-[38px] rounded-[10px] border border-line-3 bg-surface text-muted hover:text-accent-text hover:border-line-hover transition-colors"
-            >
-              <ProfileIcon size={17} />
-            </Link>
-          </>
-        )}
+        <NavUserActions messagesHidden />
         <button
           onClick={onToggle}
           className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
