@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
@@ -10,6 +10,7 @@ import { agentRunState } from "@/lib/budget";
 import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
 import { NavUserActions } from "../NavUserActions";
 import { FollowButton } from "../FollowButton";
+import { apiEstablishSession } from "@/lib/social-client";
 import type { ProfileView as ProfileViewData } from "@/lib/profile-data";
 import type { SocialUser } from "@/lib/social";
 
@@ -323,7 +324,42 @@ function EditModal({
   const [bio, setBio] = useState(profile.bio ?? "");
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl ?? "");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function ensureSession(): Promise<boolean> {
+    if (!wallet.address) return false;
+    const proof = await wallet.signProfileProof(profile.wallet);
+    return Boolean(proof && (await apiEstablishSession(wallet.address, proof)));
+  }
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setErr(null);
+    setUploading(true);
+    try {
+      const send = async () => {
+        const fd = new FormData();
+        fd.append("file", file);
+        return fetch("/api/profile/avatar", { method: "POST", body: fd });
+      };
+      let r = await send();
+      if (r.status === 401 && (await ensureSession())) r = await send();
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "upload failed");
+        return;
+      }
+      setAvatarUrl(j.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function save() {
     setErr(null);
@@ -376,8 +412,32 @@ function EditModal({
         </div>
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Display name</label>
         <input className="loop-input mb-3" value={displayName} maxLength={40} onChange={(e) => setDisplayName(e.target.value)} placeholder="satoshi.loop" />
-        <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Avatar URL</label>
-        <input className="loop-input mb-3" value={avatarUrl} maxLength={400} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…" />
+        <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Avatar</label>
+        <div className="flex items-center gap-3 mb-3">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" className="w-[48px] h-[48px] rounded-[12px] object-cover border border-line-2 flex-none" />
+          ) : (
+            <span className="w-[48px] h-[48px] rounded-[12px] bg-accent-tint border border-accent-tint-border flex items-center justify-center font-display font-bold text-[18px] text-accent-text flex-none">
+              {(displayName || profile.wallet).slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onPickFile} className="hidden" />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="font-mono text-[12px] px-3 h-[34px] rounded-[9px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors disabled:opacity-60"
+          >
+            {uploading ? "Uploading…" : "Upload image"}
+          </button>
+          {avatarUrl && (
+            <button type="button" onClick={() => setAvatarUrl("")} className="font-mono text-[11px] text-faint hover:text-neg transition-colors">
+              remove
+            </button>
+          )}
+        </div>
+        <input className="loop-input mb-3" value={avatarUrl} maxLength={400} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="or paste an image URL" />
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Bio</label>
         <textarea className="loop-input mb-4" value={bio} maxLength={160} rows={3} onChange={(e) => setBio(e.target.value)} placeholder="What you're building on Loop." />
         <div className="border-t border-line-4 pt-4 mb-4">
