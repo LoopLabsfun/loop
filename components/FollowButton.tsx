@@ -50,13 +50,13 @@ export function FollowButton({
     setFollowing(next);
     onChange?.(next);
     try {
-      await apiFollow(target, next ? "follow" : "unfollow");
+      await apiFollow(target, next ? "follow" : "unfollow", wallet.address);
     } catch (err) {
       if (err instanceof Error && err.message === "no-session") {
         try {
           const proof = await wallet.signProfileProof(wallet.address);
           if (proof && (await apiEstablishSession(wallet.address, proof))) {
-            await apiFollow(target, next ? "follow" : "unfollow");
+            await apiFollow(target, next ? "follow" : "unfollow", wallet.address);
           } else {
             setFollowing(!next);
             onChange?.(!next);

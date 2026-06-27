@@ -97,10 +97,10 @@ export function MessagesView() {
       { id: Date.now(), sender: wallet.address ?? "", recipient: peer, body: text, read: false, createdAt: new Date().toISOString(), mine: true },
     ]);
     try {
-      await apiDmSend(peer, text);
+      await apiDmSend(peer, text, wallet.address);
     } catch (e) {
       if (e instanceof Error && e.message === "no-session" && (await ensureSession())) {
-        await apiDmSend(peer, text);
+        await apiDmSend(peer, text, wallet.address);
       }
     }
     await Promise.all([loadThread(peer), loadConvos()]);
