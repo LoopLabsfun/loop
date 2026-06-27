@@ -5,6 +5,7 @@ import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { launchProjectAction } from "@/lib/actions";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "@/lib/launch-config";
+import { WaitlistForm } from "../WaitlistForm";
 import { scoreReadiness, type ReadinessLevel } from "@/lib/agent-readiness";
 import { explorerUrl, shortAddr } from "@/lib/format";
 import {
@@ -169,33 +170,27 @@ export function LaunchModal({
         </div>
 
         {step === "form" && !launchesOpen() && (
-          <div className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
-                Launches open soon
+                Launches open soon — get first access
               </div>
               <p className="text-[13.5px] text-muted leading-[1.55] m-0">
-                {LAUNCHES_CLOSED_MESSAGE} Loop is launching its own project,
-                LOOP, first — once it&apos;s live and proven, project creation
-                opens to everyone.
+                {LAUNCHES_CLOSED_MESSAGE} Loop is proving the model on its own
+                project, LOOP, first. Join the waitlist and you&apos;ll be first
+                in line when project creation opens.
               </p>
             </div>
-            <div className="flex gap-2">
-              <Link
-                href="/token?p=loop"
-                onClick={onClose}
-                className="flex-1 text-center font-display font-semibold text-[14px] py-[11px] rounded-[11px] bg-accent text-white hover:bg-accent-d transition-colors"
-              >
-                See LOOP
-              </Link>
-              <Link
-                href="/docs"
-                onClick={onClose}
-                className="flex-1 text-center font-display font-semibold text-[14px] py-[11px] rounded-[11px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
-              >
-                Read the docs
-              </Link>
-            </div>
+            {/* Turn the dead-end into capture: the people who clicked “Launch”
+                are exactly the demand to capture while launches are closed. */}
+            <WaitlistForm compact />
+            <Link
+              href="/token?p=loop"
+              onClick={onClose}
+              className="text-center font-display font-semibold text-[13.5px] py-[10px] rounded-[11px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+            >
+              Meanwhile, watch LOOP build itself →
+            </Link>
           </div>
         )}
 
