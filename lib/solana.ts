@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import type { Holder } from "./types";
 import { creditedBaseUnits, type TokenBalanceEntry } from "./chat";
 
@@ -473,3 +474,24 @@ export async function verifySolPayment(
   }
   return null;
 }
+
+// ── Short-TTL cached reads (cost control) ────────────────────────────────────
+// Project pages are force-dynamic and fan out many Helius reads per render; under
+// traffic that burns the (paid, rate-limited) Helius quota. These wrap the
+// PROJECT-level reads in the Next data cache with a short TTL — repeated reads of
+// the same treasury/holders/supply within the window collapse to one upstream
+// call, with no perceptible loss of "live". The raw functions above stay
+// uncached for correctness-sensitive callers that must read fresh: the user's own
+// wallet balance (/api/wallet-balance, Sell·Max) and on-chain payment verification
+// (lib/actions launch fee). Tunable via CHAIN_CACHE_TTL_S (seconds).
+const CHAIN_TTL = Math.max(0, parseInt(process.env.CHAIN_CACHE_TTL_S || "20", 10)) || 20;
+const cacheOpts = { revalidate: CHAIN_TTL } as const;
+
+export const getTopHoldersCached = unstable_cache(getTopHolders, ["solana:top-holders"], cacheOpts);
+export const getHolderCountCached = unstable_cache(getHolderCount, ["solana:holder-count"], cacheOpts);
+export const getTokenSupplyUiCached = unstable_cache(getTokenSupplyUi, ["solana:token-supply"], cacheOpts);
+export const getTreasuryHistoryCached = unstable_cache(getTreasuryHistory, ["solana:treasury-history"], cacheOpts);
+/** Cached treasury/agent SOL balance — NOT for the user's own wallet (use raw). */
+export const getSolBalanceCached = unstable_cache(getSolBalance, ["solana:sol-balance"], cacheOpts);
+/** Cached treasury/holdings token balance — NOT for the user's own wallet (use raw). */
+export const getSplBalanceCached = unstable_cache(getSplBalance, ["solana:spl-balance"], cacheOpts);

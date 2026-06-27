@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
 import { getProjects } from "./queries";
-import { getSplBalance } from "./solana";
+import { getSplBalanceCached } from "./solana";
 import { getMarketStats } from "./market";
 import { getFollowState, getFollowers, getFollowing, type FollowState, type SocialUser } from "./social";
 import type { Network } from "./solana";
@@ -138,7 +138,7 @@ async function getPositions(wallet: string, projects: Project[]): Promise<Positi
   const held: (Position | null)[] = await Promise.all(
     withMint.map(async (p): Promise<Position | null> => {
       const net: Network = p.network === "devnet" ? "devnet" : "mainnet";
-      const amount = await getSplBalance(wallet, p.mint as string, net);
+      const amount = await getSplBalanceCached(wallet, p.mint as string, net);
       if (!amount || amount <= 0) return null;
       // Price the holding (mainnet only — devnet has no real market). A missing
       // price leaves valueUsd null so the UI shows the amount without a $ figure.

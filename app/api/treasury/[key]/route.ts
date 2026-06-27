@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
-import { getSplBalance, getRecentTreasuryInflows } from "@/lib/solana";
+import { getSplBalanceCached, getRecentTreasuryInflows } from "@/lib/solana";
 import { getSolUsd } from "@/lib/price";
 
 // Live treasury balance for a project. When the project has a treasury_wallet,
@@ -23,7 +23,7 @@ export async function GET(
   const balanceSol = project.treasurySol;
   let tokenUi: number | null = null;
   if (project.treasuryWallet && project.mint) {
-    tokenUi = await getSplBalance(
+    tokenUi = await getSplBalanceCached(
       project.treasuryWallet,
       project.mint,
       project.network
