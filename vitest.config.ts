@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts"],
   },
   resolve: {
     alias: {
@@ -13,6 +13,9 @@ export default defineConfig({
       "server-only": fileURLToPath(
         new URL("./test/server-only-stub.ts", import.meta.url)
       ),
+      // Mirror the Next "@/*" path alias so route handlers (which import via
+      // "@/lib/…") resolve under Vitest too.
+      "@": fileURLToPath(new URL("./", import.meta.url)),
     },
   },
 });
