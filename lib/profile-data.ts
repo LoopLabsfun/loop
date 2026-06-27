@@ -69,6 +69,7 @@ export interface ProfileView {
 
 const EMPTY = (wallet: string): Profile => ({
   wallet,
+  username: null,
   displayName: null,
   bio: null,
   avatarUrl: null,
@@ -79,6 +80,7 @@ const EMPTY = (wallet: string): Profile => ({
 
 interface ProfileRow {
   wallet: string;
+  username: string | null;
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
@@ -87,9 +89,12 @@ interface ProfileRow {
   created_at: string | null;
 }
 
+const PROFILE_COLS = "wallet,username,display_name,bio,avatar_url,twitter_handle,twitter_verified,created_at";
+
 function rowToProfile(r: ProfileRow): Profile {
   return {
     wallet: r.wallet,
+    username: r.username,
     displayName: r.display_name,
     bio: r.bio,
     avatarUrl: r.avatar_url,
@@ -99,16 +104,20 @@ function rowToProfile(r: ProfileRow): Profile {
   };
 }
 
+/** Resolve a @username (case-insensitive) to its wallet, or null if unknown. */
+export async function resolveUsername(username: string): Promise<string | null> {
+  const sb = supabaseAdmin;
+  if (!sb) return null;
+  const { data } = await sb.from("profiles").select("wallet").ilike("username", username).maybeSingle();
+  return (data as { wallet: string } | null)?.wallet ?? null;
+}
+
 /** The stored profile for `wallet`, or an empty default (the wallet alone is a
  *  valid profile — enrichment is optional). Never throws. */
 export async function getProfile(wallet: string): Promise<Profile> {
   const sb = supabaseAdmin;
   if (!sb) return EMPTY(wallet);
-  const { data } = await sb
-    .from("profiles")
-    .select("wallet,display_name,bio,avatar_url,twitter_handle,twitter_verified,created_at")
-    .eq("wallet", wallet)
-    .maybeSingle();
+  const { data } = await sb.from("profiles").select(PROFILE_COLS).eq("wallet", wallet).maybeSingle();
   return data ? rowToProfile(data as ProfileRow) : EMPTY(wallet);
 }
 

@@ -159,6 +159,8 @@ export interface Payout {
  *  signed `loop.fun profile` proof. Twitter is linked + verified separately. */
 export interface Profile {
   wallet: string;
+  /** Unique @handle (lowercase a-z0-9_, 3-20); null until set. */
+  username: string | null;
   displayName: string | null;
   bio: string | null;
   avatarUrl: string | null;

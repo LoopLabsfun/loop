@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { RichText } from "../RichText";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import {
@@ -672,7 +673,9 @@ function ChatFeedRow({ msg: m, you }: { msg: ChatMsg; you: boolean }) {
         </span>
         <span className="font-mono text-[10.5px] text-faint">{m.at}</span>
       </div>
-      <div className="text-[13px] text-ink mt-[2px] line-clamp-2">{m.question}</div>
+      <div className="text-[13px] text-ink mt-[2px] line-clamp-2">
+        <RichText text={m.question} />
+      </div>
       <div className="mt-[5px] font-mono text-[10.5px]">
         {answered ? (
           <span className="text-pos">✓ answered · read in panel →</span>
