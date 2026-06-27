@@ -105,6 +105,25 @@ comment on table public.profiles is 'User profiles on Loop, keyed by wallet pubk
 alter table public.profiles enable row level security;
 create policy "profiles are publicly readable" on public.profiles for select using (true);
 
+-- ── launch_waitlist ──────────────────────────────────────────────────────────
+-- Pre-launch interest capture (the standing "when can I launch my own project?"
+-- demand) while public launches are closed. Needs one contact (wallet/email/X);
+-- the optional `idea` is product signal. Service-role write via /api/waitlist;
+-- RLS on with NO policies → never publicly readable (protects emails).
+create table if not exists public.launch_waitlist (
+  id bigint generated always as identity primary key,
+  wallet text,
+  email text,
+  x_handle text,
+  idea text,
+  referrer text,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
+create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
+alter table public.launch_waitlist enable row level security;
+comment on table public.launch_waitlist is 'Pre-launch interest capture (the "when can I launch" demand). Service-role write via /api/waitlist; never publicly readable.';
+
 -- ── follows ──────────────────────────────────────────────────────────────────
 -- Wallet-to-wallet follow graph. Public read; writes service-role only after a
 -- signed looplabs.fun profile proof of the follower (no anon write policy).
