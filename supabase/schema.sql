@@ -80,6 +80,7 @@ comment on column public.projects.agent_paused is 'Founder kill switch (admin co
 -- so there is no anon write policy. Public read so any profile page can render.
 create table if not exists public.profiles (
   wallet text primary key,
+  username text,                  -- unique @handle (lowercase a-z0-9_, 3-20); null until set
   display_name text,
   bio text,
   avatar_url text,
@@ -88,6 +89,10 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+create unique index if not exists profiles_username_uniq on public.profiles (lower(username));
+alter table public.profiles
+  add constraint profiles_username_format
+  check (username is null or username ~ '^[a-z0-9_]{3,20}$') not valid;
 comment on table public.profiles is 'User profiles on Loop, keyed by wallet pubkey. Writes go through the service role after a signed loop.fun profile proof; anon can only read.';
 alter table public.profiles enable row level security;
 create policy "profiles are publicly readable" on public.profiles for select using (true);

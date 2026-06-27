@@ -29,8 +29,18 @@ const safeUrl = (s: unknown): string | null => {
   }
 };
 
+// A @username handle: lowercase a-z0-9_, 3-20. Returns the normalized handle, ""
+// to clear it, or `false` when the input is present but invalid.
+function normUsername(s: unknown): string | "" | false {
+  if (s === undefined || s === null || s === "") return "";
+  if (typeof s !== "string") return false;
+  const t = s.trim().replace(/^@/, "").toLowerCase();
+  if (t === "") return "";
+  return /^[a-z0-9_]{3,20}$/.test(t) ? t : false;
+}
+
 export async function POST(req: Request) {
-  let body: { wallet?: string; proof?: LaunchProof; displayName?: string; bio?: string; avatarUrl?: string };
+  let body: { wallet?: string; proof?: LaunchProof; username?: string; displayName?: string; bio?: string; avatarUrl?: string };
   try {
     body = await req.json();
   } catch {
@@ -50,14 +60,26 @@ export async function POST(req: Request) {
   const sb = supabaseAdmin;
   if (!sb) return NextResponse.json({ error: "supabase not configured" }, { status: 503 });
 
+  const username = normUsername(body.username);
+  if (username === false) {
+    return NextResponse.json({ error: "username must be 3–20 chars: letters, numbers, or _" }, { status: 400 });
+  }
   const row = {
     wallet,
+    username: username === "" ? null : username,
     display_name: cap(body.displayName, 40),
     bio: cap(body.bio, 160),
     avatar_url: safeUrl(body.avatarUrl),
     updated_at: new Date().toISOString(),
   };
   const { error } = await sb.from("profiles").upsert(row, { onConflict: "wallet" });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // 23505 = unique violation on the username index → friendly conflict message.
+    const taken = error.code === "23505" || /duplicate|unique/i.test(error.message);
+    return NextResponse.json(
+      { error: taken ? "that username is already taken" : error.message },
+      { status: taken ? 409 : 500 }
+    );
+  }
   return NextResponse.json({ ok: true, wallet });
 }

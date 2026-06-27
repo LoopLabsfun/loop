@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { FollowButton } from "../FollowButton";
+import { RichText } from "../RichText";
 import {
   inspectKindMeta,
   useInspectorContext,
@@ -532,7 +533,7 @@ function ChatBody({ msg: m, net }: { msg: ChatMsg; net: "mainnet" | "devnet" }) 
         <span className="text-faint ml-auto">{m.at}</span>
       </div>
       <h3 className="font-display font-bold text-[18px] text-ink leading-[1.3] m-0 mt-2">
-        {m.question}
+        <RichText text={m.question} linkify />
       </h3>
 
       {answered ? (
@@ -541,7 +542,7 @@ function ChatBody({ msg: m, net }: { msg: ChatMsg; net: "mainnet" | "devnet" }) 
             ✦ Agent&apos;s answer
           </div>
           <div className="text-[14px] text-ink leading-[1.55] whitespace-pre-wrap">
-            {m.answer}
+            <RichText text={m.answer ?? ""} linkify />
           </div>
         </div>
       ) : (

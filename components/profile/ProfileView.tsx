@@ -138,6 +138,9 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                   </span>
                 ) : null}
               </div>
+              {profile.username && (
+                <div className="font-mono text-[13px] text-accent-text mt-[5px]">@{profile.username}</div>
+              )}
               <div className="flex items-center gap-3 mt-[7px] flex-wrap">
                 <CopyWallet wallet={profile.wallet} />
                 {joined && <span className="font-mono text-[11px] text-faint">· since {joined}</span>}
@@ -305,6 +308,7 @@ function EditModal({
   onSaved: () => void;
 }) {
   const wallet = useWallet();
+  const [username, setUsername] = useState(profile.username ?? "");
   const [displayName, setDisplayName] = useState(profile.displayName ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl ?? "");
@@ -323,7 +327,7 @@ function EditModal({
       const r = await fetch("/api/profile", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wallet: profile.wallet, proof, displayName, bio, avatarUrl }),
+        body: JSON.stringify({ wallet: profile.wallet, proof, username, displayName, bio, avatarUrl }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -349,6 +353,17 @@ function EditModal({
       >
         <div className="font-display font-semibold text-[16px] mb-4">Edit profile</div>
         {err && <div className="text-[12px] text-neg font-mono mb-3">{err}</div>}
+        <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Username</label>
+        <div className="relative mb-3">
+          <span className="absolute left-[12px] top-1/2 -translate-y-1/2 font-mono text-[14px] text-faint">@</span>
+          <input
+            className="loop-input pl-[26px]"
+            value={username}
+            maxLength={20}
+            onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())}
+            placeholder="satoshi"
+          />
+        </div>
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Display name</label>
         <input className="loop-input mb-3" value={displayName} maxLength={40} onChange={(e) => setDisplayName(e.target.value)} placeholder="satoshi.loop" />
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Avatar URL</label>
