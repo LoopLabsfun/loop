@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
 import { sendDm, getConversations, getThread, markThreadRead, getUnreadDmCount } from "@/lib/dm";
+import { limited } from "@/lib/rate-limit";
 
 // Wallet-to-wallet DMs. The participant is always the session-cookie wallet
 // (minted from a signed proof) — never the body — so a caller can only read their
@@ -32,6 +33,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const w = me();
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
+  const rl = limited("dm", req, { wallet: w, limit: 20, windowMs: 60_000 });
+  if (rl) return rl;
   let body: { to?: string; body?: string };
   try {
     body = await req.json();

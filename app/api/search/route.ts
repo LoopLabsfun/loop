@@ -4,6 +4,7 @@ import { getProjects } from "@/lib/queries";
 import { searchPeople } from "@/lib/social";
 import { isSolanaAddress } from "@/lib/api-guards";
 import { verifyUserToken, USER_COOKIE } from "@/lib/user-session";
+import { limited } from "@/lib/rate-limit";
 
 // GET /api/search?q= → matching projects + people. Projects are filtered in
 // memory (the set is small); people come from a profiles ilike. A pasted wallet
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
+  const rl = limited("search", req, { limit: 60, windowMs: 60_000 });
+  if (rl) return rl;
   const q = (new URL(req.url).searchParams.get("q") || "").trim();
   if (q.length < 2) return NextResponse.json({ projects: [], people: [] });
   const viewer = verifyUserToken(cookies().get(USER_COOKIE)?.value)?.wallet ?? null;
