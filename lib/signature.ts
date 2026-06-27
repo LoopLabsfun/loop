@@ -6,6 +6,7 @@ import { buildChatMessage } from "./chat";
 import { buildStakeMessage } from "./staking";
 import { buildAdminMessage } from "./admin-message";
 import { buildProfileMessage } from "./profile-message";
+import { buildWaitlistMessage } from "./waitlist-message";
 
 // Wallet-signature ownership proof. The launcher signs a canonical message with
 // their wallet; the server verifies the ed25519 signature before crediting the
@@ -159,5 +160,27 @@ export function verifyProfileProof(
   const ts = Number(m[1]);
   if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
   if (proof.message !== buildProfileMessage(wallet, ts)) return false;
+  return verifyWalletSignature(proof);
+}
+
+/**
+ * Full check for a WAITLIST pre-launch submit: valid ed25519 signature of the
+ * canonical (wallet) waitlist message, and recent (anti-replay). The caller MUST
+ * also check `proof.pubkey === wallet` — this verifies the signature is genuine,
+ * not that the signer owns the wallet the draft is tied to. Mirrors
+ * verifyProfileProof (5-min window). Signing in IS creating the account.
+ */
+export function verifyWaitlistProof(
+  proof: LaunchProof,
+  wallet: string,
+  opts: { maxAgeMs?: number; now?: number } = {}
+): boolean {
+  const maxAgeMs = opts.maxAgeMs ?? 5 * 60 * 1000;
+  const now = opts.now ?? Date.now();
+  const m = proof.message.match(/\nts:(\d+)$/);
+  if (!m) return false;
+  const ts = Number(m[1]);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
+  if (proof.message !== buildWaitlistMessage(wallet, ts)) return false;
   return verifyWalletSignature(proof);
 }

@@ -24,7 +24,7 @@ export default function WaitlistPage() {
           <p className="text-[14.5px] text-muted leading-[1.6] max-w-[400px]">
             An autonomous AI agent builds, ships and funds your product — live,
             on-chain, with real receipts. LOOP is proving it on itself first.
-            Join the waitlist for first access.
+            Draft your project below — first in line when the factory opens.
           </p>
         </div>
 

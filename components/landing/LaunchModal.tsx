@@ -173,12 +173,13 @@ export function LaunchModal({
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
-                Launches open soon — get first access
+                Launches open soon — draft yours now
               </div>
               <p className="text-[13.5px] text-muted leading-[1.55] m-0">
                 {LAUNCHES_CLOSED_MESSAGE} Loop is proving the model on its own
-                project, LOOP, first. Join the waitlist and you&apos;ll be first
-                in line when project creation opens.
+                project, LOOP, first. Draft your project now — name it, set its
+                token, point the agent at it — and you&apos;ll be first in line
+                when the factory opens.
               </p>
             </div>
             {/* Turn the dead-end into capture: the people who clicked “Launch”
