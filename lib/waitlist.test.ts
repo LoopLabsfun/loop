@@ -6,6 +6,7 @@ import {
   normalizeMediaUrl,
   validateWaitlist,
   welcomeDmBody,
+  adminRecapBody,
   PROMPT_MAX,
 } from "./waitlist";
 import { DEFAULT_SPLIT, MAX_FOUNDER_PCT } from "./fees";
@@ -122,5 +123,29 @@ describe("welcomeDmBody", () => {
     const b = welcomeDmBody("MyProj", null);
     expect(b).toContain("MyProj");
     expect(b).not.toContain('""');
+  });
+});
+
+describe("adminRecapBody", () => {
+  it("includes the full request: name, ticker, split, and applicant", () => {
+    const clean = validateWaitlist({
+      name: "Open Source Cursor",
+      ticker: "$oscur",
+      prompt: "an AI IDE",
+      repo: "github.com/me/oscur",
+      feeFounderPct: 40,
+    }).clean!;
+    const b = adminRecapBody(WALLET, clean);
+    expect(b).toContain("Open Source Cursor");
+    expect(b).toContain("$OSCUR");
+    expect(b).toContain("an AI IDE");
+    expect(b).toContain("40/55/5"); // founder/agent/platform
+    expect(b).toContain(WALLET);
+  });
+  it("renders dashes for missing optional fields", () => {
+    const clean = validateWaitlist({ name: "P", ticker: "P" }).clean!;
+    const b = adminRecapBody(WALLET, clean);
+    expect(b).toContain("Build: —");
+    expect(b).toContain("Repo: —");
   });
 });

@@ -144,6 +144,25 @@ export function welcomeDmBody(name: string, pitch: string | null): string {
     : `${intro}\n\nTell me more about ${name} — what should the agent build first? Reply here, we read every one.`;
 }
 
+/** The full draft as a recap message dropped into the ADMIN's inbox (sent from the
+ *  applicant's wallet to the official account, so it sits in the same thread as the
+ *  welcome DM) — so the complete request is retrievable on-platform, not just in the
+ *  DB. Pure + exported for tests. sendDm caps the length, but keep it tight. */
+export function adminRecapBody(wallet: string, d: CleanDraft): string {
+  const split = makeSplit(d.feeFounderPct);
+  return [
+    `🚀 Pre-launch request: ${d.name} ($${d.ticker})`,
+    "",
+    `Build: ${d.prompt ?? "—"}`,
+    `Repo: ${d.repo ?? "—"}`,
+    `Fee split (founder/agent/platform): ${split.founderPct}/${split.agentPct}/${split.platformPct}`,
+    `Banner: ${d.bannerUrl ?? "—"}`,
+    `Token image: ${d.tokenImageUrl ?? "—"}`,
+    `Contact: ${d.email ?? "—"}${d.xHandle ? `  @${d.xHandle}` : ""}`,
+    `From: ${wallet}`,
+  ].join("\n");
+}
+
 /**
  * Save a wallet's pre-launch draft. `wallet` is the authenticated session wallet
  * (the route enforces the signature), so it's trusted here. Ensures the account
@@ -222,9 +241,51 @@ export async function joinWaitlist(
     try {
       const r = await sendDm(sender, wallet, welcomeDmBody(clean.name, clean.prompt ?? clean.idea));
       messaged = r.ok;
+      // Drop the full request into the admin's inbox (from the applicant, so it's
+      // the same thread as the welcome) — the complete ask is retrievable on-platform.
+      await sendDm(wallet, sender, adminRecapBody(wallet, clean));
     } catch {
       /* best-effort: a DM failure must never break the submit */
     }
   }
   return { ok: true, already, messaged };
+}
+
+export interface PrelaunchSummary {
+  name: string;
+  ticker: string;
+  /** draft | whitelisted | launched | rejected */
+  status: string;
+  bannerUrl: string | null;
+  tokenImageUrl: string | null;
+  prompt: string | null;
+  feeFounderPct: number | null;
+  /** Set once the draft has been launched into a real project. */
+  projectKey: string | null;
+  createdAt: string;
+}
+
+/** A wallet's pre-launch draft for display (profile card), or null if none. Only
+ *  non-sensitive fields — never email/referrer. Best-effort: cold backend ⇒ null. */
+export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | null> {
+  const sb = supabaseAdmin;
+  if (!sb) return null;
+  const { data } = await sb
+    .from("launch_waitlist")
+    .select("name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,project_key,created_at")
+    .eq("wallet", wallet)
+    .not("name", "is", null)
+    .maybeSingle();
+  if (!data?.name) return null;
+  return {
+    name: data.name,
+    ticker: data.ticker ?? "",
+    status: data.status ?? "draft",
+    bannerUrl: data.banner_url ?? null,
+    tokenImageUrl: data.token_image_url ?? null,
+    prompt: data.prompt ?? null,
+    feeFounderPct: data.fee_founder_pct ?? null,
+    projectKey: data.project_key ?? null,
+    createdAt: data.created_at,
+  };
 }

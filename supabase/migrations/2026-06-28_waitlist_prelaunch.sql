@@ -17,6 +17,11 @@ alter table public.launch_waitlist add column if not exists prompt text;
 alter table public.launch_waitlist add column if not exists repo text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
 
+-- approval lifecycle (draft → whitelisted → launched/rejected) + link to the
+-- public.projects row once launched.
+alter table public.launch_waitlist add column if not exists status text not null default 'draft';
+alter table public.launch_waitlist add column if not exists project_key text;
+
 -- 2) public waitlist-media bucket (banner + token images, 2 MB, images only)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

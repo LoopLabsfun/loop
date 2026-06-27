@@ -4,6 +4,8 @@ import { getProjects } from "./queries";
 import { getSplBalanceCached } from "./solana";
 import { getMarketStats } from "./market";
 import { getFollowState, getFollowers, getFollowing, type FollowState, type SocialUser } from "./social";
+import { getPrelaunch, type PrelaunchSummary } from "./waitlist";
+export type { PrelaunchSummary } from "./waitlist";
 import type { Network } from "./solana";
 import type { Profile, Project } from "./types";
 
@@ -77,6 +79,8 @@ export interface ProfileView {
   followingList: SocialUser[];
   /** Recent log of the creator's projects (newest first); [] if they launched none. */
   log: CreatorLogItem[];
+  /** This wallet's pre-launch project draft (the waitlist), or null if none. */
+  prelaunch: PrelaunchSummary | null;
 }
 
 const EMPTY = (wallet: string): Profile => ({
@@ -268,7 +272,7 @@ function deriveBadges(args: {
 export async function getProfileView(wallet: string, viewer?: string | null): Promise<ProfileView> {
   const projects = await getProjects();
   const launched = projects.filter((p) => p.creatorWallet === wallet);
-  const [profile, positions, log, builder, follow, followers, followingList] = await Promise.all([
+  const [profile, positions, log, builder, follow, followers, followingList, prelaunch] = await Promise.all([
     getProfile(wallet),
     getPositions(wallet, projects),
     getCreatorLog(launched.map((p) => p.key)),
@@ -276,9 +280,10 @@ export async function getProfileView(wallet: string, viewer?: string | null): Pr
     getFollowState(wallet, viewer),
     getFollowers(wallet, viewer),
     getFollowing(wallet, viewer),
+    getPrelaunch(wallet),
   ]);
   const priced = positions.filter((p) => p.valueUsd != null);
   const portfolioUsd = priced.length > 0 ? priced.reduce((s, p) => s + (p.valueUsd as number), 0) : null;
   const badges = deriveBadges({ launched, positions, portfolioUsd, builder, follow, createdAt: profile.createdAt });
-  return { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log };
+  return { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch };
 }

@@ -11,7 +11,7 @@ import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
 import { NavUserActions } from "../NavUserActions";
 import { FollowButton } from "../FollowButton";
 import { apiEstablishSession } from "@/lib/social-client";
-import type { ProfileView as ProfileViewData, Badge } from "@/lib/profile-data";
+import type { ProfileView as ProfileViewData, Badge, PrelaunchSummary } from "@/lib/profile-data";
 import type { SocialUser } from "@/lib/social";
 
 // Twitter linking (Privy) only works when the user-side Privy layer is configured.
@@ -45,7 +45,7 @@ type LogFilter = "all" | "ship" | "decision" | "escalation";
 export function ProfileView({ data }: { data: ProfileViewData }) {
   const wallet = useWallet();
   const router = useRouter();
-  const { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log } = data;
+  const { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch } = data;
   const isOwner = wallet.connected && wallet.address === profile.wallet;
   const escalations = log.filter((l) => l.kind === "escalation").length;
 
@@ -199,6 +199,10 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
             </div>
           </div>
         </div>
+
+        {/* Pre-launch draft — the project this wallet is queuing for the factory.
+            Public (non-sensitive fields only); the owner gets an edit CTA. */}
+        {prelaunch && <PrelaunchCard p={prelaunch} isOwner={isOwner} />}
 
         {/* Builder impact — the self-funding loop, summed across launched projects.
             Founder-only; it makes the platform's core thesis legible on a profile. */}
@@ -747,6 +751,61 @@ function ImpactStrip({
             <div className="text-[10.5px] text-muted mt-[4px]">{it.label}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function PrelaunchCard({ p, isOwner }: { p: PrelaunchSummary; isOwner: boolean }) {
+  const status =
+    p.status === "launched"
+      ? { label: "Launched", cls: "text-pos bg-surface-2" }
+      : p.status === "whitelisted"
+      ? { label: "Whitelisted", cls: "text-accent-text bg-accent-tint" }
+      : p.status === "rejected"
+      ? { label: "Not selected", cls: "text-faint bg-surface-2" }
+      : { label: "In review", cls: "text-muted bg-surface-2" };
+  return (
+    <div className="bg-surface border border-line-2 rounded-[18px] overflow-hidden">
+      {p.bannerUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={p.bannerUrl} alt="" className="h-[88px] w-full object-cover" />
+      )}
+      <div className="px-5 py-4">
+        <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-faint mb-2">Pre-launch</div>
+        <div className="flex items-center gap-3">
+          {p.tokenImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.tokenImageUrl} alt="" className="w-11 h-11 rounded-full object-cover border border-line-3 flex-none" />
+          ) : (
+            <TokenGlyph ticker={p.ticker} />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-display font-semibold text-[15px] break-all">{p.name}</span>
+              {p.ticker && <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>}
+              <span className={`font-mono text-[10.5px] px-2 py-[2px] rounded-full ${status.cls}`}>{status.label}</span>
+            </div>
+            {p.prompt && (
+              <p className="text-[12.5px] text-muted leading-[1.45] mt-[3px] mb-0">{p.prompt}</p>
+            )}
+          </div>
+          {p.status === "launched" && p.projectKey ? (
+            <Link
+              href={`/token?p=${p.projectKey}`}
+              className="font-mono text-[12px] px-3 h-[34px] inline-flex items-center rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors flex-none"
+            >
+              View →
+            </Link>
+          ) : isOwner ? (
+            <Link
+              href="/waitlist"
+              className="font-mono text-[12px] px-3 h-[34px] inline-flex items-center rounded-[10px] border border-line-2 bg-surface hover:bg-surface-2 transition-colors flex-none"
+            >
+              Edit
+            </Link>
+          ) : null}
+        </div>
       </div>
     </div>
   );

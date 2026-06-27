@@ -128,6 +128,10 @@ create table if not exists public.launch_waitlist (
   fee_founder_pct int,
   prompt text,
   repo text,
+  -- approval lifecycle: draft → whitelisted → launched (or rejected). project_key
+  -- links a launched draft to its public.projects row.
+  status text not null default 'draft',
+  project_key text,
   updated_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -139,6 +143,8 @@ alter table public.launch_waitlist add column if not exists token_image_url text
 alter table public.launch_waitlist add column if not exists fee_founder_pct int;
 alter table public.launch_waitlist add column if not exists prompt text;
 alter table public.launch_waitlist add column if not exists repo text;
+alter table public.launch_waitlist add column if not exists status text not null default 'draft';
+alter table public.launch_waitlist add column if not exists project_key text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
 create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
 create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
