@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
-import { apiJoinWaitlist } from "@/lib/waitlist-client";
-import { IDEA_MAX } from "@/lib/waitlist";
+import { apiJoinWaitlist, IDEA_MAX } from "@/lib/waitlist-client";
 
 // Capture pre-launch interest while public launches are closed. Needs one way to
 // reach the person — the connected wallet counts, otherwise an email or X handle.
