@@ -15,6 +15,7 @@ export function Hero({
   treasuryHistory,
   agentActive,
   currentTask,
+  shippedCount,
   onLaunch,
   onScroll,
 }: {
@@ -28,6 +29,8 @@ export function Hero({
   treasuryHistory?: { t: number; sol: number }[];
   agentActive?: boolean;
   currentTask?: AgentTask;
+  /** Cumulative count of shipped tasks — shown as social proof below the CTA buttons. */
+  shippedCount?: number;
   onLaunch: () => void;
   onScroll: (id: string) => void;
 }) {
@@ -68,7 +71,7 @@ export function Hero({
             Launch a <span className="text-accent">token</span>. Fund an{" "}
             <span className="text-accent">AI</span>. It runs the rest.
           </p>
-          <div className="flex gap-3 mb-9">
+          <div className="flex gap-3 mb-3">
             <button
               onClick={onLaunch}
               className="font-display font-semibold text-[15px] px-6 py-[13px] rounded-[12px] bg-accent text-white hover:bg-accent-d transition-colors"
@@ -82,6 +85,11 @@ export function Hero({
               View Live Projects
             </button>
           </div>
+          {shippedCount != null && shippedCount > 0 && (
+            <p className="font-mono text-[12px] text-faint m-0 mb-6">
+              ✓ {shippedCount} tasks shipped by the agent
+            </p>
+          )}
           <div className="flex items-center gap-[18px] text-[13px] text-faint">
             <span>Built on</span>
             <SolanaLogo />

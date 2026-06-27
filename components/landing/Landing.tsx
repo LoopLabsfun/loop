@@ -45,6 +45,7 @@ export function Landing({
   const engine = useLoopEngine(loop?.treasurySol);
   const [modalOpen, setModalOpen] = useState(false);
   const currentTask = agentTasks.find((t) => t.status === "building");
+  const shippedCount = agentTasks.filter((t) => t.status === "shipped").length;
 
   const scrollTo = useCallback((id: string) => {
     const el = document.getElementById(id);
@@ -76,6 +77,7 @@ export function Landing({
           treasuryHistory={loop?.treasuryHistory ?? undefined}
           agentActive={agentActive}
           currentTask={currentTask}
+          shippedCount={shippedCount}
           onLaunch={openModal}
           onScroll={scrollTo}
         />
