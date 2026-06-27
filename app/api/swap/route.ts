@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isSolanaAddress, parseAmount, clampSlippage } from "@/lib/api-guards";
+import { limited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,11 @@ interface SwapBody {
 }
 
 export async function POST(req: Request) {
+  // Unauthenticated proxy — cap per-IP volume so a caller can't use our server to
+  // hammer PumpPortal (which would get our shared egress IP rate-limited).
+  const rl = limited("swap", req, { limit: 30, windowMs: 60_000 });
+  if (rl) return rl;
+
   let body: SwapBody;
   try {
     body = (await req.json()) as SwapBody;

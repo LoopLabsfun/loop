@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyUserToken, isStaleSession, USER_COOKIE } from "@/lib/user-session";
 import { getNotifications, getUnreadCount, markAllRead, syncEscalationNotifications } from "@/lib/social";
+import { limited } from "@/lib/rate-limit";
 
 // Read / clear the signed-in wallet's PRIVATE notification feed. The recipient is
 // the user session cookie's wallet — notifications are never exposed to anyone
@@ -17,6 +18,9 @@ function wallet(): string | null {
 export async function GET(req: Request) {
   const w = wallet();
   if (!w) return NextResponse.json({ error: "no session" }, { status: 401 });
+  // The bell polls this every 60s per client; cap bursts (e.g. many tabs).
+  const rl = limited("notifications", req, { wallet: w, limit: 60, windowMs: 60_000 });
+  if (rl) return rl;
   // Stale cookie ⇒ don't leak the previous wallet's private feed. Treated as
   // no-session so the bell re-establishes for the connected wallet.
   if (isStaleSession(w, new URL(req.url).searchParams.get("actor"))) {
