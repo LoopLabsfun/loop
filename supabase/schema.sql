@@ -131,6 +131,23 @@ create unique index if not exists notifications_follow_uniq
   on public.notifications (recipient, actor) where type = 'follow';
 alter table public.notifications enable row level security;
 
+-- ── messages (DMs) ───────────────────────────────────────────────────────────
+-- Wallet-to-wallet DMs. PRIVATE like notifications: RLS on, no policy →
+-- service-role only behind a signed-proof session; readable only by its parties.
+create table if not exists public.messages (
+  id         bigint generated always as identity primary key,
+  sender     text not null,
+  recipient  text not null,
+  body       text not null,
+  read       boolean not null default false,
+  created_at timestamptz not null default now(),
+  constraint messages_no_self check (sender <> recipient)
+);
+create index if not exists messages_sender_idx    on public.messages (sender, created_at desc);
+create index if not exists messages_recipient_idx on public.messages (recipient, created_at desc);
+create index if not exists messages_unread_idx on public.messages (recipient) where read = false;
+alter table public.messages enable row level security;
+
 -- ── vanity_keypairs ──────────────────────────────────────────────────────────
 create table if not exists public.vanity_keypairs (
   id bigint generated always as identity primary key,
