@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { commitHashForTitle } from "./live-log";
+import { commitHashForTitle, shareOnXUrl } from "./live-log";
 
 describe("commitHashForTitle", () => {
   const commits = [
@@ -34,5 +34,27 @@ describe("commitHashForTitle", () => {
       { hash: "older22", msg: "feat(agent): tweak the live treasury panel layout again" },
     ];
     expect(commitHashForTitle("tweak the live treasury panel layout", dup)).toBe("newest1");
+  });
+});
+
+describe("shareOnXUrl", () => {
+  it("returns an X intent URL", () => {
+    const url = shareOnXUrl("add dark mode to dashboard");
+    expect(url).toMatch(/^https:\/\/x\.com\/intent\/tweet\?text=/);
+  });
+
+  it("includes the task title, @Looplabsfun, and looplabs.fun in the encoded text", () => {
+    const url = shareOnXUrl("add dark mode to dashboard");
+    const text = decodeURIComponent(url.replace("https://x.com/intent/tweet?text=", ""));
+    expect(text).toContain("add dark mode to dashboard");
+    expect(text).toContain("@Looplabsfun");
+    expect(text).toContain("looplabs.fun");
+  });
+
+  it("URL-encodes special characters in the title", () => {
+    const url = shareOnXUrl("fix: handle #1 & update <config>");
+    expect(url).not.toContain("#");
+    expect(url).not.toContain("&");
+    expect(url).not.toContain("<");
   });
 });
