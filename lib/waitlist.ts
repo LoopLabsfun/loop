@@ -199,7 +199,7 @@ export async function joinWaitlist(
   wallet: string,
   input: WaitlistInput,
   gate?: { feeSig?: string | null; loopSig?: string | null },
-): Promise<{ ok: boolean; error?: string; already?: boolean; messaged?: boolean }> {
+): Promise<{ ok: boolean; error?: string; already?: boolean; messaged?: boolean; paymentRequired?: boolean }> {
   if (!normalizeWallet(wallet)) return { ok: false, error: "Invalid wallet." };
   const { clean, error } = validateWaitlist(input);
   if (!clean) return { ok: false, error };
@@ -252,17 +252,20 @@ export async function joinWaitlist(
     const net = parseCluster(process.env.LAUNCH_CLUSTER);
     if (gateFeeRequired()) {
       const sig = gate?.feeSig?.trim();
-      if (!sig) return { ok: false, error: "Pay the SOL submission fee to continue." };
+      // No sig yet → tell the client to pay (paymentRequired). Sig present but
+      // unverifiable → a plain error (don't make them pay twice; likely lag).
+      if (!sig) return { ok: false, paymentRequired: true, error: "Pay the SOL submission fee to continue." };
       const paid = await verifySolPayment(sig, { from: wallet, to, minLamports: gateFeeLamports(), net });
-      if (!paid) return { ok: false, error: "SOL fee payment not found or insufficient." };
+      if (!paid) return { ok: false, error: "SOL fee payment not found or not confirmed yet — retry in a moment." };
       gateSigs.gate_fee_sig = sig;
     }
     if (gateLoopRequired()) {
       const sig = gate?.loopSig?.trim();
       const mint = gateLoopMint();
-      if (!sig || !mint) return { ok: false, error: "Pay 1,000,000 $LOOP to continue." };
+      if (!sig) return { ok: false, paymentRequired: true, error: "Pay 1,000,000 $LOOP to continue." };
+      if (!mint) return { ok: false, error: "Submission gate is misconfigured (no $LOOP mint)." };
       const paid = await verifySplPayment(sig, { from: wallet, to, mint, minUiAmount: gateLoopAmount(), net });
-      if (!paid) return { ok: false, error: "$LOOP payment not found or insufficient." };
+      if (!paid) return { ok: false, error: "$LOOP payment not found or not confirmed yet — retry in a moment." };
       gateSigs.gate_loop_sig = sig;
     }
   }
