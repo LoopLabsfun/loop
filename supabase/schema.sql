@@ -136,6 +136,10 @@ create table if not exists public.launch_waitlist (
   -- becomes the on-chain creator/treasury at mint and receives pre-funding meanwhile.
   project_wallet text,
   project_wallet_id text,
+  -- entry-gate payment sigs (the toll to submit: SOL fee + 1M $LOOP). Replay-guarded
+  -- by the unique indexes below so a payment can't be reused across requests.
+  gate_fee_sig text,
+  gate_loop_sig text,
   updated_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -151,8 +155,12 @@ alter table public.launch_waitlist add column if not exists status text not null
 alter table public.launch_waitlist add column if not exists project_key text;
 alter table public.launch_waitlist add column if not exists project_wallet text;
 alter table public.launch_waitlist add column if not exists project_wallet_id text;
+alter table public.launch_waitlist add column if not exists gate_fee_sig text;
+alter table public.launch_waitlist add column if not exists gate_loop_sig text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
 create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
+create unique index if not exists launch_waitlist_gate_fee_sig_key on public.launch_waitlist (gate_fee_sig) where gate_fee_sig is not null;
+create unique index if not exists launch_waitlist_gate_loop_sig_key on public.launch_waitlist (gate_loop_sig) where gate_loop_sig is not null;
 create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
 alter table public.launch_waitlist enable row level security;
 comment on table public.launch_waitlist is 'Pre-launch project drafts (the "when can I launch" demand). Service-role write via /api/waitlist; never publicly readable.';

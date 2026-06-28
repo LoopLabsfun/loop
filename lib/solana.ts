@@ -534,6 +534,47 @@ export async function verifySolPayment(
   return null;
 }
 
+/**
+ * Verify an on-chain SPL-token payment: that `signature` is a confirmed tx, signed
+ * by `from`, that credited `to` at least `minUiAmount` of `mint`. Reads the
+ * jsonParsed token-balance deltas (post − pre for the to/mint pair). Returns the
+ * UI amount credited on success, or null (failed / not enough / not signed by the
+ * payer / not visible). Used by the pre-launch gate (the 1,000,000 $LOOP leg).
+ */
+export async function verifySplPayment(
+  signature: string,
+  opts: { from: string; to: string; mint: string; minUiAmount: number; net?: Network }
+): Promise<number | null> {
+  const net = opts.net ?? DEFAULT_NETWORK;
+  if (!KEY || !signature || signature.length > 128) return null;
+  if (!BASE58.test(opts.from) || !BASE58.test(opts.to) || !BASE58.test(opts.mint)) return null;
+  if (!(opts.minUiAmount > 0)) return null;
+
+  type TokenBal = { mint?: string; owner?: string; uiTokenAmount?: { uiAmount?: number | null } };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tx = await rpc<{
+      meta: { err: unknown; preTokenBalances?: TokenBal[]; postTokenBalances?: TokenBal[] } | null;
+      transaction: { message: { accountKeys?: { pubkey: string; signer?: boolean }[] } } | null;
+    }>(net, "getTransaction", [
+      signature,
+      { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+    ]);
+    const meta = tx?.meta;
+    if (meta) {
+      if (meta.err) return null; // the transaction failed — no payment
+      const keys = tx?.transaction?.message?.accountKeys;
+      const signedByFrom = (keys ?? []).some((k) => k?.pubkey === opts.from && k?.signer);
+      if (!signedByFrom) return null;
+      const owned = (b: TokenBal) => b.owner === opts.to && b.mint === opts.mint;
+      const amt = (bals?: TokenBal[]) => bals?.find(owned)?.uiTokenAmount?.uiAmount ?? 0;
+      const credited = (amt(meta.postTokenBalances) ?? 0) - (amt(meta.preTokenBalances) ?? 0);
+      return credited >= opts.minUiAmount && credited > 0 ? credited : null;
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 600));
+  }
+  return null;
+}
+
 // ── Short-TTL cached reads (cost control) ────────────────────────────────────
 // Project pages are force-dynamic and fan out many Helius reads per render; under
 // traffic that burns the (paid, rate-limited) Helius quota. These wrap the
