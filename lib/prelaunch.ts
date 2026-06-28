@@ -40,6 +40,8 @@ export interface LaunchPlan {
   tokenImageUrl: string | null;
   bannerUrl: string | null;
   feeFounderPct: number | null;
+  /** Proposer's X handle (bare, no @) → the token's twitter link if present. */
+  xHandle: string | null;
   status: string;
   projectKey: string | null;
 }
@@ -57,6 +59,7 @@ export async function resolveDraftLaunch(wallet: string): Promise<LaunchPlan | n
     tokenImageUrl: d.tokenImageUrl,
     bannerUrl: d.bannerUrl,
     feeFounderPct: d.feeFounderPct,
+    xHandle: d.xHandle,
     status: d.status,
     projectKey: d.projectKey,
   };
@@ -371,16 +374,28 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       }
     }
 
+    // Every launch carries its full identity to pump.fun: real logo, a description
+    // that ALWAYS references the project's Loop page, the proposer's socials, and a
+    // website link back to Loop. The CA already ends in "Loop" (vanity pool).
     const site = (process.env.NEXT_PUBLIC_SITE_URL || "https://looplabs.fun").replace(/\/$/, "");
+    const projectUrl = `${site}/token?p=${key}`;
+    const description =
+      `${plan.prompt}\n\nBuilt autonomously by its AI agent on Loop — follow the build live: ${projectUrl}`.slice(
+        0,
+        DESCRIPTION_MAX,
+      );
+    const links: { website: string; twitter?: string } = { website: projectUrl };
+    if (plan.xHandle) links.twitter = `https://x.com/${plan.xHandle}`;
     const token = await createToken({
       name: plan.name,
       ticker: plan.ticker,
       prompt: plan.prompt,
+      description,
       creator: wallet,
       cluster,
       devBuySol: plan.devBuySol,
       logo,
-      links: { website: `${site}/token?p=${key}` },
+      links,
     });
 
     await sb.from("projects").insert({

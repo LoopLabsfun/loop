@@ -276,6 +276,8 @@ export interface PrelaunchSummary {
   tokenImageUrl: string | null;
   prompt: string | null;
   feeFounderPct: number | null;
+  /** Proposer's X handle (bare, no @) — public, threaded into the token's socials. */
+  xHandle: string | null;
   /** Set once the draft has been launched into a real project. */
   projectKey: string | null;
   createdAt: string;
@@ -288,7 +290,7 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
   if (!sb) return null;
   const { data } = await sb
     .from("launch_waitlist")
-    .select("name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,project_key,created_at")
+    .select("name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,x_handle,project_key,created_at")
     .eq("wallet", wallet)
     .not("name", "is", null)
     .maybeSingle();
@@ -301,6 +303,7 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
     tokenImageUrl: data.token_image_url ?? null,
     prompt: data.prompt ?? null,
     feeFounderPct: data.fee_founder_pct ?? null,
+    xHandle: data.x_handle ?? null,
     projectKey: data.project_key ?? null,
     createdAt: data.created_at,
   };
