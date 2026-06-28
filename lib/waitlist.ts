@@ -128,10 +128,24 @@ export function validateWaitlist(input: WaitlistInput): { clean?: CleanDraft; er
   };
 }
 
-/** The wallet the welcome DM is sent FROM — the official Loop account. Falls back
- *  to PLATFORM_WALLET; when neither is set we just skip the DM (signup still works). */
-function dmSender(): string | null {
-  const w = (process.env.WAITLIST_DM_SENDER || process.env.PLATFORM_WALLET || "").trim();
+/** The wallet the welcome DM is sent FROM (and the admin recap is sent TO) — the
+ *  official Loop account. Resolution: WAITLIST_DM_SENDER (explicit override) → the
+ *  LOOP project's creator wallet (the profiled official account, "Loop"). Deliberately
+ *  NOT PLATFORM_WALLET — that's the fee-collection sink, never a social identity;
+ *  conflating them once made the welcome DM arrive from an anonymous fee wallet and
+ *  buried the recap in an inbox nobody connects as. null ⇒ skip the DM (signup
+ *  still works). */
+async function dmSender(): Promise<string | null> {
+  const override = (process.env.WAITLIST_DM_SENDER || "").trim();
+  if (BASE58.test(override)) return override;
+  const sb = supabaseAdmin;
+  if (!sb) return null;
+  const { data } = await sb
+    .from("projects")
+    .select("creator_wallet")
+    .eq("key", "loop")
+    .maybeSingle();
+  const w = ((data?.creator_wallet as string | undefined) ?? "").trim();
   return BASE58.test(w) ? w : null;
 }
 
@@ -236,16 +250,18 @@ export async function joinWaitlist(
   }
 
   let messaged = false;
-  const sender = dmSender();
-  if (!already && sender && sender !== wallet) {
-    try {
-      const r = await sendDm(sender, wallet, welcomeDmBody(clean.name, clean.prompt ?? clean.idea));
-      messaged = r.ok;
-      // Drop the full request into the admin's inbox (from the applicant, so it's
-      // the same thread as the welcome) — the complete ask is retrievable on-platform.
-      await sendDm(wallet, sender, adminRecapBody(wallet, clean));
-    } catch {
-      /* best-effort: a DM failure must never break the submit */
+  if (!already) {
+    const sender = await dmSender();
+    if (sender && sender !== wallet) {
+      try {
+        const r = await sendDm(sender, wallet, welcomeDmBody(clean.name, clean.prompt ?? clean.idea));
+        messaged = r.ok;
+        // Drop the full request into the official account's inbox (from the applicant,
+        // so it's the same thread as the welcome) — the complete ask is retrievable on-platform.
+        await sendDm(wallet, sender, adminRecapBody(wallet, clean));
+      } catch {
+        /* best-effort: a DM failure must never break the submit */
+      }
     }
   }
   return { ok: true, already, messaged };
