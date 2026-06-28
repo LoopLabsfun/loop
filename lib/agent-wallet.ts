@@ -136,3 +136,36 @@ export async function privySignAndSendSolanaTx(
   if (!sig) throw new Error("Privy sign+send returned no transaction signature.");
   return sig;
 }
+
+/**
+ * Sign a Solana transaction with the Privy wallet WITHOUT broadcasting — returns the
+ * signed tx (base64). Lets the caller assemble a multi-signer tx (e.g. add a vanity
+ * mint keypair's signature) and broadcast it itself, controlling confirmation. Privy
+ * fills only its own (payer) signature slot; other slots are left untouched, so this
+ * is the safe primitive for the pump.fun create (mint co-signer). Mirrors the REST
+ * shape of signAndSend but with method "signTransaction" → data.signed_transaction.
+ */
+export async function privySignSolanaTx(walletId: string, base64Tx: string): Promise<string> {
+  if (!agentWalletConfigured()) {
+    throw new Error("Privy custody not configured (PRIVY_APP_ID/PRIVY_APP_SECRET).");
+  }
+  const res = await fetch(`${PRIVY_BASE}/wallets/${walletId}/rpc`, {
+    method: "POST",
+    headers: authHeaders(),
+    cache: "no-store",
+    body: JSON.stringify({
+      method: "signTransaction",
+      params: { transaction: base64Tx, encoding: "base64" },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Privy signTransaction failed: ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as {
+    data?: { signed_transaction?: string };
+    signed_transaction?: string;
+  };
+  const signed = json.data?.signed_transaction ?? json.signed_transaction;
+  if (!signed) throw new Error("Privy signTransaction returned no signed_transaction.");
+  return signed;
+}

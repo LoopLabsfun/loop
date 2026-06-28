@@ -19,7 +19,7 @@ import type { LaunchCluster } from "./launchpad";
 // Heavy Solana libs are imported dynamically (server-bundle hygiene). Server-only.
 
 import { parseSecretKeyJson } from "./vanity";
-import { privySignAndSendSolanaTx } from "./agent-wallet";
+import { privySignSolanaTx } from "./agent-wallet";
 
 const IPFS_URL = "https://pump.fun/api/ipfs";
 const PUMPPORTAL_LOCAL = "https://pumpportal.fun/api/trade-local";
@@ -238,11 +238,12 @@ export async function createOnPumpPortal(
  * IS the treasury). PumpPortal returns the unsigned create tx; we add the vanity
  * mint keypair's signature, then Privy signs (as payer/creator) and broadcasts. The
  * dev-buy candle is a SEPARATE, post-create buy from the same wallet (best-effort —
- * the mint is the commit point, a failed buy never rolls it back). Non-atomic (no
- * Jito bundle) because Privy broadcasts to its own RPC. Mainnet-only; real SOL.
+ * the mint is the commit point, a failed buy never rolls it back). Mainnet-only; real SOL.
  *
- * ⚠️ The one untested assumption: Privy's signAndSendTransaction adds its signature
- * to a tx already partially signed by the mint keypair. Flag-gated + test before arming.
+ * Signing order (safest, docs-grounded): Privy signs the UNSIGNED tx (its own payer
+ * slot only) → we add the vanity mint's signature locally (web3.js preserves Privy's)
+ * → we broadcast via our RPC and control confirmation. So Privy never has to preserve
+ * a pre-existing signature. Still flag-gated: validate with one real test-launch.
  */
 export async function createOnPumpPortalWithPrivy(
   input: PumpfunCreateInput,
@@ -288,10 +289,13 @@ export async function createOnPumpPortalWithPrivy(
   if (!createRes.ok) {
     throw new Error(`PumpPortal create failed (${createRes.status}): ${await createRes.text()}`);
   }
-  const createTx = VersionedTransaction.deserialize(new Uint8Array(await createRes.arrayBuffer()));
-  createTx.sign([mintKeypair]); // partial: mint signs; the Privy wallet's payer slot is filled by Privy
-  const createB64 = Buffer.from(createTx.serialize()).toString("base64");
-  const createSig = await privySignAndSendSolanaTx(privy.walletId, createB64, "mainnet");
+  // Privy signs the unsigned tx (its payer slot) → we add the mint sig locally
+  // (web3.js leaves Privy's signature intact) → we broadcast + confirm ourselves.
+  const unsignedCreateB64 = Buffer.from(new Uint8Array(await createRes.arrayBuffer())).toString("base64");
+  const privySignedB64 = await privySignSolanaTx(privy.walletId, unsignedCreateB64);
+  const createTx = VersionedTransaction.deserialize(Buffer.from(privySignedB64, "base64"));
+  createTx.sign([mintKeypair]);
+  const createSig = await conn.sendRawTransaction(createTx.serialize());
 
   // Confirm by polling the mint account (present ⇒ create landed). No blind retry.
   const start = Date.now();
@@ -328,8 +332,10 @@ export async function createOnPumpPortalWithPrivy(
         }),
       });
       if (buyRes.ok) {
-        const buyTx = VersionedTransaction.deserialize(new Uint8Array(await buyRes.arrayBuffer()));
-        await privySignAndSendSolanaTx(privy.walletId, Buffer.from(buyTx.serialize()).toString("base64"), "mainnet");
+        const unsignedBuyB64 = Buffer.from(new Uint8Array(await buyRes.arrayBuffer())).toString("base64");
+        const buySignedB64 = await privySignSolanaTx(privy.walletId, unsignedBuyB64);
+        const buyTx = VersionedTransaction.deserialize(Buffer.from(buySignedB64, "base64"));
+        await conn.sendRawTransaction(buyTx.serialize());
       }
     } catch {
       /* token exists; a failed dev-buy is retryable — never roll back the mint */
