@@ -132,6 +132,10 @@ create table if not exists public.launch_waitlist (
   -- links a launched draft to its public.projects row.
   status text not null default 'draft',
   project_key text,
+  -- project_wallet: the Loop-custodial Privy wallet provisioned at WHITELIST; it
+  -- becomes the on-chain creator/treasury at mint and receives pre-funding meanwhile.
+  project_wallet text,
+  project_wallet_id text,
   updated_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -145,6 +149,8 @@ alter table public.launch_waitlist add column if not exists prompt text;
 alter table public.launch_waitlist add column if not exists repo text;
 alter table public.launch_waitlist add column if not exists status text not null default 'draft';
 alter table public.launch_waitlist add column if not exists project_key text;
+alter table public.launch_waitlist add column if not exists project_wallet text;
+alter table public.launch_waitlist add column if not exists project_wallet_id text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
 create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
 create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
@@ -166,6 +172,26 @@ on conflict (id) do update
   set public = excluded.public,
       file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
+
+-- ── prelaunch_contributions ──────────────────────────────────────────────────
+-- The pre-launch "vote with SOL" ledger: backers send SOL to a whitelisted
+-- project's wallet (launch_waitlist.project_wallet) BEFORE the mint. Recorded
+-- per-sender (dedup by tx_sig) so the deposit is REFUNDABLE if the project is
+-- rejected / never launches. Synced from on-chain via getRecentContributions.
+-- Service-role only (mirrors launch_waitlist): RLS on, no policies.
+create table if not exists public.prelaunch_contributions (
+  id bigint generated always as identity primary key,
+  draft_wallet text not null,
+  project_wallet text not null,
+  contributor_wallet text not null,
+  amount_sol numeric not null check (amount_sol > 0),
+  tx_sig text not null unique,
+  status text not null default 'confirmed', -- confirmed | refunded
+  created_at timestamptz not null default now()
+);
+alter table public.prelaunch_contributions enable row level security;
+create index if not exists prelaunch_contributions_draft_idx on public.prelaunch_contributions (draft_wallet);
+comment on table public.prelaunch_contributions is 'Pre-launch "vote with SOL" deposits to a project wallet, refundable until launch. Service-role only.';
 
 -- ── follows ──────────────────────────────────────────────────────────────────
 -- Wallet-to-wallet follow graph. Public read; writes service-role only after a

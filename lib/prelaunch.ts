@@ -7,6 +7,13 @@ import { agentWalletConfigured, provisionAgentWallet } from "./agent-wallet";
 import { parseSecretKeyJson } from "./vanity";
 import { slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
+import { getRecentContributions } from "./solana";
+import {
+  isMeaningfulContribution,
+  totalRaised,
+  backerCount,
+  type Contribution,
+} from "./prefunding";
 
 // Pre-launch APPROVAL plan + preflight. Turns a whitelisted draft into the exact
 // on-chain launch parameters and verifies readiness BEFORE any SOL is spent — the
@@ -148,6 +155,7 @@ export interface PrelaunchListItem {
   tokenImageUrl: string | null;
   feeFounderPct: number | null;
   projectKey: string | null;
+  projectWallet: string | null;
   createdAt: string;
 }
 
@@ -157,7 +165,7 @@ export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]>
   if (!sb) return [];
   const { data } = await sb
     .from("launch_waitlist")
-    .select("wallet,name,ticker,status,email,x_handle,prompt,repo,banner_url,token_image_url,fee_founder_pct,project_key,created_at")
+    .select("wallet,name,ticker,status,email,x_handle,prompt,repo,banner_url,token_image_url,fee_founder_pct,project_key,project_wallet,created_at")
     .not("name", "is", null)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -174,11 +182,13 @@ export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]>
     tokenImageUrl: (r.token_image_url as string) ?? null,
     feeFounderPct: (r.fee_founder_pct as number) ?? null,
     projectKey: (r.project_key as string) ?? null,
+    projectWallet: (r.project_wallet as string) ?? null,
     createdAt: r.created_at as string,
   }));
 }
 
-/** Curate a draft's status (whitelist / reject) without launching. */
+/** Curate a draft's status (whitelist / reject) without launching. Whitelisting
+ *  also provisions the project's Loop-custodial wallet so backers can pre-fund it. */
 export async function setPrelaunchStatus(
   wallet: string,
   status: "whitelisted" | "rejected" | "draft",
@@ -191,6 +201,109 @@ export async function setPrelaunchStatus(
     .update({ status, updated_at: new Date().toISOString() })
     .eq("wallet", wallet)
     .neq("status", "launched");
+  if (status === "whitelisted") await provisionProjectWallet(wallet); // best-effort
+}
+
+/**
+ * Provision the project's Loop-custodial Privy wallet at WHITELIST time (gating on
+ * admin curation, not raw drafts, avoids spam wallets). This wallet becomes the
+ * on-chain creator/treasury at mint; backers pre-fund it meanwhile. Keyed by the
+ * proposer wallet so it stays stable across the eventual project key. Idempotent +
+ * best-effort: a Privy hiccup never blocks whitelisting. Returns the address or null.
+ */
+export async function provisionProjectWallet(draftWallet: string): Promise<string | null> {
+  const sb = supabaseAdmin;
+  if (!sb || !agentWalletConfigured()) return null;
+  const { data } = await sb
+    .from("launch_waitlist")
+    .select("project_wallet")
+    .eq("wallet", draftWallet)
+    .maybeSingle();
+  const existing = (data as { project_wallet?: string } | null)?.project_wallet;
+  if (existing) return existing;
+  try {
+    const w = await provisionAgentWallet(draftWallet); // external_id keyed by proposer wallet → stable
+    await sb
+      .from("launch_waitlist")
+      .update({ project_wallet: w.address, project_wallet_id: w.id, updated_at: new Date().toISOString() })
+      .eq("wallet", draftWallet);
+    return w.address;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sync on-chain pre-funding into the ledger (dedup by tx_sig). Reads SOL transfers
+ * into the project wallet and records new, above-dust ones with their sender (for
+ * refunds). Returns how many new contributions were recorded.
+ */
+export async function syncPrelaunchContributions(draftWallet: string): Promise<number> {
+  const sb = supabaseAdmin;
+  if (!sb) return 0;
+  const { data } = await sb
+    .from("launch_waitlist")
+    .select("project_wallet")
+    .eq("wallet", draftWallet)
+    .maybeSingle();
+  const projectWallet = (data as { project_wallet?: string } | null)?.project_wallet;
+  if (!projectWallet) return 0;
+  const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
+  const onchain = await getRecentContributions(projectWallet, cluster);
+  if (!onchain?.length) return 0;
+  let added = 0;
+  for (const c of onchain) {
+    if (!c.sig || c.from === projectWallet || !isMeaningfulContribution(c.sol)) continue;
+    const { error } = await sb.from("prelaunch_contributions").insert({
+      draft_wallet: draftWallet,
+      project_wallet: projectWallet,
+      contributor_wallet: c.from,
+      amount_sol: c.sol,
+      tx_sig: c.sig,
+      status: "confirmed",
+    });
+    if (!error) added++; // 23505 (tx already recorded) is the expected dedup no-op
+  }
+  return added;
+}
+
+export interface PrelaunchFunding {
+  projectWallet: string | null;
+  totalSol: number;
+  backers: number;
+  contributions: { contributorWallet: string; amountSol: number; txSig: string; status: string; at: string }[];
+}
+
+/** The pre-funding ledger for a draft (admin view): wallet, total still backing it,
+ *  distinct backers, and the per-contribution rows. */
+export async function getPrelaunchFunding(draftWallet: string): Promise<PrelaunchFunding> {
+  const sb = supabaseAdmin;
+  const empty: PrelaunchFunding = { projectWallet: null, totalSol: 0, backers: 0, contributions: [] };
+  if (!sb) return empty;
+  const { data: row } = await sb
+    .from("launch_waitlist")
+    .select("project_wallet")
+    .eq("wallet", draftWallet)
+    .maybeSingle();
+  const projectWallet = (row as { project_wallet?: string } | null)?.project_wallet ?? null;
+  const { data } = await sb
+    .from("prelaunch_contributions")
+    .select("contributor_wallet, amount_sol, tx_sig, status, created_at")
+    .eq("draft_wallet", draftWallet)
+    .order("created_at", { ascending: false });
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const ledger: Contribution[] = rows.map((r) => ({
+    contributorWallet: r.contributor_wallet as string,
+    amountSol: Number(r.amount_sol),
+    txSig: r.tx_sig as string,
+    status: (r.status as string) ?? "confirmed",
+  }));
+  return {
+    projectWallet,
+    totalSol: totalRaised(ledger),
+    backers: backerCount(ledger),
+    contributions: ledger.map((c, i) => ({ ...c, at: rows[i].created_at as string })),
+  };
 }
 
 export interface ApproveResult {

@@ -22,7 +22,13 @@ interface Draft {
   tokenImageUrl: string | null;
   feeFounderPct: number | null;
   projectKey: string | null;
+  projectWallet: string | null;
   createdAt: string;
+}
+interface Funding {
+  projectWallet: string | null;
+  totalSol: number;
+  backers: number;
 }
 interface Check {
   label: string;
@@ -348,6 +354,7 @@ function PrelaunchPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // `${wallet}:${action}`
   const [pf, setPf] = useState<Record<string, { ready: boolean; checks: Check[] }>>({});
+  const [fund, setFund] = useState<Record<string, Funding>>({});
   const [result, setResult] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
@@ -372,8 +379,29 @@ function PrelaunchPanel() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "preflight failed");
       setPf((p) => ({ ...p, [wallet]: { ready: j.ready, checks: j.checks } }));
+      if (j.funding) setFund((f) => ({ ...f, [wallet]: j.funding }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "preflight failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sync(wallet: string) {
+    setBusy(`${wallet}:sync`);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/prelaunch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet, action: "sync" }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "sync failed");
+      if (j.funding) setFund((f) => ({ ...f, [wallet]: j.funding }));
+      setResult((m) => ({ ...m, [wallet]: `Synced · +${j.added} new · ${j.funding?.totalSol ?? 0} SOL raised` }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "sync failed");
     } finally {
       setBusy(null);
     }
@@ -435,6 +463,19 @@ function PrelaunchPanel() {
                   {[d.xHandle ? `@${d.xHandle}` : "", d.email ?? "", `split ${splitOf(d.feeFounderPct)}`].filter(Boolean).join("  ·  ")}
                 </div>
                 {d.prompt && <div className="text-[12px] text-muted mt-1">{d.prompt}</div>}
+
+                {d.projectWallet && (
+                  <div className="mt-2 text-[11.5px] font-mono flex items-center gap-2 flex-wrap">
+                    <span className="text-faint">treasury</span>
+                    <span className="text-body">{shortAddr(d.projectWallet)}</span>
+                    {fund[d.wallet] && (
+                      <span className="text-pos">
+                        · {fund[d.wallet].totalSol} SOL pre-funded · {fund[d.wallet].backers} backer{fund[d.wallet].backers === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    <Btn onClick={() => sync(d.wallet)} busy={isBusy("sync")}>Sync funding</Btn>
+                  </div>
+                )}
 
                 {p && (
                   <div className="mt-2 flex flex-col gap-[2px]">

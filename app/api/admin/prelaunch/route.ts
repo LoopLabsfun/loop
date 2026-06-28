@@ -8,6 +8,8 @@ import {
   listPrelaunches,
   setPrelaunchStatus,
   approvePrelaunch,
+  syncPrelaunchContributions,
+  getPrelaunchFunding,
 } from "@/lib/prelaunch";
 
 // Founder-only PRE-LAUNCH curation, all gated by the LOOP admin session
@@ -40,7 +42,8 @@ export async function GET(req: Request) {
     const plan = await resolveDraftLaunch(wallet);
     if (!plan) return NextResponse.json({ error: "no pre-launch draft for that wallet" }, { status: 404 });
     const { ready, checks } = await prelaunchPreflight(plan);
-    return NextResponse.json({ ready, plan, checks });
+    const funding = await getPrelaunchFunding(wallet);
+    return NextResponse.json({ ready, plan, checks, funding });
   }
 
   return NextResponse.json({ drafts: await listPrelaunches() });
@@ -69,6 +72,11 @@ export async function POST(req: Request) {
     if (action === "reject") {
       await setPrelaunchStatus(wallet, "rejected");
       return NextResponse.json({ ok: true, status: "rejected" });
+    }
+    if (action === "sync") {
+      const added = await syncPrelaunchContributions(wallet);
+      const funding = await getPrelaunchFunding(wallet);
+      return NextResponse.json({ ok: true, added, funding });
     }
     if (action === "approve") {
       if (body.confirm !== true) {

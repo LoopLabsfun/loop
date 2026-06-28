@@ -340,6 +340,65 @@ export async function getRecentTreasuryInflows(
   return inflows;
 }
 
+/** A pre-launch contribution: a SOL transfer INTO a project wallet, WITH the
+ *  sender — what the refund ledger needs (TreasuryInflow omits the payer). */
+export interface SolContribution {
+  sig: string;
+  /** The payer wallet (refund destination). */
+  from: string;
+  /** SOL credited to the project wallet in this tx (> 0). */
+  sol: number;
+  /** Unix seconds. */
+  at: number;
+}
+
+/**
+ * Recent SOL transfers INTO `owner` with their sender — the pre-launch "vote with
+ * SOL" deposits. Reads the Helius enriched-tx endpoint and, per tx, sums the
+ * nativeTransfers landing on `owner` and attributes the largest external sender as
+ * the payer (ignoring self-transfers / change). newest first. null on
+ * unconfigured/invalid/failed (caller keeps prior state).
+ */
+export async function getRecentContributions(
+  owner: string,
+  net: Network = DEFAULT_NETWORK,
+  limit = 100
+): Promise<SolContribution[] | null> {
+  if (!KEY || !BASE58.test(owner)) return null;
+  const host = net === "devnet" ? "api-devnet.helius.xyz" : "api.helius.xyz";
+  const window = Math.min(100, Math.max(limit, 24));
+  let txs: {
+    signature?: string;
+    timestamp?: number;
+    nativeTransfers?: { fromUserAccount?: string; toUserAccount?: string; amount?: number }[];
+  }[];
+  try {
+    const res = await fetch(
+      `https://${host}/v0/addresses/${owner}/transactions?api-key=${KEY}&limit=${window}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    txs = await res.json();
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(txs)) return null;
+
+  const out: SolContribution[] = [];
+  for (const tx of txs) {
+    if (typeof tx.timestamp !== "number") continue;
+    const incoming = (tx.nativeTransfers ?? []).filter(
+      (t) => t.toUserAccount === owner && (t.amount ?? 0) > 0 && t.fromUserAccount && t.fromUserAccount !== owner
+    );
+    if (!incoming.length) continue;
+    const totalLamports = incoming.reduce((s, t) => s + (t.amount ?? 0), 0);
+    const from = incoming.slice().sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))[0].fromUserAccount as string;
+    out.push({ sig: tx.signature ?? "", from, sol: totalLamports / LAMPORTS_PER_SOL, at: tx.timestamp });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /** SOL balance for an address, or null if unconfigured / invalid / failed. */
 export async function getSolBalance(
   address: string,
