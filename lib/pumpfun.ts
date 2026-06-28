@@ -19,6 +19,7 @@ import type { LaunchCluster } from "./launchpad";
 // Heavy Solana libs are imported dynamically (server-bundle hygiene). Server-only.
 
 import { parseSecretKeyJson } from "./vanity";
+import { privySignAndSendSolanaTx } from "./agent-wallet";
 
 const IPFS_URL = "https://pump.fun/api/ipfs";
 const PUMPPORTAL_LOCAL = "https://pumpportal.fun/api/trade-local";
@@ -229,4 +230,111 @@ export async function createOnPumpPortal(
   }
 
   return { mint, treasuryWallet: creator, txSig: sig };
+}
+
+/**
+ * Create a pump.fun token whose ON-CHAIN CREATOR is the project's Loop-custodial
+ * Privy wallet (so it — not the shared platform signer — owns the creator fees and
+ * IS the treasury). PumpPortal returns the unsigned create tx; we add the vanity
+ * mint keypair's signature, then Privy signs (as payer/creator) and broadcasts. The
+ * dev-buy candle is a SEPARATE, post-create buy from the same wallet (best-effort —
+ * the mint is the commit point, a failed buy never rolls it back). Non-atomic (no
+ * Jito bundle) because Privy broadcasts to its own RPC. Mainnet-only; real SOL.
+ *
+ * ⚠️ The one untested assumption: Privy's signAndSendTransaction adds its signature
+ * to a tx already partially signed by the mint keypair. Flag-gated + test before arming.
+ */
+export async function createOnPumpPortalWithPrivy(
+  input: PumpfunCreateInput,
+  cluster: LaunchCluster,
+  privy: { walletId: string; address: string }
+): Promise<PumpfunCreateResult> {
+  if (cluster !== "mainnet") {
+    throw new Error("pump.fun is mainnet-only; cannot launch on devnet.");
+  }
+  const suffix = input.suffix ?? process.env.MINT_VANITY_SUFFIX;
+  const { Keypair, Connection, VersionedTransaction } = await import("@solana/web3.js");
+
+  // 1) vanity mint keypair (fail-closed when a suffix is configured)
+  let mintKeypair: import("@solana/web3.js").Keypair;
+  if (suffix) {
+    const { nextVanityKeypair } = await import("./vanity");
+    const vanity = await nextVanityKeypair(suffix, cluster);
+    if (!vanity) {
+      throw new Error(`Vanity pool for "${suffix}" is empty — refusing to launch a non-"${suffix}" address.`);
+    }
+    mintKeypair = vanity;
+  } else {
+    mintKeypair = Keypair.generate();
+  }
+
+  const metadataUri = await uploadMetadata(input);
+  const endpoint = process.env.HELIUS_API_KEY
+    ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+    : "https://api.mainnet-beta.solana.com";
+  const conn = new Connection(endpoint, "confirmed");
+  const mint = mintKeypair.publicKey.toBase58();
+  const devBuy = Math.max(0, input.devBuySol ?? 0);
+
+  // 2) CREATE — creator/payer = the project's Privy wallet. Add the mint sig, then
+  // Privy signs (payer) + broadcasts.
+  const createRes = await fetch(PUMPPORTAL_LOCAL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      buildCreatePayload({ publicKey: privy.address, mint, metadataUri, name: input.name, symbol: input.symbol })
+    ),
+  });
+  if (!createRes.ok) {
+    throw new Error(`PumpPortal create failed (${createRes.status}): ${await createRes.text()}`);
+  }
+  const createTx = VersionedTransaction.deserialize(new Uint8Array(await createRes.arrayBuffer()));
+  createTx.sign([mintKeypair]); // partial: mint signs; the Privy wallet's payer slot is filled by Privy
+  const createB64 = Buffer.from(createTx.serialize()).toString("base64");
+  const createSig = await privySignAndSendSolanaTx(privy.walletId, createB64, "mainnet");
+
+  // Confirm by polling the mint account (present ⇒ create landed). No blind retry.
+  const start = Date.now();
+  let landed = false;
+  while (Date.now() - start < 60_000) {
+    await new Promise((r) => setTimeout(r, 2500));
+    if (await conn.getAccountInfo(mintKeypair.publicKey, "confirmed")) {
+      landed = true;
+      break;
+    }
+  }
+  if (!landed) {
+    throw new Error(
+      `Create submitted but mint ${mint} not seen on-chain after 60s. DO NOT re-run blindly — check https://pump.fun/coin/${mint} and the project wallet first.`
+    );
+  }
+
+  // 3) DEV-BUY (the first candle) — a separate buy from the same wallet. Best-effort:
+  // the token already exists, so a failed buy is retryable and never rolls back the mint.
+  if (devBuy > 0) {
+    try {
+      const buyRes = await fetch(PUMPPORTAL_LOCAL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicKey: privy.address,
+          action: "buy",
+          mint,
+          denominatedInSol: "true",
+          amount: devBuy,
+          slippage: 10,
+          priorityFee: 0.0005,
+          pool: "pump",
+        }),
+      });
+      if (buyRes.ok) {
+        const buyTx = VersionedTransaction.deserialize(new Uint8Array(await buyRes.arrayBuffer()));
+        await privySignAndSendSolanaTx(privy.walletId, Buffer.from(buyTx.serialize()).toString("base64"), "mainnet");
+      }
+    } catch {
+      /* token exists; a failed dev-buy is retryable — never roll back the mint */
+    }
+  }
+
+  return { mint, treasuryWallet: privy.address, txSig: createSig };
 }

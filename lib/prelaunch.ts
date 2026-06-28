@@ -2,8 +2,9 @@ import "server-only";
 import { supabaseAdmin } from "./supabase";
 import { getPrelaunch } from "./waitlist";
 import { getSolBalance } from "./solana";
-import { createToken, launchpadConfigured, parseCluster } from "./launchpad";
+import { createToken, launchpadConfigured, parseCluster, type CreateTokenResult } from "./launchpad";
 import { agentWalletConfigured, provisionAgentWallet, privySignAndSendSolanaTx } from "./agent-wallet";
+import { createOnPumpPortalWithPrivy } from "./pumpfun";
 import { parseSecretKeyJson } from "./vanity";
 import { slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
@@ -28,6 +29,44 @@ const DEFAULT_DEV_BUY_SOL = 0.05;
 export function prelaunchDevBuySol(): number {
   const raw = Number(process.env.PRELAUNCH_DEV_BUY_SOL ?? process.env.LOOP_DEV_BUY_SOL);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DEV_BUY_SOL;
+}
+
+/** Whether the project's own Privy wallet is the on-chain creator/treasury at mint
+ *  (vs. the shared platform signer). OFF by default — the Privy-signed create path is
+ *  the one untested money path, so the founder arms it explicitly after a test launch. */
+export function privyCreatorEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.PRELAUNCH_PRIVY_CREATOR === "1";
+}
+
+/** Max SOL of pre-funding spent on the opening candle (the rest stays as runway). */
+function maxCandleSol(): number {
+  const n = Number(process.env.PRELAUNCH_MAX_CANDLE_SOL);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/** Seed SOL from the platform launch signer → a project wallet, so it can pay its
+ *  own create + candle when community pre-funding is short. Confirmed. */
+async function topUpFromSigner(to: string, sol: number, cluster: ReturnType<typeof parseCluster>): Promise<void> {
+  if (sol <= 0) return;
+  const bytes = parseSecretKeyJson(process.env.LAUNCH_SIGNER_SECRET);
+  if (!bytes) throw new Error("LAUNCH_SIGNER_SECRET required to seed the candle.");
+  const heliusKey = process.env.HELIUS_API_KEY;
+  if (!heliusKey) throw new Error("HELIUS_API_KEY required to seed the candle.");
+  const { Keypair, Connection, SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } =
+    await import("@solana/web3.js");
+  const signer = Keypair.fromSecretKey(Uint8Array.from(bytes));
+  const endpoint = `https://${cluster === "devnet" ? "devnet" : "mainnet"}.helius-rpc.com/?api-key=${heliusKey}`;
+  const conn = new Connection(endpoint, "confirmed");
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: signer.publicKey,
+      toPubkey: new PublicKey(to),
+      lamports: Math.round(sol * LAMPORTS_PER_SOL),
+    }),
+  );
+  const sig = await conn.sendTransaction(tx, [signer]);
+  const bh = await conn.getLatestBlockhash();
+  await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 }
 
 export interface LaunchPlan {
@@ -141,6 +180,14 @@ export async function prelaunchPreflight(plan: LaunchPlan): Promise<{ ready: boo
     label: "Token image (logo)",
     ok: true, // not fatal — falls back to a placeholder
     detail: plan.tokenImageUrl ? "uploaded ✓" : "none → placeholder",
+  });
+
+  checks.push({
+    label: "Mint creator / treasury",
+    ok: true, // informational — both paths are valid
+    detail: privyCreatorEnabled()
+      ? "project Privy wallet (candle from pre-funding)"
+      : "shared platform signer (seed candle)",
   });
 
   return { ready: checks.every((c) => c.ok), checks };
@@ -451,9 +498,6 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
     const { data: existing } = await sb.from("projects").select("key").eq("key", key).maybeSingle();
     if (existing) key = `${key}-${Date.now().toString(36).slice(-4)}`;
 
-    // Fresh per-project agent wallet (Privy) — its fee share funds it.
-    const agent = await provisionAgentWallet(key);
-
     // The uploaded token image → pump.fun logo (placeholder on any failure).
     let logo: { bytes: Uint8Array; contentType: string; filename: string } | undefined;
     if (plan.tokenImageUrl) {
@@ -480,17 +524,56 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       );
     const links: { website: string; twitter?: string } = { website: projectUrl };
     if (plan.xHandle) links.twitter = `https://x.com/${plan.xHandle}`;
-    const token = await createToken({
-      name: plan.name,
-      ticker: plan.ticker,
-      prompt: plan.prompt,
-      description,
-      creator: wallet,
-      cluster,
-      devBuySol: plan.devBuySol,
-      logo,
-      links,
-    });
+
+    let token: CreateTokenResult;
+    let agentAddress: string;
+
+    if (privyCreatorEnabled()) {
+      // CUSTODY: the project's own Privy wallet (provisioned at whitelist, pre-funded
+      // by backers) IS the on-chain creator + treasury + agent — one wallet. The
+      // candle is funded from its pre-funding, topped up from the platform if short.
+      const { data: pw } = await sb
+        .from("launch_waitlist")
+        .select("project_wallet, project_wallet_id")
+        .eq("wallet", wallet)
+        .maybeSingle();
+      const projectWallet = (pw as { project_wallet?: string } | null)?.project_wallet;
+      const projectWalletId = (pw as { project_wallet_id?: string } | null)?.project_wallet_id;
+      if (!projectWallet || !projectWalletId) {
+        throw new Error("Privy-creator mode is on but this draft has no project wallet — whitelist it first.");
+      }
+      const reserve = 0.03; // rent + fees kept in the wallet
+      const seed = prelaunchDevBuySol();
+      const bal = (await getSolBalance(projectWallet, cluster)) ?? 0;
+      let candle = Math.min(Math.max(0, bal - reserve), maxCandleSol());
+      if (candle < seed) {
+        const topUp = seed + reserve - bal;
+        if (topUp > 0) await topUpFromSigner(projectWallet, topUp, cluster);
+        candle = seed;
+      }
+      const res = await createOnPumpPortalWithPrivy(
+        { name: plan.name, symbol: plan.ticker, description, logo, links, devBuySol: candle },
+        cluster,
+        { walletId: projectWalletId, address: projectWallet },
+      );
+      token = { launchpad: "Pump.fun", cluster, mint: res.mint, treasuryWallet: res.treasuryWallet, txSig: res.txSig, simulated: false };
+      agentAddress = projectWallet; // creator = treasury = agent
+    } else {
+      // Default path: mint from the shared platform signer + a fresh per-project agent wallet.
+      const agent = await provisionAgentWallet(key);
+      agentAddress = agent.address;
+      token = await createToken({
+        name: plan.name,
+        ticker: plan.ticker,
+        prompt: plan.prompt,
+        description,
+        creator: wallet,
+        cluster,
+        devBuySol: plan.devBuySol,
+        logo,
+        links,
+      });
+    }
 
     await sb.from("projects").insert({
       key,
@@ -518,7 +601,7 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       treasury_wallet: token.treasuryWallet,
       network: token.cluster,
       creator_wallet: wallet,
-      agent_wallet: agent.address,
+      agent_wallet: agentAddress,
       fee_founder_pct: plan.feeFounderPct,
     });
 
@@ -527,7 +610,7 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       .update({ status: "launched", project_key: key, updated_at: new Date().toISOString() })
       .eq("wallet", wallet);
 
-    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agent.address, simulated: token.simulated };
+    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated };
   } catch (e) {
     // Roll the claim back so a fixed config can retry (mint failures are pre-mint
     // for the common cases — bad config, vanity empty, RPC). createOnPumpPortal
