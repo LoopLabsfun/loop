@@ -76,6 +76,11 @@ export async function POST(req: Request) {
     feeFounderPct: feeRaw == null ? null : Number(feeRaw),
     bannerUrl,
     tokenImageUrl,
+  }, {
+    // Entry-gate payment sigs (the first submit pays SOL fee + 1M $LOOP). Verified
+    // on-chain in joinWaitlist; ignored unless the gate is armed.
+    feeSig: str(form, "gateFeeSig"),
+    loopSig: str(form, "gateLoopSig"),
   });
   if (!r.ok) return NextResponse.json({ error: r.error ?? "failed" }, { status: 400 });
   return NextResponse.json({

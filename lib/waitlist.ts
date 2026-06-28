@@ -2,6 +2,17 @@ import "server-only";
 import { supabaseAdmin } from "./supabase";
 import { sendDm } from "./dm";
 import { makeSplit, DEFAULT_SPLIT } from "./fees";
+import { verifySolPayment, verifySplPayment } from "./solana";
+import { parseCluster } from "./launchpad";
+import {
+  gateRequired,
+  gateFeeRequired,
+  gateLoopRequired,
+  gateFeeLamports,
+  gateLoopAmount,
+  gateWallet,
+  gateLoopMint,
+} from "./prelaunch-gate";
 
 // Launch waitlist — now a real "pre-launch your project" draft, mirroring the
 // official launch form (LaunchModal): name, ticker, banner, token image, fee
@@ -187,6 +198,7 @@ export function adminRecapBody(wallet: string, d: CleanDraft): string {
 export async function joinWaitlist(
   wallet: string,
   input: WaitlistInput,
+  gate?: { feeSig?: string | null; loopSig?: string | null },
 ): Promise<{ ok: boolean; error?: string; already?: boolean; messaged?: boolean }> {
   if (!normalizeWallet(wallet)) return { ok: false, error: "Invalid wallet." };
   const { clean, error } = validateWaitlist(input);
@@ -230,20 +242,49 @@ export async function joinWaitlist(
     .maybeSingle();
   const already = Boolean(existing);
 
+  // Entry gate: the FIRST submit pays the toll (SOL fee + 1M $LOOP to the platform),
+  // verified on-chain. Refining an existing draft is free. Off until the founder
+  // arms it (gateRequired() false by default) — the current free submit stays.
+  const gateSigs: Record<string, string> = {};
+  if (!already && gateRequired()) {
+    const to = gateWallet();
+    if (!to) return { ok: false, error: "Submission gate is misconfigured." };
+    const net = parseCluster(process.env.LAUNCH_CLUSTER);
+    if (gateFeeRequired()) {
+      const sig = gate?.feeSig?.trim();
+      if (!sig) return { ok: false, error: "Pay the SOL submission fee to continue." };
+      const paid = await verifySolPayment(sig, { from: wallet, to, minLamports: gateFeeLamports(), net });
+      if (!paid) return { ok: false, error: "SOL fee payment not found or insufficient." };
+      gateSigs.gate_fee_sig = sig;
+    }
+    if (gateLoopRequired()) {
+      const sig = gate?.loopSig?.trim();
+      const mint = gateLoopMint();
+      if (!sig || !mint) return { ok: false, error: "Pay 1,000,000 $LOOP to continue." };
+      const paid = await verifySplPayment(sig, { from: wallet, to, mint, minUiAmount: gateLoopAmount(), net });
+      if (!paid) return { ok: false, error: "$LOOP payment not found or insufficient." };
+      gateSigs.gate_loop_sig = sig;
+    }
+  }
+
   const write = (r: Record<string, unknown>) =>
     already
       ? sb.from("launch_waitlist").update(r).eq("wallet", wallet)
       : sb.from("launch_waitlist").insert(r);
 
-  let { error: dbErr } = await write(draftRow);
+  let { error: dbErr } = await write({ ...draftRow, ...gateSigs });
   // 42703 = undefined column → the draft columns aren't migrated yet; degrade to
   // the legacy shape so the lead is still captured (full data lights up post-migration).
   if (dbErr && (dbErr.code === "42703" || /column .* does not exist/i.test(dbErr.message))) {
     ({ error: dbErr } = await write(legacyRow));
   }
   if (dbErr) {
-    // 23505 = email already used by another row → keep it friendly.
+    // 23505 = a unique violation. Distinguish a reused gate payment from a dup email.
     if (dbErr.code === "23505" || /duplicate|unique/i.test(dbErr.message)) {
+      const blob = `${dbErr.message} ${(dbErr as { details?: string }).details ?? ""}`;
+      if (/gate_(fee|loop)_sig/.test(blob)) {
+        return { ok: false, error: "That payment was already used for another request." };
+      }
       return { ok: false, error: "That email is already on the list." };
     }
     return { ok: false, error: dbErr.message };
