@@ -36,6 +36,9 @@ export interface WaitlistResult {
   banner: boolean;
   /** Token image stored. */
   tokenImage: boolean;
+  /** The entry gate is armed and this first submit needs the on-chain toll paid:
+   *  the caller should make the payments and re-submit with the sigs. */
+  paymentRequired?: boolean;
 }
 
 /**
@@ -47,6 +50,7 @@ export async function apiJoinWaitlist(
   wallet: string,
   proof: LaunchProof,
   draft: WaitlistDraft,
+  gate?: { feeSig?: string | null; loopSig?: string | null },
 ): Promise<WaitlistResult> {
   const fd = new FormData();
   fd.set("wallet", wallet);
@@ -60,6 +64,8 @@ export async function apiJoinWaitlist(
     ["xHandle", draft.xHandle],
     ["idea", draft.idea],
     ["referrer", draft.referrer],
+    ["gateFeeSig", gate?.feeSig],
+    ["gateLoopSig", gate?.loopSig],
   ] as const) {
     if (v) fd.set(k, v);
   }
@@ -69,11 +75,14 @@ export async function apiJoinWaitlist(
 
   const r = await fetch("/api/waitlist", { method: "POST", body: fd });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "Could not save your pre-launch.");
+  // The gate signals "pay first" with a 402 + paymentRequired — not a hard error;
+  // surface it so the caller can make the toll payments and re-submit with sigs.
+  if (!r.ok && !j.paymentRequired) throw new Error(j.error || "Could not save your pre-launch.");
   return {
     already: Boolean(j.already),
     messaged: Boolean(j.messaged),
     banner: Boolean(j.banner),
     tokenImage: Boolean(j.tokenImage),
+    paymentRequired: Boolean(j.paymentRequired),
   };
 }

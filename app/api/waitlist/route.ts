@@ -82,7 +82,13 @@ export async function POST(req: Request) {
     feeSig: str(form, "gateFeeSig"),
     loopSig: str(form, "gateLoopSig"),
   });
-  if (!r.ok) return NextResponse.json({ error: r.error ?? "failed" }, { status: 400 });
+  if (!r.ok) {
+    // 402 when the entry gate needs the toll paid first (the client then pays + re-submits).
+    return NextResponse.json(
+      { error: r.error ?? "failed", paymentRequired: Boolean(r.paymentRequired) },
+      { status: r.paymentRequired ? 402 : 400 },
+    );
+  }
   return NextResponse.json({
     ok: true,
     already: Boolean(r.already),

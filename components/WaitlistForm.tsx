@@ -12,6 +12,7 @@ import {
   PROMPT_MAX,
   REPO_MAX,
 } from "@/lib/waitlist-client";
+import { clientGate, GATE_LOOP_DECIMALS } from "@/lib/prelaunch-gate-client";
 
 // Pre-launch a project while public launches are closed. Mirrors the real launch
 // form (name, ticker, prompt, repo, fee split, banner + token image) but saves a
@@ -34,10 +35,12 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
   const [tokenImage, setTokenImage] = useState<File | null>(null);
   const [referrer, setReferrer] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<WaitlistResult | null>(null);
 
   const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
+  const gate = useMemo(() => clientGate(), []);
   const canSubmit = name.trim() !== "" && ticker.trim() !== "";
 
   // Capture a referral from ?ref= (the Act 2 viral hook) without useSearchParams
@@ -72,7 +75,7 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
         setError("This wallet can't sign messages — try Phantom or Solflare.");
         return;
       }
-      const r = await apiJoinWaitlist(wallet.address, proof, {
+      const draft = {
         name: name.trim(),
         ticker: ticker.trim(),
         prompt: prompt.trim() || null,
@@ -83,14 +86,38 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
         feeFounderPct,
         banner,
         tokenImage,
-      });
+      };
+      // First submit (no toll). If the gate is armed and this is a NEW request, the
+      // server replies paymentRequired → pay the toll on-chain, then re-submit with
+      // the sigs (the same proof is reused — no second signature popup). A refine of
+      // an existing draft skips the gate, so this never double-charges.
+      let r = await apiJoinWaitlist(wallet.address, proof, draft);
+      if (r.paymentRequired) {
+        const g = clientGate();
+        if (!g.wallet) {
+          setError("Submission gate is misconfigured — try again later.");
+          return;
+        }
+        const sigs: { feeSig?: string; loopSig?: string } = {};
+        if (g.feeSol > 0) {
+          setStatus(`Paying ${g.feeSol} SOL fee…`);
+          sigs.feeSig = await wallet.sendSol(g.wallet, g.feeSol);
+        }
+        if (g.loopAmount > 0 && g.loopMint) {
+          setStatus(`Paying ${g.loopAmount.toLocaleString()} $LOOP…`);
+          sigs.loopSig = await wallet.sendSplToken(g.loopMint, g.wallet, g.loopAmount, GATE_LOOP_DECIMALS);
+        }
+        setStatus("Saving your pre-launch…");
+        r = await apiJoinWaitlist(wallet.address, proof, draft, sigs);
+      }
       setDone(r);
       onDone?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong — try again.";
-      setError(/reject|denied|cancel/i.test(msg) ? "Signature rejected — try again." : msg);
+      setError(/reject|denied|cancel/i.test(msg) ? "Transaction rejected — try again." : msg);
     } finally {
       setBusy(false);
+      setStatus(null);
     }
   }
 
@@ -247,12 +274,21 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
 
       {error && <div className="text-[12.5px] text-warn">{error}</div>}
 
+      {gate.required && (
+        <div className="text-[11.5px] text-faint text-center -mb-1">
+          Submitting costs a one-time toll
+          {gate.feeSol > 0 ? ` of ${gate.feeSol} SOL` : ""}
+          {gate.loopAmount > 0 ? `${gate.feeSol > 0 ? " +" : " of"} ${gate.loopAmount.toLocaleString()} $LOOP` : ""}
+          . Refining your draft later is free.
+        </div>
+      )}
+
       <button
         onClick={submit}
         disabled={!canSubmit || busy}
         className="font-display font-semibold text-[15px] py-[13px] rounded-[12px] bg-accent text-white hover:bg-accent-d transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {busy ? "Signing…" : "Pre-launch my project"}
+        {busy ? (status ?? "Signing…") : gate.required ? "Pay & pre-launch my project" : "Pre-launch my project"}
       </button>
       {!canSubmit && (
         <div className="text-[11.5px] text-faint text-center -mt-1">
