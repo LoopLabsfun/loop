@@ -3,7 +3,7 @@ import { supabaseAdmin } from "./supabase";
 import { getPrelaunch } from "./waitlist";
 import { getSolBalance } from "./solana";
 import { createToken, launchpadConfigured, parseCluster } from "./launchpad";
-import { agentWalletConfigured, provisionAgentWallet } from "./agent-wallet";
+import { agentWalletConfigured, provisionAgentWallet, privySignAndSendSolanaTx } from "./agent-wallet";
 import { parseSecretKeyJson } from "./vanity";
 import { slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
@@ -12,6 +12,7 @@ import {
   isMeaningfulContribution,
   totalRaised,
   backerCount,
+  planRefunds,
   type Contribution,
 } from "./prefunding";
 
@@ -306,6 +307,99 @@ export async function getPrelaunchFunding(draftWallet: string): Promise<Prelaunc
     totalSol: totalRaised(ledger),
     backers: backerCount(ledger),
     contributions: ledger.map((c, i) => ({ ...c, at: rows[i].created_at as string })),
+  };
+}
+
+export interface RefundOutcome {
+  ok: boolean;
+  refunded: { to: string; sol: number; sig: string }[];
+  skipped: string[];
+  note: string;
+}
+
+/** Whether refund EXECUTION is armed (it moves real SOL out of the project wallet). */
+export function prelaunchRefundsArmed(env: Record<string, string | undefined> = process.env): boolean {
+  return env.PRELAUNCH_REFUNDS === "1";
+}
+
+/**
+ * Refund a rejected/abandoned draft's backers — send each their confirmed pre-funding
+ * back from the project's Privy wallet, then mark it refunded (so it's never re-sent).
+ * Makes the "refundable until launch" promise real. DISARMED unless PRELAUNCH_REFUNDS=1
+ * (real SOL moves); never throws — returns a note the caller surfaces.
+ */
+export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcome> {
+  const sb = supabaseAdmin;
+  const out = (note: string): RefundOutcome => ({ ok: false, refunded: [], skipped: [], note });
+  if (!sb) return out("no service-role client");
+  if (!prelaunchRefundsArmed()) return out("refunds disarmed (set PRELAUNCH_REFUNDS=1)");
+  if (!agentWalletConfigured()) return out("Privy custody not configured");
+
+  const { data: row } = await sb
+    .from("launch_waitlist")
+    .select("project_wallet, project_wallet_id")
+    .eq("wallet", draftWallet)
+    .maybeSingle();
+  const projectWallet = (row as { project_wallet?: string } | null)?.project_wallet;
+  const walletId = (row as { project_wallet_id?: string } | null)?.project_wallet_id;
+  if (!projectWallet || !walletId) return out("no project wallet provisioned for this draft");
+
+  const { data } = await sb
+    .from("prelaunch_contributions")
+    .select("contributor_wallet, amount_sol, tx_sig, status")
+    .eq("draft_wallet", draftWallet);
+  const ledger: Contribution[] = ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    contributorWallet: r.contributor_wallet as string,
+    amountSol: Number(r.amount_sol),
+    txSig: r.tx_sig as string,
+    status: (r.status as string) ?? "confirmed",
+  }));
+  const plan = planRefunds(ledger);
+  if (!plan.length) return { ok: true, refunded: [], skipped: [], note: "nothing to refund" };
+
+  const heliusKey = process.env.HELIUS_API_KEY;
+  if (!heliusKey) return out("HELIUS_API_KEY missing");
+  const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
+  const { Connection, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+  const endpoint = `https://${cluster === "devnet" ? "devnet" : "mainnet"}.helius-rpc.com/?api-key=${heliusKey}`;
+  const conn = new Connection(endpoint, "confirmed");
+
+  const refunded: RefundOutcome["refunded"] = [];
+  const skipped: string[] = [];
+  for (const r of plan) {
+    try {
+      const { blockhash } = await conn.getLatestBlockhash("confirmed");
+      const tx = new Transaction();
+      tx.feePayer = new PublicKey(projectWallet);
+      tx.recentBlockhash = blockhash;
+      tx.add(
+        SystemProgram.transfer({
+          fromPubkey: new PublicKey(projectWallet),
+          toPubkey: new PublicKey(r.to),
+          lamports: Math.round(r.sol * LAMPORTS_PER_SOL),
+        }),
+      );
+      // Privy holds the key: hand it the unsigned tx (base64) to sign + broadcast.
+      const b64 = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+      const sig = await privySignAndSendSolanaTx(walletId, b64, cluster);
+      // Mark this backer's confirmed contributions refunded BEFORE moving on so a
+      // mid-loop failure can't double-refund.
+      await sb
+        .from("prelaunch_contributions")
+        .update({ status: "refunded" })
+        .eq("draft_wallet", draftWallet)
+        .eq("contributor_wallet", r.to)
+        .eq("status", "confirmed");
+      refunded.push({ to: r.to, sol: r.sol, sig });
+    } catch (e) {
+      skipped.push(`${r.to.slice(0, 4)}…: ${e instanceof Error ? e.message : "failed"}`);
+    }
+  }
+  return {
+    ok: true,
+    refunded,
+    skipped,
+    note: `refunded ${refunded.reduce((s, x) => s + x.sol, 0)} SOL to ${refunded.length} backer(s)`,
   };
 }
 

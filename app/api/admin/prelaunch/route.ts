@@ -10,6 +10,7 @@ import {
   approvePrelaunch,
   syncPrelaunchContributions,
   getPrelaunchFunding,
+  refundPrelaunch,
 } from "@/lib/prelaunch";
 
 // Founder-only PRE-LAUNCH curation, all gated by the LOOP admin session
@@ -71,7 +72,13 @@ export async function POST(req: Request) {
     }
     if (action === "reject") {
       await setPrelaunchStatus(wallet, "rejected");
-      return NextResponse.json({ ok: true, status: "rejected" });
+      // Honor the "refundable until launch" promise — best-effort, disarmed by default.
+      const refund = await refundPrelaunch(wallet);
+      return NextResponse.json({ ok: true, status: "rejected", refund });
+    }
+    if (action === "refund") {
+      const refund = await refundPrelaunch(wallet);
+      return NextResponse.json({ ok: true, refund });
     }
     if (action === "sync") {
       const added = await syncPrelaunchContributions(wallet);
