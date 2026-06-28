@@ -407,13 +407,22 @@ export function agentRuntimeConfigured(): boolean {
  * the per-project store is off (PROJECT_SECRETS_KEY unset) — so LOOP / the default
  * path is unchanged. This is the seam that lets N projects each fund their own brain.
  */
-export async function resolveAnthropicKey(p: { key: string }): Promise<string | undefined> {
+/**
+ * The project's OWN (BYO) Anthropic key, or undefined — NEVER the global fallback.
+ * Use this where the global platform key must not be persisted (the Trigger payload):
+ * only a genuinely per-project key is ever carried; LOOP/default ⇒ undefined ⇒ the
+ * worker uses its own env key.
+ */
+export async function projectAnthropicKey(p: { key: string }): Promise<string | undefined> {
   const { secretsConfigured, getProjectAnthropicKey } = await import("./project-secrets");
-  if (secretsConfigured()) {
-    const k = await getProjectAnthropicKey(p.key);
-    if (k) return k;
-  }
-  return process.env.ANTHROPIC_API_KEY;
+  if (!secretsConfigured()) return undefined;
+  return (await getProjectAnthropicKey(p.key)) ?? undefined;
+}
+
+/** The key the agent runs on: its BYO key, else the global. For in-process use
+ *  (the legacy sandbox injection) — not for anything that persists the key. */
+export async function resolveAnthropicKey(p: { key: string }): Promise<string | undefined> {
+  return (await projectAnthropicKey(p)) ?? process.env.ANTHROPIC_API_KEY;
 }
 
 /**
