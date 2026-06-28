@@ -402,6 +402,21 @@ export function agentRuntimeConfigured(): boolean {
 }
 
 /**
+ * The Anthropic key the agent runs on for THIS project (multi-tenant compute): its
+ * own BYO key if set (billed to its founder), else the global key. No DB read when
+ * the per-project store is off (PROJECT_SECRETS_KEY unset) — so LOOP / the default
+ * path is unchanged. This is the seam that lets N projects each fund their own brain.
+ */
+export async function resolveAnthropicKey(p: { key: string }): Promise<string | undefined> {
+  const { secretsConfigured, getProjectAnthropicKey } = await import("./project-secrets");
+  if (secretsConfigured()) {
+    const k = await getProjectAnthropicKey(p.key);
+    if (k) return k;
+  }
+  return process.env.ANTHROPIC_API_KEY;
+}
+
+/**
  * QUIET RELAUNCH MODE. When AGENT_SOCIAL_SILENT=1 the agent stops ALL public
  * broadcasting (X + Telegram) and refocuses on silent self-improvement — auditing
  * its own codebase for inconsistencies and perfecting its own UI. The on-site task
@@ -2187,12 +2202,14 @@ export async function runAgentTick(
   const sdkCfg = sdkHandsConfig();
   const sdkCodeTask =
     decision.task.category === "feature" || decision.task.category === "fix";
+  // Multi-tenant compute: this project's own key if it has one, else the global.
+  const anthropicKey = await resolveAnthropicKey(p);
   if (
     sdkCfg.enabled &&
     sdkCodeTask &&
     process.env.E2B_API_KEY &&
     process.env.GITHUB_TOKEN &&
-    process.env.ANTHROPIC_API_KEY &&
+    anthropicKey &&
     sdkHandsDueNow(Date.now(), sdkCfg.minIntervalMs)
   ) {
     try {
@@ -2227,7 +2244,7 @@ export async function runAgentTick(
         // ANTHROPIC_API_KEY powers the in-sandbox session; GITHUB_TOKEN is captured
         // then `unset` before the session (see agent-sdk-hands.ts) so it can't push.
         GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        ANTHROPIC_API_KEY: anthropicKey,
         TASK_BRIEF: buildTaskBrief(decision.task),
         AGENT_SDK_MODEL: sdkCfg.model,
         AGENT_SDK_MAX_TURNS: String(sdkCfg.maxTurns),
