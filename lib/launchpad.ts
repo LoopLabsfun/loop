@@ -20,6 +20,9 @@ export interface CreateTokenInput {
   name: string;
   ticker: string; // bare, uppercase, no leading "$"
   prompt: string;
+  /** The pump.fun-facing description (with the Loop reference). Falls back to
+   *  `prompt` when unset, so callers that don't compose one still work. */
+  description?: string;
   /** Base58 pubkey of the launching (creator) wallet. Verified upstream. */
   creator?: string | null;
   /** Cluster override (from the UI switch); falls back to LAUNCH_CLUSTER env. */
@@ -149,7 +152,7 @@ async function createOnPumpfun(
     {
       name: input.name,
       symbol: input.ticker,
-      description: input.prompt,
+      description: input.description ?? input.prompt,
       // The pieces the app path used to drop — now threaded through so a launch
       // does its first candle + real logo + links, not a bare create.
       devBuySol: input.devBuySol,
