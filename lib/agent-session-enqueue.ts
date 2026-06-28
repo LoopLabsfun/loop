@@ -16,7 +16,7 @@ import {
   decideNextAction,
   buildTaskBrief,
   applyDecision,
-  resolveAnthropicKey,
+  projectAnthropicKey,
   type AgentDecision,
 } from "./agent-runtime";
 import { buildSdkHandsScript } from "./agent-sdk-hands";
@@ -157,9 +157,10 @@ export async function enqueueSdkSession(
     category: decision.task.category,
     script,
     taskBrief: buildTaskBrief(decision.task),
-    // Multi-tenant compute: run this project's session on its own BYO key if set
-    // (else the worker falls back to its global key — LOOP unchanged).
-    anthropicKey: await resolveAnthropicKey(p),
+    // Multi-tenant compute: carry ONLY this project's own BYO key (undefined for
+    // LOOP/default) so the global platform key is never persisted in the Trigger
+    // payload; the worker falls back to its own env key when this is absent.
+    anthropicKey: await projectAnthropicKey(p),
     model: cfg.model,
     // Per-task budget (already clamped under the AGENT_SDK_MAX_TURNS ceiling).
     maxTurns: plan.maxTurns,
