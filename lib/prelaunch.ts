@@ -456,6 +456,8 @@ export interface ApproveResult {
   txSig: string | null;
   agentWallet: string;
   simulated: boolean;
+  /** White-label home provisioning note (repo + Vercel), when armed. */
+  provisioning?: string;
 }
 
 /**
@@ -610,7 +612,20 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       .update({ status: "launched", project_key: key, updated_at: new Date().toISOString() })
       .eq("wallet", wallet);
 
-    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated };
+    // White-label home: create the project's GitHub repo + Vercel project so its
+    // agent has somewhere to build/deploy. Best-effort + env-gated — the launch is
+    // the commit point; a provisioning hiccup leaves the project launched (the repo
+    // can be created later), never aborts the mint.
+    let provisioning: string | undefined;
+    try {
+      const { provisionProjectHome } = await import("./provisioning-exec");
+      const home = await provisionProjectHome(key, plan.prompt);
+      provisioning = home.note;
+    } catch (e) {
+      provisioning = e instanceof Error ? e.message : "provisioning error";
+    }
+
+    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated, provisioning };
   } catch (e) {
     // Roll the claim back so a fixed config can retry (mint failures are pre-mint
     // for the common cases — bad config, vanity empty, RPC). createOnPumpPortal

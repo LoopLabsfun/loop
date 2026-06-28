@@ -422,7 +422,7 @@ function PrelaunchPanel() {
       if (action === "approve") {
         setResult((m) => ({
           ...m,
-          [wallet]: `Launched → ${j.key}${j.mint ? ` · ${j.mint.slice(0, 4)}…${j.mint.slice(-4)}` : ""}${j.simulated ? " (simulated)" : ""}`,
+          [wallet]: `Launched → ${j.key}${j.mint ? ` · ${j.mint.slice(0, 4)}…${j.mint.slice(-4)}` : ""}${j.simulated ? " (simulated)" : ""}${j.provisioning ? ` · ${j.provisioning}` : ""}`,
         }));
       }
       if (j.refund) {
