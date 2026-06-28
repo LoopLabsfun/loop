@@ -3,12 +3,17 @@ import { getProjects } from "@/lib/queries";
 import { getSolUsd } from "@/lib/price";
 import { isAgentActive, getAgentState } from "@/lib/agent-data";
 import { getRecentCommits } from "@/lib/commits";
+import { getPublicPrelaunches } from "@/lib/prelaunch-public";
 
 // Always fetch fresh so newly launched projects appear without a redeploy.
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [projects, solUsd] = await Promise.all([getProjects(), getSolUsd()]);
+  const [projects, solUsd, prelaunches] = await Promise.all([
+    getProjects(),
+    getSolUsd(),
+    getPublicPrelaunches(),
+  ]);
   const loop = projects.find((p) => p.key === "loop");
   // Real "agent ticked recently" per LAUNCHED project — the honest per-card
   // status (was a hardcoded "Active" for anything with a mint). Plus a wide
@@ -30,6 +35,7 @@ export default async function HomePage() {
     <Landing
       projects={projects}
       solUsd={solUsd}
+      prelaunches={prelaunches}
       agentActive={!!activeByKey["loop"]}
       activeByKey={activeByKey}
       commits={commitsAll.slice(0, 6)}

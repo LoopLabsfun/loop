@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { Nav } from "./Nav";
 import { Hero } from "./Hero";
 import { LiveProjects } from "./LiveProjects";
+import { PrelaunchBoard } from "./PrelaunchBoard";
 import { HowAndTreasury } from "./HowAndTreasury";
 import { LoopMarquee } from "./LoopMarquee";
 import { UseCases } from "./UseCases";
@@ -15,10 +16,12 @@ import { InspectorProvider } from "@/lib/inspector";
 import { useLoopEngine } from "@/lib/useLoopEngine";
 import type { Project } from "@/lib/types";
 import type { AgentTask } from "@/lib/agent";
+import type { PublicPrelaunch } from "@/lib/prelaunch-public";
 
 export function Landing({
   projects,
   solUsd,
+  prelaunches = [],
   agentActive = false,
   activeByKey = {},
   commits = [],
@@ -28,6 +31,8 @@ export function Landing({
 }: {
   projects: Project[];
   solUsd: number;
+  /** Curated pre-launches for the home board (the "vote with SOL" social layer). */
+  prelaunches?: PublicPrelaunch[];
   /** True when the LOOP agent ticked recently — drives the live Runtime status. */
   agentActive?: boolean;
   /** Real "agent ticked recently" per project key — drives each card's status. */
@@ -82,6 +87,7 @@ export function Landing({
           onScroll={scrollTo}
         />
         <LiveProjects projects={projects} solUsd={solUsd} activeByKey={activeByKey} />
+        <PrelaunchBoard prelaunches={prelaunches} onLaunch={openModal} />
         <HowAndTreasury
           project={loop}
           solUsd={solUsd}
