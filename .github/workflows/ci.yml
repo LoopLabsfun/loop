@@ -1,0 +1,35 @@
+# Test + typecheck gate. The Vercel deploy already runs `next build` (which type-
+# checks + bundles), but NOTHING ran the unit tests on push — so a broken test could
+# land silently. This runs tsc + vitest on every push to main and every PR, on the
+# pinned Node (.nvmrc = 20). Pure checks, no secrets: vitest + tsc need no backend.
+#
+# Note: the suite must run on Node ≥18 (vitest 2 / vite need globalThis.crypto, which
+# Node 16 lacks) — hence node-version-file: .nvmrc. A shell on Node 16 fails at vite
+# config resolution ("crypto.getRandomValues is not a function"); use `nvm use`.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Tests
+        run: npx vitest run
