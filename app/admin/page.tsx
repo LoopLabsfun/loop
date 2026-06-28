@@ -425,6 +425,9 @@ function PrelaunchPanel() {
           [wallet]: `Launched → ${j.key}${j.mint ? ` · ${j.mint.slice(0, 4)}…${j.mint.slice(-4)}` : ""}${j.simulated ? " (simulated)" : ""}`,
         }));
       }
+      if (j.refund) {
+        setResult((m) => ({ ...m, [wallet]: `Refund: ${j.refund.note}` }));
+      }
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${action} failed`);
@@ -498,7 +501,22 @@ function PrelaunchPanel() {
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <Btn onClick={() => preflight(d.wallet)} busy={isBusy("preflight")}>Preflight</Btn>
                     <Btn onClick={() => act(d.wallet, "whitelist")} busy={isBusy("whitelist")}>Whitelist</Btn>
-                    <Btn onClick={() => act(d.wallet, "reject")} busy={isBusy("reject")}>Reject</Btn>
+                    <Btn
+                      onClick={() =>
+                        act(d.wallet, "reject", `Reject ${d.name} and refund its backers (if armed)?`)
+                      }
+                      busy={isBusy("reject")}
+                    >
+                      Reject
+                    </Btn>
+                    <Btn
+                      onClick={() =>
+                        act(d.wallet, "refund", `Refund all backers of ${d.name}? Sends real SOL from its wallet.`)
+                      }
+                      busy={isBusy("refund")}
+                    >
+                      Refund
+                    </Btn>
                     <Btn
                       onClick={() =>
                         act(
