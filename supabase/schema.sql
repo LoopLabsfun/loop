@@ -201,6 +201,19 @@ alter table public.prelaunch_contributions enable row level security;
 create index if not exists prelaunch_contributions_draft_idx on public.prelaunch_contributions (draft_wallet);
 comment on table public.prelaunch_contributions is 'Pre-launch "vote with SOL" deposits to a project wallet, refundable until launch. Service-role only.';
 
+-- ── project_secrets ──────────────────────────────────────────────────────────
+-- Per-project encrypted secrets (the multi-tenant compute key): each project can
+-- BYO its own Anthropic key (billed to its founder, not Loop). Values are AES-256-
+-- GCM ciphertext (lib/project-secrets), decrypted server-side only and gated on the
+-- PROJECT_SECRETS_KEY master key. Service-role only: RLS on, no policies.
+create table if not exists public.project_secrets (
+  project_key text primary key,
+  anthropic_key_enc text,
+  updated_at timestamptz not null default now()
+);
+alter table public.project_secrets enable row level security;
+comment on table public.project_secrets is 'Per-project encrypted secrets (BYO Anthropic key). Service-role only; AES-256-GCM ciphertext.';
+
 -- ── follows ──────────────────────────────────────────────────────────────────
 -- Wallet-to-wallet follow graph. Public read; writes service-role only after a
 -- signed looplabs.fun profile proof of the follower (no anon write policy).

@@ -35,6 +35,11 @@ export interface AgentSessionPayload {
   wallMs: number;
   /** Execution ceiling for the sandbox run (npm ci + session + gate). */
   timeoutMs: number;
+  /** Multi-tenant compute: this project's OWN Anthropic key (BYO), billed to its
+   *  founder. Omitted ⇒ the worker falls back to its global ANTHROPIC_API_KEY (LOOP).
+   *  It's the project founder's own opted-in key; hardening (fetch vs payload) is a
+   *  follow-up. */
+  anthropicKey?: string;
   dryRun?: boolean;
 }
 
@@ -42,7 +47,7 @@ export const agentSession = task({
   id: "agent-session",
   maxDuration: 1500, // 25 min ceiling
   run: async (payload: AgentSessionPayload) => {
-    const { key, script, taskBrief, model, maxTurns, effort, wallMs, timeoutMs } = payload;
+    const { key, script, taskBrief, model, maxTurns, effort, wallMs, timeoutMs, anthropicKey } = payload;
     const template = process.env.E2B_TEMPLATE?.trim() || undefined;
     const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 900_000;
 
@@ -62,8 +67,9 @@ export const agentSession = task({
         envs: {
           // Withheld from the agent session by the script itself (unset before it).
           GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? "",
-          // Powers the in-sandbox Claude Agent SDK session.
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+          // Powers the in-sandbox Claude Agent SDK session — the project's own BYO
+          // key (multi-tenant compute) if present, else the worker's global key.
+          ANTHROPIC_API_KEY: anthropicKey || process.env.ANTHROPIC_API_KEY || "",
           // The brief is MULTILINE (Task/Details/Implement…). E2B's runCode drops
           // multiline env values, so the session saw an empty TASK_BRIEF and
           // no-op'd every SDK tick. Pass it base64-encoded (single-line ASCII,
