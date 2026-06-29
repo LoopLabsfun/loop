@@ -11,6 +11,8 @@ import {
   syncPrelaunchContributions,
   getPrelaunchFunding,
   refundPrelaunch,
+  updatePrelaunchDraft,
+  type DraftFieldPatch,
 } from "@/lib/prelaunch";
 
 // Founder-only PRE-LAUNCH curation, all gated by the LOOP admin session
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
   const g = await gate(req);
   if ("error" in g) return g.error;
 
-  let body: { wallet?: string; action?: string; confirm?: boolean };
+  let body: { wallet?: string; action?: string; confirm?: boolean; fields?: DraftFieldPatch };
   try {
     body = await req.json();
   } catch {
@@ -66,6 +68,10 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (action === "edit") {
+      await updatePrelaunchDraft(wallet, body.fields ?? {});
+      return NextResponse.json({ ok: true });
+    }
     if (action === "whitelist") {
       await setPrelaunchStatus(wallet, "whitelisted");
       return NextResponse.json({ ok: true, status: "whitelisted" });
