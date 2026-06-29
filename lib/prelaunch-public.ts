@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
 import { totalRaised, backerCount, type Contribution } from "./prefunding";
+import { slugify } from "./launch";
+import type { Launchpad, Project, ProjectKey } from "./types";
 
 // PUBLIC pre-launch board data — the curated (whitelisted) projects opening soon,
 // with their real pre-funding (the "vote with SOL" social proof). Service-role read
@@ -10,6 +12,9 @@ import { totalRaised, backerCount, type Contribution } from "./prefunding";
 export interface PublicPrelaunch {
   name: string;
   ticker: string;
+  /** Stable URL key (slugify(ticker,name)) — links to /token?p=<slug>. Matches the
+   *  eventual launched project key, so the URL survives the mint. */
+  slug: string;
   pitch: string | null;
   tokenImageUrl: string | null;
   bannerUrl: string | null;
@@ -57,9 +62,12 @@ export async function getPublicPrelaunches(limit = 12): Promise<PublicPrelaunch[
 
   return rows.map((r) => {
     const ledger = byDraft.get(r.wallet as string) ?? [];
+    const name = r.name as string;
+    const ticker = (r.ticker as string) ?? "";
     return {
-      name: r.name as string,
-      ticker: (r.ticker as string) ?? "",
+      name,
+      ticker,
+      slug: slugify(ticker, name),
       pitch: (r.prompt as string) ?? null,
       tokenImageUrl: (r.token_image_url as string) ?? null,
       bannerUrl: (r.banner_url as string) ?? null,
@@ -68,4 +76,76 @@ export async function getPublicPrelaunches(limit = 12): Promise<PublicPrelaunch[
       backers: backerCount(ledger),
     };
   });
+}
+
+/** A whitelisted draft row addressed by its public slug (slugify(ticker,name)). */
+async function findWhitelistedBySlug(
+  slug: string,
+): Promise<Record<string, unknown> | null> {
+  const sb = supabaseAdmin;
+  if (!sb) return null;
+  const { data } = await sb
+    .from("launch_waitlist")
+    .select("wallet,name,ticker,prompt,token_image_url,banner_url,project_wallet,fee_founder_pct,status")
+    .eq("status", "whitelisted")
+    .not("name", "is", null);
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return (
+    rows.find((r) => slugify((r.ticker as string) ?? "", r.name as string) === slug) ?? null
+  );
+}
+
+/**
+ * Synthesize a Project from a WHITELISTED pre-launch draft so the token page can
+ * render it in its existing pre-launch mode (no `projects` row, no `mint`). The
+ * `treasuryWallet` is the pre-funding deposit wallet, so `withLiveBalances` shows
+ * the real backing balance. The proposer's wallet is deliberately NOT exposed as
+ * `creatorWallet` (it would reveal identity + unlock founder-only UI). Returns null
+ * when there's no whitelisted draft for the slug (or it's already launched, which
+ * has a real `projects` row that takes precedence upstream).
+ */
+export async function getPrelaunchProjectBySlug(slug: string): Promise<Project | null> {
+  const r = await findWhitelistedBySlug(slug);
+  if (!r) return null;
+  const name = r.name as string;
+  const ticker = (r.ticker as string) ?? "";
+  const prompt = (r.prompt as string) ?? name;
+  const projectWallet = (r.project_wallet as string) ?? null;
+  return {
+    key: slug as ProjectKey,
+    name,
+    ticker: `$${ticker}`,
+    description: prompt,
+    official: false,
+    launchpad: "Pump.fun" as Launchpad,
+    repo: "",
+    cover: "neon",
+    price: 0,
+    marketCap: "—",
+    liquidity: "—",
+    holders: "—",
+    volume24h: "—",
+    curve: 0,
+    supply: "1B",
+    treasurySol: 0,
+    earnedSol: 0,
+    burnPerDay: "0 SOL/day",
+    runway: "pre-launch",
+    treasuryWallet: projectWallet,
+    mint: null,
+    network: "mainnet",
+    creatorWallet: null,
+    feeFounderPct: (r.fee_founder_pct as number) ?? undefined,
+    agentWallet: projectWallet,
+    treasuryLive: false,
+    prelaunch: true,
+  };
+}
+
+/** Resolve a public slug → the private proposer (draft) wallet, server-side only.
+ *  Used by the public backing endpoint to reconcile on-chain contributions without
+ *  ever exposing the draft wallet to the client. */
+export async function resolveDraftWalletBySlug(slug: string): Promise<string | null> {
+  const r = await findWhitelistedBySlug(slug);
+  return r ? ((r.wallet as string) ?? null) : null;
 }

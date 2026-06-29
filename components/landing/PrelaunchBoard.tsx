@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useWallet } from "@/lib/wallet";
 import type { PublicPrelaunch } from "@/lib/prelaunch-public";
@@ -16,7 +17,7 @@ export function PrelaunchBoard({
   onLaunch: () => void;
 }) {
   return (
-    <section id="prelaunch" className="max-w-[1280px] mx-auto px-8 py-14">
+    <section id="prelaunch" className="max-w-[1160px] mx-auto px-10 pt-10 pb-7">
       <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
         <div>
           <div className="font-mono text-[12px] text-accent-text tracking-wide uppercase mb-1">
@@ -72,6 +73,11 @@ function PrelaunchCard({ p }: { p: PublicPrelaunch }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Live totals once a backing reconcile returns (otherwise the server snapshot).
+  const [funded, setFunded] = useState<{ totalSol: number; backers: number } | null>(null);
+  const totalSol = funded?.totalSol ?? p.totalSol;
+  const backers = funded?.backers ?? p.backers;
+  const href = `/token?p=${encodeURIComponent(p.slug)}`;
 
   async function back() {
     if (!p.projectWallet) return;
@@ -89,6 +95,22 @@ function PrelaunchCard({ p }: { p: PublicPrelaunch }) {
     try {
       await wallet.sendSol(p.projectWallet, sol);
       setDone(true);
+      // Fold the on-chain transfer into the ledger so the counter updates without
+      // a founder running the admin sync. Best-effort — the funds are already on
+      // chain regardless, and the founder's reconcile/refund tooling still works.
+      try {
+        const r = await fetch("/api/prelaunch/back", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug: p.slug }),
+        });
+        if (r.ok) {
+          const j = await r.json();
+          if (typeof j.totalSol === "number") setFunded({ totalSol: j.totalSol, backers: j.backers });
+        }
+      } catch {
+        /* reconcile is best-effort */
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed — try again";
       setErr(/reject|denied|cancel/i.test(msg) ? "Cancelled" : msg);
@@ -99,39 +121,43 @@ function PrelaunchCard({ p }: { p: PublicPrelaunch }) {
 
   return (
     <div className="rounded-[14px] border border-line-2 bg-surface overflow-hidden flex flex-col">
-      <div className="h-[88px] bg-surface-2 relative">
-        {p.bannerUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.bannerUrl} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full bg-accent-tint" />
-        )}
-        {p.tokenImageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={p.tokenImageUrl}
-            alt=""
-            className="absolute left-4 -bottom-5 w-11 h-11 rounded-full object-cover border-2 border-surface"
-          />
-        )}
-      </div>
+      <Link href={href} className="block group">
+        <div className="h-[88px] bg-surface-2 relative">
+          {p.bannerUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.bannerUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-accent-tint" />
+          )}
+          {p.tokenImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={p.tokenImageUrl}
+              alt=""
+              className="absolute left-4 -bottom-5 w-11 h-11 rounded-full object-cover border-2 border-surface"
+            />
+          )}
+        </div>
+      </Link>
 
       <div className="px-4 pt-7 pb-4 flex flex-col gap-2 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-display font-semibold text-[15px]">{p.name}</span>
+        <Link href={href} className="flex items-center gap-2 group">
+          <span className="font-display font-semibold text-[15px] group-hover:text-accent-text transition-colors">
+            {p.name}
+          </span>
           <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>
           <span className="font-mono text-[9.5px] px-2 py-[2px] rounded-full bg-accent-tint text-accent-text ml-auto">
             opening soon
           </span>
-        </div>
+        </Link>
         {p.pitch && <p className="text-[12.5px] text-muted leading-[1.5] line-clamp-2 m-0">{p.pitch}</p>}
 
         <div className="flex items-center gap-3 font-mono text-[12px] mt-1">
-          <span className="text-pos font-semibold tabular-nums">{p.totalSol} SOL</span>
+          <span className="text-pos font-semibold tabular-nums">{totalSol} SOL</span>
           <span className="text-faint">backed</span>
           <span className="text-faint">·</span>
-          <span className="text-body tabular-nums">{p.backers}</span>
-          <span className="text-faint">backer{p.backers === 1 ? "" : "s"}</span>
+          <span className="text-body tabular-nums">{backers}</span>
+          <span className="text-faint">backer{backers === 1 ? "" : "s"}</span>
         </div>
 
         <div className="mt-auto pt-2">

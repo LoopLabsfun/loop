@@ -17,6 +17,7 @@ export interface RepoCommit {
 // Accepts "github.com/owner/name", "https://github.com/owner/name(.git)",
 // or "owner/name". Returns null when it isn't a GitHub owner/name pair.
 function parseGitHubRepo(repo: string): { owner: string; name: string } | null {
+  if (!repo) return null; // pre-launch projects have no repo yet
   const cleaned = repo
     .trim()
     .replace(/^https?:\/\//, "")
