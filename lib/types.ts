@@ -56,6 +56,20 @@ export interface Project {
   contentPolicy?: string | null;
   /** Editable guardrails the agent rereads each cycle. */
   guardrails?: string | null;
+  // Per-project social links + brand images (admin-editable, see lib/admin-projects.ts).
+  // Canonical https URLs; null when unset (the UI falls back to env/global defaults).
+  /** https://x.com/<handle> */
+  twitter?: string | null;
+  /** https://t.me/<name> */
+  telegram?: string | null;
+  /** https://discord.gg/<code> */
+  discord?: string | null;
+  /** Project website (canonical https URL); null → the Loop token page. */
+  website?: string | null;
+  /** Public URL of the token logo; null → mascot/placeholder. */
+  tokenImageUrl?: string | null;
+  /** Public URL of the project banner; null → gradient cover. */
+  bannerUrl?: string | null;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
   /**

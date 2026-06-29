@@ -35,6 +35,12 @@ interface ProjectRow {
   agent_wallet: string | null;
   content_policy: string | null;
   guardrails: string | null;
+  twitter: string | null;
+  telegram: string | null;
+  discord: string | null;
+  website: string | null;
+  token_image_url: string | null;
+  banner_url: string | null;
 }
 
 function rowToProject(r: ProjectRow): Project {
@@ -67,6 +73,12 @@ function rowToProject(r: ProjectRow): Project {
     agentWallet: r.agent_wallet,
     contentPolicy: r.content_policy,
     guardrails: r.guardrails,
+    twitter: r.twitter ?? null,
+    telegram: r.telegram ?? null,
+    discord: r.discord ?? null,
+    website: r.website ?? null,
+    tokenImageUrl: r.token_image_url ?? null,
+    bannerUrl: r.banner_url ?? null,
     treasuryLive: false,
   };
 }
