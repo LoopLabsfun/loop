@@ -99,19 +99,36 @@ function ProjectCard({
           devnet
         </span>
       )}
-      <div
-        className={`h-[120px] flex items-center justify-center ${COVERS[p.cover]}`}
-      >
-        {p.official && (
+      {p.official ? (
+        <div
+          className={`h-[120px] flex items-center justify-center ${COVERS[p.cover]}`}
+        >
           <LoopMark width={64} height={38} stroke="var(--accent)" />
-        )}
-      </div>
-      <div className="p-4">
+        </div>
+      ) : (
+        <div className="h-[120px] relative">
+          {p.bannerUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.bannerUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className={`w-full h-full ${COVERS[p.cover]}`} />
+          )}
+          {p.tokenImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={p.tokenImageUrl}
+              alt=""
+              className="absolute left-4 -bottom-5 w-11 h-11 rounded-full object-cover border-2 border-surface"
+            />
+          )}
+        </div>
+      )}
+      <div className={`p-4 ${!p.official && p.tokenImageUrl ? "pt-7" : ""}`}>
         <div className="font-display font-semibold text-[16px]">{p.name}</div>
         <div className="font-mono text-[12px] text-accent-text mt-[2px] mb-2">
           {p.ticker}
         </div>
-        <p className="text-[13px] text-muted leading-[1.45] m-0 mb-[14px] min-h-[38px]">
+        <p className="text-[13px] text-muted leading-[1.45] m-0 mb-[14px] min-h-[38px] line-clamp-3">
           {p.description}
         </p>
         <div className="grid grid-cols-2 gap-x-[6px] gap-y-[10px] text-[11px] text-faint border-t border-line-4 pt-[10px]">
