@@ -340,7 +340,11 @@ export function TokenPage({
             </div>
           )}
           <div id="swap" className="scroll-mt-4 rounded-[16px] jump-target">
-            <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
+            {p.prelaunch ? (
+              <PrelaunchBackCard project={p} />
+            ) : (
+              <SwapCard project={p} lastPrice={last} solUsd={solUsd} preLaunch={preLaunch} />
+            )}
           </div>
           <BondingCurve curve={p.curve} graduated={stats?.graduated} />
           {p.official && <BoostTierCard project={p} preLaunch={preLaunch} />}
@@ -550,20 +554,28 @@ function MergedHero({
           </div>
 
           {/* Buy is the primary action; selling something you don't own yet has no
-              place as a co-equal CTA on a first visit — demote it to a quiet link. */}
+              place as a co-equal CTA on a first visit — demote it to a quiet link.
+              Pre-launch there's nothing to trade yet — the primary action is to
+              back the launch (pre-fund the treasury), refundable until it mints. */}
           <div className="mt-auto pt-5">
             <a
               href="#swap"
               className="w-full h-[44px] rounded-[10px] bg-accent text-white font-display font-semibold text-[15px] flex items-center justify-center hover:opacity-90 transition-opacity"
             >
-              Buy {p.ticker}
+              {p.prelaunch ? "Back this launch" : `Buy ${p.ticker}`}
             </a>
-            <a
-              href="#swap"
-              className="block text-center font-mono text-[12px] text-faint hover:text-accent-text transition-colors mt-2"
-            >
-              or sell {p.ticker} ↓
-            </a>
+            {p.prelaunch ? (
+              <span className="block text-center font-mono text-[12px] text-faint mt-2">
+                refundable until {p.ticker} launches
+              </span>
+            ) : (
+              <a
+                href="#swap"
+                className="block text-center font-mono text-[12px] text-faint hover:text-accent-text transition-colors mt-2"
+              >
+                or sell {p.ticker} ↓
+              </a>
+            )}
           </div>
         </div>
 
@@ -579,10 +591,14 @@ function MergedHero({
             </div>
             <div className="min-w-0">
               <div className="text-[11px] text-faint mb-[2px]">
-                {building ? "Building now" : "Next up"}
-                {heroTaskAt && <span className="text-faint"> · {heroTaskAt}</span>}
+                {p.prelaunch ? "Status" : building ? "Building now" : "Next up"}
+                {!p.prelaunch && heroTaskAt && <span className="text-faint"> · {heroTaskAt}</span>}
               </div>
-              <div className="text-[13px] text-ink leading-[1.35]">{heroTaskTitle ?? "Steering the roadmap"}</div>
+              <div className="text-[13px] text-ink leading-[1.35]">
+                {p.prelaunch
+                  ? `Agent initializing — boots when ${p.ticker} launches on-chain`
+                  : heroTaskTitle ?? "Steering the roadmap"}
+              </div>
             </div>
           </div>
 
@@ -1014,6 +1030,140 @@ function SwapCard({
           or trade on pump.fun ↗
         </a>
       )}
+    </div>
+  );
+}
+
+// Pre-launch backing — the token isn't minted yet, so instead of a swap the
+// primary action is to PRE-FUND the project's treasury (its future on-chain
+// wallet). A conviction deposit ("yes, Loop should launch this"), refundable
+// until the mint. Sends SOL straight to p.treasuryWallet (the deposit address),
+// then reconciles the on-chain transfer into the contribution ledger so the
+// backing counters update without a founder running the admin sync.
+function PrelaunchBackCard({ project: p }: { project: Project }) {
+  const wallet = useWallet();
+  const { network, setNetwork } = useNetwork();
+  const projectNet = p.network ?? "mainnet";
+  const wrongNet = network !== projectNet;
+  const [amt, setAmt] = useState("0.1");
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
+  const [sig, setSig] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const amtN = parseFloat(amt) || 0;
+
+  const back = async () => {
+    if (!wallet.connected || !wallet.address) {
+      wallet.connect();
+      return;
+    }
+    if (wrongNet || !p.treasuryWallet || amtN <= 0 || status === "sending") return;
+    setStatus("sending");
+    setErr(null);
+    setSig(null);
+    try {
+      const s = await wallet.sendSol(p.treasuryWallet, amtN);
+      setSig(s);
+      setStatus("done");
+      // Fold the transfer into the ledger (best-effort — the SOL is on chain
+      // regardless, and the founder's reconcile tooling still works).
+      try {
+        await fetch("/api/prelaunch/back", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug: p.key }),
+        });
+      } catch {
+        /* reconcile is best-effort */
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Backing failed";
+      setErr(/reject|denied|cancel/i.test(msg) ? "Cancelled in wallet" : msg);
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-display font-semibold text-[15px]">Back this launch</span>
+        <span className="font-mono text-[10.5px] px-2 py-[2px] rounded-full bg-accent-tint text-accent-text">
+          opening soon
+        </span>
+      </div>
+      <p className="text-[12.5px] text-muted leading-[1.5] mb-3">
+        {p.ticker} isn&apos;t minted yet. Pre-fund its treasury to vote it up the
+        queue and seed the agent&apos;s runway — refundable until it launches.
+      </p>
+
+      <div className="flex items-baseline justify-between mb-[6px]">
+        <label className="text-[12px] text-muted">Amount in SOL</label>
+      </div>
+      <div className="flex items-center gap-2 border border-line-3 rounded-[10px] p-1 pl-[14px] mb-[10px]">
+        <input
+          value={amt}
+          onChange={(e) => setAmt(e.target.value)}
+          inputMode="decimal"
+          className="flex-1 border-0 outline-none font-mono text-[16px] py-2 bg-transparent min-w-0"
+          aria-label="SOL amount to back"
+        />
+        <span className="font-mono text-[12px] text-faint px-[10px] py-2 bg-surface-3 rounded-[7px]">
+          SOL
+        </span>
+      </div>
+
+      <div className="grid grid-cols-4 gap-[6px] mb-3">
+        {["0.1", "0.5", "1", "5"].map((v) => (
+          <button
+            key={v}
+            onClick={() => setAmt(v)}
+            className="font-mono text-[11.5px] py-[6px] border border-line-3 rounded-[7px] bg-surface text-muted hover:border-line-hover transition-colors"
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {wrongNet ? (
+        <button
+          onClick={() => setNetwork(projectNet)}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] border border-warn text-warn"
+        >
+          Switch to {projectNet} to back
+        </button>
+      ) : (
+        <button
+          onClick={back}
+          disabled={status === "sending" || (wallet.connected && (amtN <= 0 || !p.treasuryWallet))}
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] bg-accent text-white transition-opacity disabled:opacity-60"
+        >
+          {!wallet.connected
+            ? "Connect Wallet"
+            : status === "sending"
+            ? "Confirm in wallet…"
+            : !p.treasuryWallet
+            ? "Backing opens shortly"
+            : `Back with ${amtN || 0} SOL`}
+        </button>
+      )}
+
+      {status === "done" && sig && (
+        <a
+          href={explorerTx(sig, projectNet)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-[10px] block font-mono text-[11.5px] text-pos bg-[oklch(0.97_0.03_150)] border border-[oklch(0.9_0.06_150)] rounded-[8px] px-3 py-[9px] animate-fadeIn"
+        >
+          ✓ Backed · {shortAddr(sig)} ↗
+        </a>
+      )}
+      {status === "error" && err && (
+        <div className="mt-[10px] font-mono text-[11.5px] text-neg bg-[oklch(0.97_0.03_25)] border border-[oklch(0.9_0.06_25)] rounded-[8px] px-3 py-[9px] animate-fadeIn">
+          {err}
+        </div>
+      )}
+      <div className="mt-[10px] text-[11px] text-faint text-center leading-[1.5]">
+        Sent to the project&apos;s Loop-custodial treasury · refundable until launch
+      </div>
     </div>
   );
 }

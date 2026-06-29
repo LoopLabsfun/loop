@@ -59,6 +59,13 @@ export interface Project {
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
   /**
+   * True for a WHITELISTED pre-launch draft synthesized into a Project (no
+   * `projects` row yet, no `mint`). The token page renders its existing
+   * pre-launch mode plus a "Back this launch" funding card; `treasuryWallet` is
+   * the pre-funding deposit wallet. Set only by the prelaunch synthesis path.
+   */
+  prelaunch?: boolean;
+  /**
    * uiAmount of the project's OWN token (`mint`) held by `treasuryWallet`, from a
    * live on-chain read — null/undefined until read. The treasury card surfaces it
    * as a separate line (its market value is illiquid/circular, so it's shown

@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./solana";
 import { withLiveMarket } from "./token-market";
+import { getPrelaunchProjectBySlug } from "./prelaunch-public";
 import { PROJECT_LIST, PROJECTS } from "./projects";
 import type { Launchpad, Project, ProjectKey } from "./types";
 
@@ -119,17 +120,30 @@ export async function getProjects(): Promise<Project[]> {
 
 /** A single project by key, with the same fallback behaviour. */
 export async function getProject(key: string): Promise<Project | null> {
-  if (!supabase) return PROJECTS[key as ProjectKey] ?? null;
+  if (!supabase) return PROJECTS[key as ProjectKey] ?? (await prelaunchFallback(key));
   const { data, error } = await supabase
     .from("projects")
     .select("*")
     .eq("key", key)
     .maybeSingle();
-  if (error || !data) return PROJECTS[key as ProjectKey] ?? null;
+  if (error || !data) return PROJECTS[key as ProjectKey] ?? (await prelaunchFallback(key));
   // Mirror getProjects: overlay live on-chain balances AND live market stats
   // (price/mcap). Without withLiveMarket the single-project path kept the stale
   // stored price (often 0), so the token page valued the treasury's token
   // holdings at $0. Both reads are best-effort + memoized.
   const [project] = await withLiveMarket(await withLiveBalances([rowToProject(data)]));
   return project;
+}
+
+/**
+ * Last resort for getProject: a key with no `projects` row and no static-registry
+ * entry may be a WHITELISTED pre-launch draft. Synthesize it (pre-launch Project)
+ * and overlay the live backing balance so the token page renders its pre-launch
+ * mode. Returns null when the key isn't a whitelisted draft either.
+ */
+async function prelaunchFallback(key: string): Promise<Project | null> {
+  const pre = await getPrelaunchProjectBySlug(key);
+  if (!pre) return null;
+  const [withBal] = await withLiveBalances([pre]);
+  return withBal;
 }
