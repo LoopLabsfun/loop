@@ -153,22 +153,25 @@ export function LaunchModal({
   return (
     <div
       onClick={() => step !== "deploying" && onClose()}
-      className="fixed inset-0 z-[100] bg-ink/45 backdrop-blur-[4px] flex items-center justify-center p-6"
+      className="fixed inset-0 z-[100] bg-ink/45 backdrop-blur-[4px] flex items-center justify-center p-4 sm:p-6"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-[480px] max-w-full bg-surface rounded-[20px] p-[30px] shadow-[0_24px_64px_-16px_rgba(22,19,26,0.3)] animate-fadeIn"
+        className="w-[480px] max-w-full bg-surface rounded-[20px] shadow-[0_24px_64px_-16px_rgba(22,19,26,0.3)] animate-fadeIn flex flex-col max-h-[calc(100dvh-32px)]"
       >
-        <div className="flex items-center justify-between mb-[22px]">
+        {/* Header is pinned; the body scrolls so a tall form never pushes the
+            submit button off-screen (mobile especially). */}
+        <div className="flex items-center justify-between flex-none px-[24px] sm:px-[30px] pt-[24px] pb-[16px]">
           <div className="font-display font-bold text-[19px]">{TITLES[step]}</div>
           <button
             onClick={onClose}
-            className="w-[30px] h-[30px] rounded-[8px] border border-line-3 bg-surface text-muted hover:border-line-hover transition-colors text-[14px] leading-none"
+            className="w-[30px] h-[30px] rounded-[8px] border border-line-3 bg-surface text-muted hover:border-line-hover transition-colors text-[14px] leading-none flex-none"
           >
             ✕
           </button>
         </div>
 
+        <div className="overflow-y-auto px-[24px] sm:px-[30px] pb-[26px]">
         {step === "form" && !launchesOpen() && (
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
@@ -482,6 +485,7 @@ export function LaunchModal({
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
