@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
-import { getPrelaunch } from "./waitlist";
+import { getPrelaunch, normalizeTicker, NAME_MAX, PROMPT_MAX, REPO_MAX } from "./waitlist";
+import { makeSplit } from "./fees";
 import { getSolBalance } from "./solana";
 import { createToken, launchpadConfigured, parseCluster, type CreateTokenResult } from "./launchpad";
 import { agentWalletConfigured, provisionAgentWallet, privySignAndSendSolanaTx } from "./agent-wallet";
@@ -282,6 +283,55 @@ export async function provisionProjectWallet(draftWallet: string): Promise<strin
   } catch {
     return null;
   }
+}
+
+export interface DraftFieldPatch {
+  name?: string | null;
+  ticker?: string | null;
+  prompt?: string | null;
+  repo?: string | null;
+  feeFounderPct?: number | null;
+}
+
+/**
+ * Edit a pre-launch draft's mutable fields, BEFORE it launches. Used by both the
+ * platform admin (any draft) and the creator (their own draft, via a signed re-edit).
+ * Only keys PRESENT are touched; status, payment sigs, wallets and images are never
+ * altered here. Refuses a draft that's already launched. Throws on no-op / error.
+ */
+export async function updatePrelaunchDraft(wallet: string, input: DraftFieldPatch): Promise<void> {
+  const sb = supabaseAdmin;
+  if (!sb) throw new Error("Supabase service role not configured.");
+  const patch: Record<string, unknown> = {};
+  if ("name" in input) {
+    const v = typeof input.name === "string" ? input.name.trim().slice(0, NAME_MAX) : "";
+    if (v) patch.name = v; // a draft needs a name — never blank it
+  }
+  if ("ticker" in input) {
+    const t = normalizeTicker(input.ticker);
+    if (t) patch.ticker = t;
+  }
+  if ("prompt" in input) {
+    const v = typeof input.prompt === "string" ? input.prompt.trim().slice(0, PROMPT_MAX) : "";
+    patch.prompt = v || null;
+  }
+  if ("repo" in input) {
+    const v = typeof input.repo === "string" ? input.repo.trim().slice(0, REPO_MAX) : "";
+    patch.repo = v || null;
+  }
+  if ("feeFounderPct" in input && input.feeFounderPct != null && Number.isFinite(Number(input.feeFounderPct))) {
+    patch.fee_founder_pct = makeSplit(Number(input.feeFounderPct)).founderPct;
+  }
+  if (!Object.keys(patch).length) throw new Error("No editable fields provided.");
+  patch.updated_at = new Date().toISOString();
+  const { data, error } = await sb
+    .from("launch_waitlist")
+    .update(patch)
+    .eq("wallet", wallet)
+    .neq("status", "launched")
+    .select("wallet");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("No editable draft for that wallet (or already launched).");
 }
 
 /**

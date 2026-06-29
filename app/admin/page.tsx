@@ -30,6 +30,49 @@ interface Funding {
   totalSol: number;
   backers: number;
 }
+// Editable subset of a pre-launch draft (mirrors DraftFieldPatch on the server).
+interface DraftFields {
+  name?: string;
+  ticker?: string;
+  prompt?: string;
+  repo?: string;
+  feeFounderPct?: number;
+}
+// A launched project as the platform-admin sees it (mirrors AdminProjectRow).
+interface AdminProject {
+  key: string;
+  name: string;
+  ticker: string;
+  description: string | null;
+  prompt: string | null;
+  repo: string | null;
+  cover: string | null;
+  guardrails: string | null;
+  contentPolicy: string | null;
+  feeFounderPct: number | null;
+  splitLabel: string;
+  official: boolean;
+  network: string | null;
+  mint: string | null;
+  creatorWallet: string | null;
+  treasuryWallet: string | null;
+  agentWallet: string | null;
+  agentPaused: boolean;
+  hasAgentKey: boolean;
+  treasurySol: number | null;
+  earnedSol: number | null;
+}
+// Editable subset of a launched project (mirrors ProjectFieldPatch on the server).
+interface ProjectFields {
+  name?: string;
+  description?: string;
+  prompt?: string;
+  repo?: string;
+  cover?: string;
+  guardrails?: string;
+  contentPolicy?: string;
+  feeFounderPct?: number;
+}
 interface Check {
   label: string;
   ok: boolean;
@@ -223,6 +266,10 @@ function Console({
       {/* Pre-launch curation — drafts from the waitlist, preflight + approve&mint. */}
       <PrelaunchPanel />
 
+      {/* Platform-admin control over EVERY launched project — fields, fee split,
+          per-project agent API key, pause/resume (third-party projects included). */}
+      <ProjectsPanel />
+
       {/* Status + controls */}
       <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -356,6 +403,7 @@ function PrelaunchPanel() {
   const [pf, setPf] = useState<Record<string, { ready: boolean; checks: Check[] }>>({});
   const [fund, setFund] = useState<Record<string, Funding>>({});
   const [result, setResult] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -402,6 +450,27 @@ function PrelaunchPanel() {
       setResult((m) => ({ ...m, [wallet]: `Synced · +${j.added} new · ${j.funding?.totalSol ?? 0} SOL raised` }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function editDraft(wallet: string, fields: DraftFields) {
+    setBusy(`${wallet}:edit`);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/prelaunch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet, action: "edit", fields }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "edit failed");
+      setResult((m) => ({ ...m, [wallet]: "Saved ✓" }));
+      setEditing(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "edit failed");
     } finally {
       setBusy(null);
     }
@@ -497,8 +566,20 @@ function PrelaunchPanel() {
 
                 {result[d.wallet] && <div className="text-[12px] text-pos font-mono mt-2">{result[d.wallet]}</div>}
 
+                {editing === d.wallet && (
+                  <DraftEditForm
+                    draft={d}
+                    busy={isBusy("edit")}
+                    onCancel={() => setEditing(null)}
+                    onSave={(fields) => editDraft(d.wallet, fields)}
+                  />
+                )}
+
                 {!launched ? (
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <Btn onClick={() => setEditing(editing === d.wallet ? null : d.wallet)} busy={false}>
+                      {editing === d.wallet ? "Close edit" : "Edit"}
+                    </Btn>
                     <Btn onClick={() => preflight(d.wallet)} busy={isBusy("preflight")}>Preflight</Btn>
                     <Btn onClick={() => act(d.wallet, "whitelist")} busy={isBusy("whitelist")}>Whitelist</Btn>
                     <Btn
@@ -544,6 +625,377 @@ function PrelaunchPanel() {
         </div>
       )}
     </Panel>
+  );
+}
+
+// ── Small labeled inputs, styled to match the console tokens ──────────────────
+function LInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+  type?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-[0.02em] text-faint">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`bg-surface-2 border border-line-3 rounded-[8px] px-2.5 h-[32px] text-[12.5px] text-ink outline-none focus:border-accent/60 transition-colors ${mono ? "font-mono" : ""}`}
+      />
+    </label>
+  );
+}
+
+function LArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 2,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-[0.02em] text-faint">{label}</span>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className="bg-surface-2 border border-line-3 rounded-[8px] px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent/60 transition-colors resize-y leading-[1.4]"
+      />
+    </label>
+  );
+}
+
+// ── Edit a pre-launch draft (admin, any draft — name/ticker/prompt/repo/fee) ──
+function DraftEditForm({
+  draft,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  draft: Draft;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (fields: DraftFields) => void;
+}) {
+  const [name, setName] = useState(draft.name ?? "");
+  const [ticker, setTicker] = useState(draft.ticker ?? "");
+  const [prompt, setPrompt] = useState(draft.prompt ?? "");
+  const [repo, setRepo] = useState(draft.repo ?? "");
+  const [fee, setFee] = useState(draft.feeFounderPct == null ? "" : String(draft.feeFounderPct));
+
+  function save() {
+    const fields: DraftFields = {
+      name: name.trim(),
+      ticker: ticker.trim(),
+      prompt,
+      repo,
+    };
+    const f = Number(fee);
+    if (fee.trim() !== "" && Number.isFinite(f)) fields.feeFounderPct = f;
+    onSave(fields);
+  }
+
+  return (
+    <div className="mt-2 border border-line-3 rounded-[10px] p-3 bg-surface-2/40 flex flex-col gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <LInput label="Name" value={name} onChange={setName} />
+        <LInput label="Ticker" value={ticker} onChange={(v) => setTicker(v.toUpperCase())} mono />
+      </div>
+      <LArea label="Prompt / mandate" value={prompt} onChange={setPrompt} rows={3} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <LInput label="Repo (github URL)" value={repo} onChange={setRepo} mono placeholder="https://github.com/…" />
+        <LInput label="Founder fee %" value={fee} onChange={setFee} type="number" mono placeholder="30" />
+      </div>
+      <div className="text-[11px] text-faint font-mono">
+        split → {splitOf(fee.trim() !== "" && Number.isFinite(Number(fee)) ? Number(fee) : draft.feeFounderPct)} (founder/agent/platform)
+      </div>
+      <div className="flex items-center gap-2">
+        <Btn onClick={save} busy={busy} danger={false}>Save</Btn>
+        <Btn onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Platform-admin control over EVERY launched project ────────────────────────
+function ProjectsPanel() {
+  const [projects, setProjects] = useState<AdminProject[] | null>(null);
+  const [secretsArmed, setSecretsArmed] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null); // `${key}:${action}`
+  const [editing, setEditing] = useState<string | null>(null);
+  const [keying, setKeying] = useState<string | null>(null);
+  const [result, setResult] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin/projects", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "load failed");
+      setProjects(j.projects);
+      setSecretsArmed(Boolean(j.secretsArmed));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "load failed");
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function post(key: string, body: Record<string, unknown>, tag: string, okMsg?: string) {
+    setBusy(`${key}:${tag}`);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, ...body }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${tag} failed`);
+      if (okMsg) setResult((m) => ({ ...m, [key]: okMsg }));
+      await load();
+      return true;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : `${tag} failed`);
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const n = projects?.length ?? 0;
+  return (
+    <Panel title={`Projects · ${n}`}>
+      {err && <div className="text-[12px] text-neg font-mono mb-2">{err}</div>}
+      {projects == null ? (
+        <Empty>Loading…</Empty>
+      ) : n === 0 ? (
+        <Empty>No launched projects yet.</Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {projects.map((p) => {
+            const isBusy = (a: string) => busy === `${p.key}:${a}`;
+            return (
+              <div key={p.key} className="border border-line-3 rounded-[10px] p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {p.cover && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.cover} alt="" className="w-7 h-7 rounded-full object-cover border border-line-3" />
+                  )}
+                  <span className="font-display font-semibold text-[14px]">{p.name}</span>
+                  <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>
+                  {p.official && (
+                    <span className="font-mono text-[10px] px-2 py-[2px] rounded-full bg-accent text-white">official</span>
+                  )}
+                  <span className="font-mono text-[10px] px-2 py-[2px] rounded-full bg-surface-2 text-muted">
+                    {p.network ?? "—"}
+                  </span>
+                  <span
+                    className={`font-mono text-[10px] px-2 py-[2px] rounded-full ${
+                      p.agentPaused ? "bg-neg/10 text-neg" : "bg-pos/10 text-pos"
+                    }`}
+                  >
+                    {p.agentPaused ? "paused" : "live"}
+                  </span>
+                  <a
+                    href={`/token?p=${p.key}`}
+                    className="font-mono text-[11px] text-faint ml-auto hover:text-accent-text hover:underline"
+                  >
+                    {p.key} →
+                  </a>
+                </div>
+
+                <div className="text-[11.5px] text-faint font-mono mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  <span>split {p.splitLabel}</span>
+                  {p.mint && <span>mint {shortAddr(p.mint)}</span>}
+                  {p.treasurySol != null && <span>treasury {p.treasurySol.toFixed(3)} SOL</span>}
+                  <span className={p.hasAgentKey ? "text-pos" : "text-faint"}>
+                    {p.hasAgentKey ? "BYO key ✓" : "default key"}
+                  </span>
+                </div>
+                {p.description && <div className="text-[12px] text-muted mt-1">{p.description}</div>}
+
+                {result[p.key] && <div className="text-[12px] text-pos font-mono mt-2">{result[p.key]}</div>}
+
+                {editing === p.key && (
+                  <ProjectEditForm
+                    project={p}
+                    busy={isBusy("edit")}
+                    onCancel={() => setEditing(null)}
+                    onSave={async (fields) => {
+                      const ok = await post(p.key, { action: "edit", fields }, "edit", "Saved ✓");
+                      if (ok) setEditing(null);
+                    }}
+                  />
+                )}
+
+                {keying === p.key && (
+                  <KeyForm
+                    armed={secretsArmed}
+                    hasKey={p.hasAgentKey}
+                    busy={isBusy("set-key")}
+                    onCancel={() => setKeying(null)}
+                    onSave={async (anthropicKey) => {
+                      const ok = await post(p.key, { action: "set-key", anthropicKey }, "set-key", "Agent key stored ✓");
+                      if (ok) setKeying(null);
+                    }}
+                  />
+                )}
+
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <Btn onClick={() => setEditing(editing === p.key ? null : p.key)}>
+                    {editing === p.key ? "Close edit" : "Edit"}
+                  </Btn>
+                  <Btn onClick={() => setKeying(keying === p.key ? null : p.key)}>
+                    {keying === p.key ? "Close key" : p.hasAgentKey ? "Replace API key" : "Set API key"}
+                  </Btn>
+                  {p.agentPaused ? (
+                    <Btn onClick={() => post(p.key, { action: "resume" }, "resume", "Resumed ✓")} busy={isBusy("resume")}>
+                      Resume agent
+                    </Btn>
+                  ) : (
+                    <Btn onClick={() => post(p.key, { action: "pause" }, "pause", "Paused ✓")} busy={isBusy("pause")}>
+                      Pause agent
+                    </Btn>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ── Edit a launched project's mutable fields (admin, any project) ─────────────
+function ProjectEditForm({
+  project,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  project: AdminProject;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (fields: ProjectFields) => void;
+}) {
+  const [name, setName] = useState(project.name ?? "");
+  const [description, setDescription] = useState(project.description ?? "");
+  const [prompt, setPrompt] = useState(project.prompt ?? "");
+  const [repo, setRepo] = useState(project.repo ?? "");
+  const [cover, setCover] = useState(project.cover ?? "");
+  const [guardrails, setGuardrails] = useState(project.guardrails ?? "");
+  const [contentPolicy, setContentPolicy] = useState(project.contentPolicy ?? "");
+  const [fee, setFee] = useState(project.feeFounderPct == null ? "" : String(project.feeFounderPct));
+
+  function save() {
+    const fields: ProjectFields = {
+      name: name.trim(),
+      description,
+      prompt,
+      repo,
+      cover,
+      guardrails,
+      contentPolicy,
+    };
+    const f = Number(fee);
+    if (fee.trim() !== "" && Number.isFinite(f)) fields.feeFounderPct = f;
+    onSave(fields);
+  }
+
+  return (
+    <div className="mt-2 border border-line-3 rounded-[10px] p-3 bg-surface-2/40 flex flex-col gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <LInput label="Name" value={name} onChange={setName} />
+        <LInput label="Founder fee %" value={fee} onChange={setFee} type="number" mono placeholder="30" />
+      </div>
+      <LArea label="Description" value={description} onChange={setDescription} rows={2} />
+      <LArea label="Prompt / mandate" value={prompt} onChange={setPrompt} rows={3} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <LInput label="Repo (github URL)" value={repo} onChange={setRepo} mono placeholder="https://github.com/…" />
+        <LInput label="Cover (image URL)" value={cover} onChange={setCover} mono />
+      </div>
+      <LArea label="Guardrails" value={guardrails} onChange={setGuardrails} rows={2} />
+      <LArea label="Content policy" value={contentPolicy} onChange={setContentPolicy} rows={2} />
+      <div className="text-[11px] text-faint font-mono">
+        split → {splitOf(fee.trim() !== "" && Number.isFinite(Number(fee)) ? Number(fee) : project.feeFounderPct)} (founder/agent/platform)
+      </div>
+      <div className="flex items-center gap-2">
+        <Btn onClick={save} busy={busy}>Save</Btn>
+        <Btn onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Set a project's BYO Anthropic key (write-only; stored encrypted) ──────────
+function KeyForm({
+  armed,
+  hasKey,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  armed: boolean;
+  hasKey: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (key: string) => void;
+}) {
+  const [k, setK] = useState("");
+  return (
+    <div className="mt-2 border border-line-3 rounded-[10px] p-3 bg-surface-2/40 flex flex-col gap-2.5">
+      {!armed ? (
+        <div className="text-[12px] text-neg font-mono">
+          Per-project key store is off — set PROJECT_SECRETS_KEY (32-byte master key) to enable BYO keys.
+        </div>
+      ) : (
+        <>
+          <LInput
+            label={hasKey ? "Replace Anthropic key (sk-ant-…)" : "Anthropic key (sk-ant-…)"}
+            value={k}
+            onChange={setK}
+            mono
+            type="password"
+            placeholder="sk-ant-…"
+          />
+          <div className="text-[11px] text-faint font-mono">
+            Encrypted at rest (AES-256-GCM) · write-only · billed to this project, not Loop.
+          </div>
+          <div className="flex items-center gap-2">
+            <Btn onClick={() => onSave(k)} busy={busy}>Store key</Btn>
+            <Btn onClick={onCancel}>Cancel</Btn>
+          </div>
+        </>
+      )}
+      {!armed && (
+        <div className="flex">
+          <Btn onClick={onCancel}>Close</Btn>
+        </div>
+      )}
+    </div>
   );
 }
 
