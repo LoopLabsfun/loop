@@ -80,7 +80,7 @@ export function sdkSessionConfig(
   const num = (v: string | undefined, d: number) =>
     Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d;
   return {
-    model: env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-4-6",
+    model: env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-5",
     maxTurns: Math.min(num(env.AGENT_SDK_MAX_TURNS, 40), 100),
     wallMs: num(env.AGENT_SDK_WALL_MS, 600_000),
     timeoutMs: num(env.AGENT_SDK_TIMEOUT_MS, 1_000_000),

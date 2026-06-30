@@ -45,7 +45,7 @@ describe("buildPathReadiness", () => {
 describe("sdkSessionConfig", () => {
   it("uses generous durable defaults (not the 300s-squeezed inline ones)", () => {
     const c = sdkSessionConfig({});
-    expect(c.model).toBe("claude-sonnet-4-6");
+    expect(c.model).toBe("claude-sonnet-5");
     expect(c.maxTurns).toBe(40);
     expect(c.wallMs).toBe(600_000);
     expect(c.timeoutMs).toBe(1_000_000);

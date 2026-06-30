@@ -42,12 +42,13 @@ import {
 
 // The decision/read-loop model — the agent's "brain" that reads the code and
 // picks the next task. This runs several times per tick (once per read round), so
-// it dominates the per-tick cost. Default Sonnet 4.6: it decides just as well for
-// far less money (Opus was ~5× the price and the single biggest cost driver).
-// Override with AGENT_DECISION_MODEL (e.g. back to claude-opus-4-8) when sharper
-// judgement is worth the spend.
+// it dominates the per-tick cost. Default Sonnet 5: near-Opus judgement on
+// coding/agentic work at Sonnet pricing (Opus was ~1.7x the price for less
+// agentic capability gain than the generation jump bought). Override with
+// AGENT_DECISION_MODEL (e.g. back to claude-opus-4-8) when sharper judgement is
+// worth the spend.
 const AGENT_MODEL =
-  process.env.AGENT_DECISION_MODEL?.trim() || "claude-sonnet-4-6";
+  process.env.AGENT_DECISION_MODEL?.trim() || "claude-sonnet-5";
 
 /**
  * How deep the agent may EXPLORE the codebase before it acts (the "read loop").
@@ -111,7 +112,7 @@ export function sdkHandsConfig(env: Record<string, string | undefined> = process
   const timeoutMs = Math.min(num(env.AGENT_SDK_TIMEOUT_MS, 260_000), 285_000);
   return {
     enabled: env.AGENT_SDK_HANDS === "1",
-    model: env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-4-6", // cheap default; iteration compensates
+    model: env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-5", // cheap default; iteration compensates
     maxTurns: Math.min(num(env.AGENT_SDK_MAX_TURNS, 24), 60),
     wallMs: num(env.AGENT_SDK_WALL_MS, 150_000),
     timeoutMs,
