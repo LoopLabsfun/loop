@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Dust floor: a contribution below this is ignored (rent/fee noise, not a vote). */
-export const MIN_CONTRIBUTION_SOL = 0.01;
+export const MIN_CONTRIBUTION_SOL = 0.001;
 
 export interface Contribution {
   contributorWallet: string;
