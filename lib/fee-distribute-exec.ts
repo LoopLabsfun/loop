@@ -41,15 +41,93 @@ export interface DistributeOutcome {
 const num = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) ? v : 0;
 
+export interface DistributionPlanView {
+  ok: boolean;
+  transfers: FeeTransfer[];
+  skipped: string[];
+  /** Claimable per role (earned − claimed), the bound on what can be sent. */
+  claimable: { founderSol: number; agentSol: number; platformSol: number };
+  sourceWallet?: string;
+  note?: string;
+}
+
+/**
+ * Read-only: the distribution plan for a project (no signing, no env arm gate).
+ * Powers the cockpit preview — re-reads the ledger + wallets and computes the
+ * pure planFeeDistribution. Never moves funds.
+ */
+export async function previewFeeDistribution(
+  projectKey = "loop"
+): Promise<DistributionPlanView> {
+  const empty = { founderSol: 0, agentSol: 0, platformSol: 0 };
+  if (!supabaseAdmin) {
+    return { ok: false, transfers: [], skipped: [], claimable: empty, note: "no service-role client" };
+  }
+  const { data: proj } = await supabaseAdmin
+    .from("projects")
+    .select("treasury_wallet, creator_wallet, agent_wallet, fee_creator_wallet")
+    .eq("key", projectKey)
+    .maybeSingle();
+  if (!proj) {
+    return { ok: false, transfers: [], skipped: [], claimable: empty, note: `project ${projectKey} not found` };
+  }
+  const p = proj as {
+    treasury_wallet?: string;
+    creator_wallet?: string;
+    agent_wallet?: string;
+    fee_creator_wallet?: string;
+  };
+  const sourceWallet = p.fee_creator_wallet ?? p.treasury_wallet ?? p.creator_wallet;
+
+  const { data: ledger } = await supabaseAdmin
+    .from("fee_ledger")
+    .select("*")
+    .eq("project_key", projectKey)
+    .maybeSingle();
+  const lrow = ledger as Record<string, unknown> | null;
+  const claimable = {
+    founderSol: num(lrow?.earned_founder_sol) - num(lrow?.claimed_founder_sol),
+    agentSol: num(lrow?.earned_agent_sol) - num(lrow?.claimed_agent_sol),
+    platformSol: num(lrow?.earned_platform_sol) - num(lrow?.claimed_platform_sol),
+  };
+  const minTransferSol = (() => {
+    const n = Number(process.env.FEE_MIN_TRANSFER_SOL);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  })();
+  const plan = planFeeDistribution({
+    claimableFounderSol: claimable.founderSol,
+    claimableAgentSol: claimable.agentSol,
+    claimablePlatformSol: claimable.platformSol,
+    founderWallet: p.creator_wallet,
+    agentWallet: p.agent_wallet,
+    platformWallet: process.env.PLATFORM_WALLET,
+    sourceWallet,
+    minTransferSol,
+  });
+  return {
+    ok: true,
+    transfers: plan.transfers as FeeTransfer[],
+    skipped: plan.skipped,
+    claimable,
+    sourceWallet,
+  };
+}
+
 /**
  * Distribute a project's accrued agent + platform fee shares on-chain. No-op
  * (note explains why) when disarmed, unconfigured, or nothing is claimable.
  * Never throws — the cron treats this as best-effort.
+ *
+ * `force` bypasses the FEE_DISTRIBUTE env arm gate — used ONLY by the founder-
+ * confirmed cockpit path (a manual, signed, one-shot distribute). The autonomous
+ * cron still requires the env gate. The signer==source safety BOLT and the
+ * ledger-bounded amounts apply either way.
  */
 export async function executeFeeDistribution(
-  projectKey = "loop"
+  projectKey = "loop",
+  opts: { force?: boolean } = {}
 ): Promise<DistributeOutcome> {
-  if (!feeDistributeArmed()) {
+  if (!opts.force && !feeDistributeArmed()) {
     return { ok: false, sent: [], skipped: [], note: "disarmed (set FEE_DISTRIBUTE=1)" };
   }
   if (!supabaseAdmin) {
