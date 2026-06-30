@@ -64,14 +64,22 @@ export async function executeFeeDistribution(
   try {
     const { data: proj } = await supabaseAdmin
       .from("projects")
-      .select("treasury_wallet, creator_wallet, agent_wallet")
+      .select("treasury_wallet, creator_wallet, agent_wallet, fee_creator_wallet")
       .eq("key", projectKey)
       .maybeSingle();
     if (!proj) return { ok: false, sent: [], skipped: [], note: `project ${projectKey} not found` };
-    const treasuryWallet =
-      (proj as { treasury_wallet?: string; creator_wallet?: string }).treasury_wallet ??
-      (proj as { creator_wallet?: string }).creator_wallet;
-    const agentWallet = (proj as { agent_wallet?: string }).agent_wallet;
+    const p = proj as {
+      treasury_wallet?: string;
+      creator_wallet?: string;
+      agent_wallet?: string;
+      fee_creator_wallet?: string;
+    };
+    // SOURCE = the wallet the creator fees were actually claimed into (the
+    // on-chain pump.fun creator). Falls back to treasury/creator for legacy rows
+    // where creator == treasury == founder (LOOP).
+    const sourceWallet = p.fee_creator_wallet ?? p.treasury_wallet ?? p.creator_wallet;
+    const founderWallet = p.creator_wallet; // founder share destination
+    const agentWallet = p.agent_wallet;
     const platformWallet = process.env.PLATFORM_WALLET;
 
     const { data: ledger } = await supabaseAdmin
@@ -80,6 +88,7 @@ export async function executeFeeDistribution(
       .eq("project_key", projectKey)
       .maybeSingle();
     const lrow = ledger as Record<string, unknown> | null;
+    const claimableFounderSol = num(lrow?.earned_founder_sol) - num(lrow?.claimed_founder_sol);
     const claimableAgentSol = num(lrow?.earned_agent_sol) - num(lrow?.claimed_agent_sol);
     const claimablePlatformSol = num(lrow?.earned_platform_sol) - num(lrow?.claimed_platform_sol);
 
@@ -88,10 +97,16 @@ export async function executeFeeDistribution(
       return Number.isFinite(n) && n > 0 ? n : undefined;
     })();
     const plan = planFeeDistribution({
+      claimableFounderSol,
       claimableAgentSol,
       claimablePlatformSol,
+      founderWallet,
       agentWallet,
       platformWallet,
+      // Any share whose destination IS the source wallet stays in place (e.g.
+      // LOOP's founder share: creator == fee source). The agent/founder shares
+      // for shared-signer projects DO move out, since their wallets differ.
+      sourceWallet,
       minTransferSol,
     });
     if (!plan.transfers.length) {
@@ -106,13 +121,15 @@ export async function executeFeeDistribution(
       await import("@solana/web3.js");
     const signer = Keypair.fromSecretKey(Uint8Array.from(secret));
 
-    // SAFETY BOLT: only ever send from the project's own treasury/creator wallet.
-    if (treasuryWallet && signer.publicKey.toBase58() !== treasuryWallet) {
+    // SAFETY BOLT: only ever send from the wallet the fees were claimed into (the
+    // pump.fun creator / source). The signer MUST equal it — never disburse from
+    // any other wallet.
+    if (sourceWallet && signer.publicKey.toBase58() !== sourceWallet) {
       return {
         ok: false,
         sent: [],
         skipped: plan.skipped,
-        note: `signer ${signer.publicKey.toBase58()} != treasury ${treasuryWallet} — aborted`,
+        note: `signer ${signer.publicKey.toBase58()} != fee source ${sourceWallet} — aborted`,
       };
     }
 
@@ -177,7 +194,12 @@ export async function executeFeeDistribution(
         );
         // Record as "claimed" so it's never sent twice, even if a later transfer
         // in this loop fails or the cron is interrupted.
-        const col = t.role === "agent" ? "claimed_agent_sol" : "claimed_platform_sol";
+        const col =
+          t.role === "founder"
+            ? "claimed_founder_sol"
+            : t.role === "agent"
+              ? "claimed_agent_sol"
+              : "claimed_platform_sol";
         const prev = num(lrow?.[col]);
         await supabaseAdmin
           .from("fee_ledger")

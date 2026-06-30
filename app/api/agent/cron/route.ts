@@ -245,41 +245,59 @@ export async function GET(req: Request) {
         txSig?: string;
         claimedSol?: number;
         skipped?: boolean;
+        signerPubkey?: string;
         error?: string;
       }
     | undefined;
+  // Projects that share the wallet this claim swept (one collectCreatorFee sweeps
+  // every token of the signer in a single lump), so we can attribute it back per
+  // project. Set after a successful claim; reused by the distribution pass below.
+  let feeGroupKeys: string[] = [];
   if (process.env.AGENT_CLAIM_FEES === "1") {
     try {
       const { collectCreatorFees } = await import("@/lib/creator-fees");
       feeClaim = await collectCreatorFees("mainnet");
-      // Record real claimed fees as cumulative "earned" (LOOP-only phase: the
-      // claim sweeps the creator==treasury wallet, so it's LOOP's revenue).
-      if (feeClaim.ok && feeClaim.claimedSol && feeClaim.claimedSol > 0) {
+      // Record real claimed fees as cumulative "earned". The claim sweeps EVERY
+      // token of the signer wallet into one lump, so attribute it across the group
+      // of projects sharing that fee-source wallet (weighted by recent volume),
+      // then split each project's slice 30/65/5 into its own ledger.
+      if (feeClaim.ok && feeClaim.claimedSol && feeClaim.claimedSol > 0 && feeClaim.signerPubkey) {
         const { addEarnedSol } = await import("@/lib/agent-data");
-        await addEarnedSol("loop", feeClaim.claimedSol);
-        // Persist the 30/65/5 split into fee_ledger so the per-role accounting is
-        // REAL (not just displayed): each claim splits into founder/agent/platform
-        // earned totals, and the UI's founder-claimable reads from this. Pure
-        // accounting — no SOL moved here (physical distribution is a separate,
-        // founder-armed step). Best-effort: a ledger write must never abort cron.
-        try {
-          const { splitForProject } = await import("@/lib/fees");
-          const { recordSweepToLedger } = await import("@/lib/fee-ledger-store");
-          const loopProject = all.find((p) => p.key === "loop");
-          const split = splitForProject(loopProject ?? {});
-          const ledger = await recordSweepToLedger("loop", feeClaim.claimedSol, split);
-          console.log(
-            `[fee-ledger] ${JSON.stringify({
-              key: "loop",
-              swept: feeClaim.claimedSol,
-              split: `${split.founderPct}/${split.agentPct}/${split.platformPct}`,
-              earned: ledger.earned,
-            })}`
-          );
-        } catch (e) {
-          console.error(
-            `[fee-ledger] ${JSON.stringify({ key: "loop", error: e instanceof Error ? e.message : "ledger write failed" })}`
-          );
+        const { splitForProject } = await import("@/lib/fees");
+        const { recordSweepToLedger } = await import("@/lib/fee-ledger-store");
+        const { attributeClaim, volumeWeight } = await import("@/lib/fee-attribution");
+
+        // The group = projects whose on-chain fee-source IS this signer. Fall back
+        // to LOOP alone if no row carries fee_creator_wallet yet (legacy).
+        const group = all.filter((p) => p.feeCreatorWallet === feeClaim!.signerPubkey);
+        const effective = group.length ? group : all.filter((p) => p.key === "loop");
+        feeGroupKeys = effective.map((p) => p.key);
+
+        const shares = attributeClaim(
+          feeClaim.claimedSol,
+          effective.map((p) => ({ key: p.key, weight: volumeWeight(p.volume24h) }))
+        );
+        for (const { key, sol } of shares) {
+          if (sol <= 0) continue;
+          try {
+            await addEarnedSol(key, sol);
+            const project = effective.find((p) => p.key === key);
+            const split = splitForProject(project ?? {});
+            const ledger = await recordSweepToLedger(key, sol, split);
+            console.log(
+              `[fee-ledger] ${JSON.stringify({
+                key,
+                swept: sol,
+                ofLump: feeClaim.claimedSol,
+                split: `${split.founderPct}/${split.agentPct}/${split.platformPct}`,
+                earned: ledger.earned,
+              })}`
+            );
+          } catch (e) {
+            console.error(
+              `[fee-ledger] ${JSON.stringify({ key, error: e instanceof Error ? e.message : "ledger write failed" })}`
+            );
+          }
         }
       }
     } catch (e) {
@@ -294,20 +312,28 @@ export async function GET(req: Request) {
   // in the treasury. Failure-safe: never affects the response.
   let feeDistribution: { sent: number; total: number; note: string } | undefined;
   if (process.env.FEE_DISTRIBUTE === "1") {
-    try {
-      const { executeFeeDistribution } = await import("@/lib/fee-distribute-exec");
-      const r = await executeFeeDistribution("loop");
-      feeDistribution = {
-        sent: r.sent.length,
-        total: r.sent.reduce((s, x) => s + x.sol, 0),
-        note: r.note,
-      };
-      if (r.sent.length || r.skipped.length) {
-        console.log(`[fee-distribute] ${JSON.stringify({ key: "loop", ...feeDistribution, skipped: r.skipped })}`);
+    // Distribute for every project in the swept group (those sharing this claim's
+    // fee source — the only wallets the signer can disburse from). Falls back to
+    // LOOP when no claim ran this tick. Each call is bounded + safety-bolted.
+    const distributeKeys = feeGroupKeys.length ? feeGroupKeys : ["loop"];
+    const { executeFeeDistribution } = await import("@/lib/fee-distribute-exec");
+    let sent = 0;
+    let total = 0;
+    for (const key of distributeKeys) {
+      try {
+        const r = await executeFeeDistribution(key);
+        sent += r.sent.length;
+        total += r.sent.reduce((s, x) => s + x.sol, 0);
+        if (r.sent.length || r.skipped.length) {
+          console.log(
+            `[fee-distribute] ${JSON.stringify({ key, sent: r.sent.length, total: r.sent.reduce((s, x) => s + x.sol, 0), note: r.note, skipped: r.skipped })}`
+          );
+        }
+      } catch (e) {
+        console.error(`[fee-distribute] ${JSON.stringify({ key, error: e instanceof Error ? e.message : "distribute failed" })}`);
       }
-    } catch (e) {
-      console.error(`[fee-distribute] ${JSON.stringify({ key: "loop", error: e instanceof Error ? e.message : "distribute failed" })}`);
     }
+    feeDistribution = { sent, total, note: `distributed across ${distributeKeys.length} project(s)` };
   }
 
   return NextResponse.json(

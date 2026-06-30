@@ -42,8 +42,15 @@ export interface Project {
   treasuryWallet?: string | null;
   mint?: string | null;
   network?: Network;
-  /** Verified launcher pubkey (Founder); enables founder-mode in the console. */
+  /** Verified launcher pubkey (Founder); enables founder-mode in the console.
+   *  Also the destination for the founder share of creator fees. */
   creatorWallet?: string | null;
+  /** On-chain pump.fun creator — the wallet creator fees actually accrue to / are
+   *  claimed FROM. Distinct from `creatorWallet` (founder payout). Several
+   *  projects can share one (shared launch signer); the claimed lump is then
+   *  attributed across them off-chain (lib/fee-attribution.ts). Null ⇒ fall back
+   *  to `treasuryWallet`/`creatorWallet`. */
+  feeCreatorWallet?: string | null;
   /** DB-backed kill switch the founder toggles from the admin console — the cron
    *  no-ops the brain when true (a runtime-mutable counterpart to AGENT_PAUSED). */
   agentPaused?: boolean;

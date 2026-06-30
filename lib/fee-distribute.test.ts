@@ -75,4 +75,48 @@ describe("planFeeDistribution", () => {
     expect(plan.transfers).toHaveLength(0);
     expect(plan.totalSol).toBe(0);
   });
+
+  // ── shared-signer projects: founder leg + source-aware skip ────────────────
+  const FOUNDER = "EjY8st6VyzRdKVLDfc4J5C3dQ6wNjzr6rAtkYMXuR7Kz";
+  const SOURCE = "7kyekHMcBuyMTz7xobZimbSrxNKJhJTZzWApri2tcmm9"; // shared launch signer
+  const PLATFORM_SINK = "So11111111111111111111111111111111111111112";
+
+  it("transfers the founder share when its wallet differs from the source", () => {
+    const plan = planFeeDistribution({
+      claimableFounderSol: 0.3,
+      claimableAgentSol: 0.65,
+      claimablePlatformSol: 0.05,
+      founderWallet: FOUNDER,
+      agentWallet: AGENT,
+      platformWallet: PLATFORM_SINK,
+      sourceWallet: SOURCE,
+    });
+    expect(plan.transfers.map((t) => t.role)).toEqual(["founder", "agent", "platform"]);
+    expect(plan.transfers[0]).toEqual({ role: "founder", to: FOUNDER, sol: 0.3 });
+  });
+
+  it("leaves a share in place when its destination IS the source wallet (LOOP founder)", () => {
+    const plan = planFeeDistribution({
+      claimableFounderSol: 0.3,
+      claimableAgentSol: 0.65,
+      claimablePlatformSol: 0.05,
+      founderWallet: SOURCE, // LOOP: founder == creator == fee source
+      agentWallet: AGENT,
+      platformWallet: PLATFORM_SINK,
+      sourceWallet: SOURCE,
+    });
+    expect(plan.transfers.some((t) => t.role === "founder")).toBe(false);
+    expect(plan.skipped.join(" ")).toMatch(/founder: destination is the source/);
+    expect(plan.transfers.map((t) => t.role)).toEqual(["agent", "platform"]);
+  });
+
+  it("omitting founder args keeps legacy agent+platform behaviour", () => {
+    const plan = planFeeDistribution({
+      claimableAgentSol: 0.65,
+      claimablePlatformSol: 0.05,
+      agentWallet: AGENT,
+      platformWallet: PLATFORM_SINK,
+    });
+    expect(plan.transfers.map((t) => t.role)).toEqual(["agent", "platform"]);
+  });
 });
