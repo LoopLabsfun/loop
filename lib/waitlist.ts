@@ -233,33 +233,30 @@ export async function joinWaitlist(
     updated_at: new Date().toISOString(),
   };
 
-  // Update-or-insert keyed by wallet (the unique index is partial, so we can't
-  // rely on supabase-js upsert inference) — re-submitting refines the draft.
-  const { data: existing } = await sb
+  // Update-or-insert keyed by the wallet's ACTIVE row only (draft/whitelisted) —
+  // a partial unique index enforces at most one active row per wallet, so
+  // .maybeSingle() is safe. A wallet that has already LAUNCHED (or been
+  // rejected) has no active row, so it falls through to a fresh INSERT below: a
+  // launched founder can pitch a second, distinct project instead of being
+  // permanently locked out after their first. Scoping the lookup to the active
+  // row (not "any row for this wallet") is also what stops the corruption bug
+  // this replaces — a resubmit can never again touch an already-launched row's
+  // content, because that row simply won't match.
+  const { data: active } = await sb
     .from("launch_waitlist")
     .select("id, status")
     .eq("wallet", wallet)
+    .in("status", ["draft", "whitelisted"])
     .maybeSingle();
-  const already = Boolean(existing);
+  const already = Boolean(active);
+  const activeId = (active as { id?: number } | null)?.id;
 
-  // Once a wallet's draft has moved past `draft` (whitelisted/launched/rejected),
-  // the update path below only touches the DRAFT fields (name/ticker/prompt/
-  // images) — never `status`/`project_key` — so a wallet resubmitting after its
-  // project already launched would silently overwrite that launched project's
-  // historical pitch with new, unrelated content while leaving status="launched"
-  // and project_key pointing at the real project (observed: a launched founder's
-  // wallet resubmitted a totally different idea, corrupting the launched row's
-  // displayed name/ticker/prompt). Refuse instead — one wallet gets one pre-
-  // launch slot, and it's locked once it leaves `draft`.
-  const existingStatus = (existing as { status?: string } | null)?.status;
-  if (existingStatus && existingStatus !== "draft") {
-    return {
-      ok: false,
-      error:
-        existingStatus === "launched"
-          ? "This wallet already launched a project — pre-launch drafting is closed for it."
-          : "This wallet's draft is already in review — it can no longer be edited here.",
-    };
+  // Within the active row, only `draft` is self-service editable here — once
+  // whitelisted, the admin already approved this exact pitch, and further edits
+  // go through the admin-mediated updatePrelaunchDraft, not this public route.
+  const activeStatus = (active as { status?: string } | null)?.status;
+  if (activeStatus === "whitelisted") {
+    return { ok: false, error: "This wallet's draft is already in review — it can no longer be edited here." };
   }
 
   // Entry gate: the FIRST submit pays the toll (SOL fee + 1M $LOOP to the platform),
@@ -290,9 +287,12 @@ export async function joinWaitlist(
     }
   }
 
+  // Scoped by id (not wallet) — a wallet can now have past terminal rows
+  // alongside the current active one, and an unscoped `.eq("wallet", wallet)`
+  // update would touch ALL of them, re-corrupting an already-launched row.
   const write = (r: Record<string, unknown>) =>
-    already
-      ? sb.from("launch_waitlist").update(r).eq("wallet", wallet)
+    activeId != null
+      ? sb.from("launch_waitlist").update(r).eq("id", activeId)
       : sb.from("launch_waitlist").insert(r);
 
   let { error: dbErr } = await write({ ...draftRow, ...gateSigs });
@@ -307,6 +307,10 @@ export async function joinWaitlist(
       const blob = `${dbErr.message} ${(dbErr as { details?: string }).details ?? ""}`;
       if (/gate_(fee|loop)_sig/.test(blob)) {
         return { ok: false, error: "That payment was already used for another request." };
+      }
+      if (/wallet/i.test(blob)) {
+        // Race: two concurrent submits both saw "no active row" for this wallet.
+        return { ok: false, error: "This wallet already has a draft in progress — refresh and try again." };
       }
       return { ok: false, error: "That email is already on the list." };
     }

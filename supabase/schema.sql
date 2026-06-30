@@ -182,7 +182,18 @@ alter table public.launch_waitlist add column if not exists project_wallet_id te
 alter table public.launch_waitlist add column if not exists gate_fee_sig text;
 alter table public.launch_waitlist add column if not exists gate_loop_sig text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
-create unique index if not exists launch_waitlist_wallet_key on public.launch_waitlist (wallet) where wallet is not null;
+-- Active-only uniqueness (2026-06-30): a wallet may hold at most one ACTIVE
+-- (draft/whitelisted) row at a time, but past terminal rows (launched/rejected)
+-- never block a later, distinct pitch — a wallet that already launched one
+-- project can still submit a second. A blanket per-wallet-forever unique index
+-- previously meant a wallet could pass through pre-launch exactly once, ever;
+-- combined with joinWaitlist's update-by-wallet path, a launched founder
+-- resubmitting a new idea silently overwrote their already-launched row's
+-- content (name/ticker/prompt) while status/project_key stayed stale.
+drop index if exists public.launch_waitlist_wallet_key;
+create unique index if not exists launch_waitlist_active_wallet_key
+  on public.launch_waitlist (wallet)
+  where wallet is not null and status in ('draft', 'whitelisted');
 create unique index if not exists launch_waitlist_gate_fee_sig_key on public.launch_waitlist (gate_fee_sig) where gate_fee_sig is not null;
 create unique index if not exists launch_waitlist_gate_loop_sig_key on public.launch_waitlist (gate_loop_sig) where gate_loop_sig is not null;
 create unique index if not exists launch_waitlist_email_key on public.launch_waitlist (lower(email)) where email is not null;
