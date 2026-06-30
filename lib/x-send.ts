@@ -83,6 +83,38 @@ export async function sendTweet(
 }
 
 /**
+ * Delete a tweet by id (DELETE /2/tweets/:id), same OAuth1 user context as
+ * sendTweet. Returns a result rather than throwing. Used to tidy up a thread the
+ * runtime/operator wants to repost cleanly. No-op (skipped) when unconfigured.
+ */
+export async function deleteTweet(id: string): Promise<TweetResult> {
+  if (!isXConfigured()) return { ok: false, skipped: true };
+  const creds: OAuth1Creds = {
+    consumerKey: process.env.X_API_KEY!,
+    consumerSecret: process.env.X_API_SECRET!,
+    token: process.env.X_ACCESS_TOKEN!,
+    tokenSecret: process.env.X_ACCESS_SECRET!,
+  };
+  const url = `${TWEET_URL}/${id}`;
+  try {
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { Authorization: oauth1Header("DELETE", url, creds) },
+      cache: "no-store",
+    });
+    const json = (await res.json().catch(() => null)) as {
+      data?: { deleted?: boolean };
+      detail?: string;
+      title?: string;
+    } | null;
+    if (res.ok && json?.data?.deleted) return { ok: true, id };
+    return { ok: false, error: json?.detail || json?.title || `HTTP ${res.status}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}
+
+/**
  * Verify the configured X credentials by calling GET /2/users/me. Returns the
  * HTTP status (200 = valid) or null when unconfigured — diagnostics only, never
  * exposes the keys. Distinguishes "wrong/truncated creds" (401/403) from a
