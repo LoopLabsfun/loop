@@ -345,15 +345,19 @@ export async function provisionDraftHome(
   const { provisionProjectHome } = await import("./provisioning-exec");
   const home = await provisionProjectHome(key, r.prompt ?? r.name);
   const plan = provisionPlan(key);
-  // Only record a URL/repo that's actually real. A created-but-undeployed Vercel
-  // project serves nothing at its alias — linking the repo doesn't itself trigger
-  // a build, only a fresh push does — so home_vercel_url is gated on the first
-  // deploy actually firing, not just the project existing. Otherwise this would
-  // go straight into the pump.fun website link as a dead/empty site for traders.
+  // Only record a URL/repo that's actually real. `plan.vercelUrl` is just a guess
+  // (`<name>.vercel.app` lives in a global namespace and is essentially always
+  // already taken by someone else — Vercel assigns a randomized alias instead);
+  // `home.vercelUrl` is the REAL one resolved after the first deploy went READY.
+  // A created-but-undeployed Vercel project also serves nothing — linking the
+  // repo doesn't itself trigger a build, only a fresh push does — so this is
+  // gated on the first deploy actually firing, not just the project existing.
+  // Either way, a wrong/dead URL would go straight into the pump.fun website
+  // link for traders.
   if (home.repoOk || home.vercelOk) {
     const patch: Record<string, unknown> = { home_provisioned_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     if (home.repoOk) patch.home_repo = plan.repo;
-    if (home.vercelOk && home.deployOk) patch.home_vercel_url = plan.vercelUrl;
+    if (home.vercelOk && home.deployOk && home.vercelUrl) patch.home_vercel_url = home.vercelUrl;
     await sb.from("launch_waitlist").update(patch).eq("id", r.id);
   }
   return {
@@ -361,7 +365,7 @@ export async function provisionDraftHome(
     note: home.note,
     key,
     repo: home.repoOk ? plan.repo : undefined,
-    vercelUrl: home.vercelOk && home.deployOk ? plan.vercelUrl : undefined,
+    vercelUrl: home.vercelOk && home.deployOk ? home.vercelUrl : undefined,
   };
 }
 

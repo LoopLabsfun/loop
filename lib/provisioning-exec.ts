@@ -118,6 +118,65 @@ export async function createVercelProject(plan: ProvisionPlan): Promise<{ ok: bo
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+/** Poll a deployment until it's READY (or errors/times out), then resolve its
+ *  REAL public URL. `plan.vercelUrl` (`<name>.vercel.app`) is just a guess — that
+ *  exact subdomain lives in a GLOBAL namespace across every Vercel user and is
+ *  essentially always already taken, so Vercel actually assigns a randomized
+ *  alias instead (e.g. `forge-pearl.vercel.app`, confirmed live: every other
+ *  Loop project got one of these, never the bare guessed name). Prefers the
+ *  short production alias (`GET /v2/deployments/{id}/aliases`); falls back to
+ *  the deployment's own URL — uglier, but always real — if alias lookup fails or
+ *  hasn't propagated yet. Never throws. */
+export async function resolveDeploymentUrl(
+  deploymentId: string,
+  timeoutMs = 180_000,
+  intervalMs = 4_000,
+): Promise<{ ok: boolean; note: string; url?: string }> {
+  if (!vercelConfigured()) return { ok: false, note: "VERCEL_TOKEN/TEAM_ID unset" };
+  const team = process.env.VERCEL_TEAM_ID as string;
+  const headers = { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` };
+  const deadline = Date.now() + timeoutMs;
+  let lastUrl: string | undefined;
+  try {
+    while (Date.now() < deadline) {
+      const r = await fetch(`https://api.vercel.com/v13/deployments/${deploymentId}?teamId=${encodeURIComponent(team)}`, {
+        headers,
+        cache: "no-store",
+      });
+      if (!r.ok) return { ok: false, note: `deployment status check failed (${r.status})`, url: lastUrl };
+      const j = (await r.json()) as { readyState?: string; url?: string };
+      if (j.url) lastUrl = `https://${j.url}`;
+      if (j.readyState === "READY") {
+        try {
+          const ar = await fetch(`https://api.vercel.com/v2/deployments/${deploymentId}/aliases?teamId=${encodeURIComponent(team)}`, {
+            headers,
+            cache: "no-store",
+          });
+          if (ar.ok) {
+            const aj = (await ar.json()) as { aliases?: { alias: string }[] };
+            const alias = aj.aliases?.find((a) => a.alias.endsWith(".vercel.app"))?.alias ?? aj.aliases?.[0]?.alias;
+            if (alias) return { ok: true, note: "deployment ready", url: `https://${alias}` };
+          }
+        } catch {
+          /* fall through to the deployment's own URL below */
+        }
+        return { ok: true, note: "deployment ready (no short alias found)", url: lastUrl };
+      }
+      if (j.readyState === "ERROR" || j.readyState === "CANCELED") {
+        return { ok: false, note: `deployment ${j.readyState.toLowerCase()}`, url: lastUrl };
+      }
+      await sleep(intervalMs);
+    }
+    return { ok: false, note: "deployment still building after timeout", url: lastUrl };
+  } catch (e) {
+    return { ok: false, note: e instanceof Error ? e.message : "deployment status error", url: lastUrl };
+  }
+}
+
 /** Trigger the FIRST (or a fresh) Vercel deployment from the repo's current HEAD.
  *  Linking a git repo to a Vercel project (createVercelProject) does NOT itself
  *  build anything — Vercel only auto-deploys on a NEW push after the link, via
@@ -145,8 +204,13 @@ export async function triggerFirstDeploy(
       }),
     });
     if (!r.ok) return { ok: false, note: `deploy trigger failed (${r.status}): ${(await r.text()).slice(0, 160)}` };
-    const j = (await r.json()) as { url?: string };
-    return { ok: true, note: "first deploy triggered", url: j.url ? `https://${j.url}` : undefined };
+    const j = (await r.json()) as { id?: string; uid?: string; url?: string };
+    const deploymentId = j.id ?? j.uid;
+    if (!deploymentId) return { ok: true, note: "deploy triggered (no id returned)", url: j.url ? `https://${j.url}` : undefined };
+    // Wait for the build + alias so we return a URL that's actually live, not a
+    // guess — this is the URL that ends up on the pump.fun token at mint.
+    const resolved = await resolveDeploymentUrl(deploymentId);
+    return { ok: resolved.ok, note: `deploy triggered · ${resolved.note}`, url: resolved.url };
   } catch (e) {
     return { ok: false, note: e instanceof Error ? e.message : "deploy trigger error" };
   }
@@ -159,14 +223,14 @@ export async function triggerFirstDeploy(
 export async function provisionProjectHome(
   key: string,
   description: string,
-): Promise<{ repoOk: boolean; vercelOk: boolean; deployOk: boolean; repo: string; note: string }> {
+): Promise<{ repoOk: boolean; vercelOk: boolean; deployOk: boolean; repo: string; vercelUrl?: string; note: string }> {
   const plan = provisionPlan(key);
   if (!githubConfigured() && !vercelConfigured()) {
     return { repoOk: false, vercelOk: false, deployOk: false, repo: plan.repo, note: "provisioning unarmed (no GITHUB_TOKEN/VERCEL_TOKEN)" };
   }
   const repo = await createProjectRepo(plan, description);
   const vercel = await createVercelProject(plan);
-  let deploy: { ok: boolean; note: string } = { ok: false, note: "skipped (repo or vercel project not ready)" };
+  let deploy: { ok: boolean; note: string; url?: string } = { ok: false, note: "skipped (repo or vercel project not ready)" };
   if (repo.ok && repo.repoId != null && vercel.ok) {
     deploy = await triggerFirstDeploy(plan, repo.repoId, repo.defaultBranch || "main");
   }
@@ -175,6 +239,7 @@ export async function provisionProjectHome(
     vercelOk: vercel.ok,
     deployOk: deploy.ok,
     repo: plan.repo,
+    vercelUrl: deploy.url,
     note: `repo: ${repo.note} · vercel: ${vercel.note} · deploy: ${deploy.note}`,
   };
 }
