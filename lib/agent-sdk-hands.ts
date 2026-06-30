@@ -25,6 +25,14 @@ import "server-only";
 
 import { DENY_PATH_PREFIXES, shquote } from "./repo-hands";
 
+// The SDK session runner lives in the LOOP repo, but it must run inside EVERY
+// project's sandbox — fresh project scaffolds ship neither the runner nor the
+// Agent SDK. Fetch the runner from the public LOOP repo and install the SDK
+// beside it at runtime so the session works regardless of the cloned repo.
+const SDK_SESSION_RAW_URL =
+  "https://raw.githubusercontent.com/LoopLabsfun/loop/main/scripts/agent-sdk-session.mjs";
+const SDK_PKG = "@anthropic-ai/claude-agent-sdk@^0.3.185";
+
 export interface SdkHandsScriptOpts {
   /** "owner/repo", e.g. "LoopLabsfun/loop". */
   repoSlug: string;
@@ -103,6 +111,18 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     // is present so `npm ci` succeeds and the fallback never runs).
     `{ npm ci --no-audit --no-fund || npm install --no-audit --no-fund; } >> ${LOG} 2>&1 || { echo "NPM_CI_FAILED"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; tail -n 20 ${LOG}; exit 0; }`,
     `echo "PHASE=npm_ci t=$(($(date +%s)-SDK_T0))s"`,
+    // Provision the SDK session runner + the Agent SDK so the session runs in ANY
+    // project repo, not just LOOP. Fresh scaffolds ship neither, so `node
+    // scripts/agent-sdk-session.mjs` crashed ("module not found") → SESSION_RESULT=
+    // error_or_timeout → empty diff → nothing shipped. Fetch the runner from the
+    // public LOOP repo and install the SDK into the SAME dir, so the script's ESM
+    // `import` resolves it from its sibling node_modules while it still edits the
+    // cloned repo (process.cwd() stays agent-work). Best-effort: a fetch/install
+    // failure just yields an errored session (no diff, no push) — never a bad push.
+    `mkdir -p "$HOME/.agent-sdk"`,
+    `curl -fsSL ${shquote(SDK_SESSION_RAW_URL)} -o "$HOME/.agent-sdk/session.mjs" 2>> ${LOG} || echo "SDK_SESSION_FETCH_FAILED" >> ${LOG}`,
+    `npm install --prefix "$HOME/.agent-sdk" --no-save --no-audit --no-fund ${shquote(SDK_PKG)} >> ${LOG} 2>&1 || echo "SDK_INSTALL_FAILED" >> ${LOG}`,
+    `echo "PHASE=sdk_provision t=$(($(date +%s)-SDK_T0))s"`,
     // ── The agentic session (maker). No GITHUB_TOKEN in its env. Bounded by the
     //    runner's maxTurns + wall-clock; its own test runs are advisory. ──
     // Hard wall backstop: the session's own JS AbortController aborts the async
@@ -112,7 +132,7 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     // at wall + 60s grace (SIGTERM, then SIGKILL 10s later), bounding the run
     // deterministically to clone + npm ci + wall + gate. Coreutils `timeout` is
     // standard in the sandbox image.
-    `timeout -k 10 "$(( \${AGENT_SDK_WALL_MS:-150000} / 1000 + 60 ))s" node scripts/agent-sdk-session.mjs || echo "SESSION_RESULT=error_or_timeout"`,
+    `timeout -k 10 "$(( \${AGENT_SDK_WALL_MS:-150000} / 1000 + 60 ))s" node "$HOME/.agent-sdk/session.mjs" || echo "SESSION_RESULT=error_or_timeout"`,
     `echo "PHASE=session t=$(($(date +%s)-SDK_T0))s"`,
     // Did it change anything?
     `CHANGED="$(git -C "$PWD" diff --name-only)"`,
