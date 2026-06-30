@@ -655,6 +655,10 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       creator_wallet: wallet,
       agent_wallet: agentAddress,
       fee_founder_pct: plan.feeFounderPct,
+      // Carry the draft's uploaded brand into the live row so the landing card,
+      // token page, and profile render the real logo/banner (not a placeholder).
+      token_image_url: plan.tokenImageUrl,
+      banner_url: plan.bannerUrl,
     });
 
     await sb
