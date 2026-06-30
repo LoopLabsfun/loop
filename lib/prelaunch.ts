@@ -85,6 +85,10 @@ export interface LaunchPlan {
   xHandle: string | null;
   status: string;
   projectKey: string | null;
+  /** White-label home reserved + provisioned at whitelist time, if any. */
+  homeKey: string | null;
+  homeRepo: string | null;
+  homeVercelUrl: string | null;
 }
 
 /** Build the launch plan from a wallet's draft, or null if it has none. */
@@ -103,6 +107,9 @@ export async function resolveDraftLaunch(wallet: string): Promise<LaunchPlan | n
     xHandle: d.xHandle,
     status: d.status,
     projectKey: d.projectKey,
+    homeKey: d.homeKey,
+    homeRepo: d.homeRepo,
+    homeVercelUrl: d.homeVercelUrl,
   };
 }
 
@@ -191,6 +198,12 @@ export async function prelaunchPreflight(plan: LaunchPlan): Promise<{ ready: boo
       : "shared platform signer (seed candle)",
   });
 
+  checks.push({
+    label: "White-label home (repo + Vercel)",
+    ok: true, // not fatal — approve provisions it as a fallback if whitelist didn't
+    detail: plan.homeVercelUrl ? `${plan.homeRepo} · ${plan.homeVercelUrl}` : "not provisioned yet → provisioned at approve",
+  });
+
   return { ready: checks.every((c) => c.ok), checks };
 }
 
@@ -208,6 +221,9 @@ export interface PrelaunchListItem {
   feeFounderPct: number | null;
   projectKey: string | null;
   projectWallet: string | null;
+  homeKey: string | null;
+  homeRepo: string | null;
+  homeVercelUrl: string | null;
   createdAt: string;
 }
 
@@ -217,7 +233,9 @@ export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]>
   if (!sb) return [];
   const { data } = await sb
     .from("launch_waitlist")
-    .select("wallet,name,ticker,status,email,x_handle,prompt,repo,banner_url,token_image_url,fee_founder_pct,project_key,project_wallet,created_at")
+    .select(
+      "wallet,name,ticker,status,email,x_handle,prompt,repo,banner_url,token_image_url,fee_founder_pct,project_key,project_wallet,home_key,home_repo,home_vercel_url,created_at",
+    )
     .not("name", "is", null)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -235,6 +253,9 @@ export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]>
     feeFounderPct: (r.fee_founder_pct as number) ?? null,
     projectKey: (r.project_key as string) ?? null,
     projectWallet: (r.project_wallet as string) ?? null,
+    homeKey: (r.home_key as string) ?? null,
+    homeRepo: (r.home_repo as string) ?? null,
+    homeVercelUrl: (r.home_vercel_url as string) ?? null,
     createdAt: r.created_at as string,
   }));
 }
@@ -255,7 +276,84 @@ export async function setPrelaunchStatus(
     .update({ status, updated_at: new Date().toISOString() })
     .eq("wallet", wallet)
     .in("status", ["draft", "whitelisted", "launching"]);
-  if (status === "whitelisted") await provisionProjectWallet(wallet); // best-effort
+  if (status === "whitelisted") {
+    await provisionProjectWallet(wallet); // best-effort
+    await provisionDraftHome(wallet); // best-effort — repo + Vercel home, ready before mint
+  }
+}
+
+/**
+ * Reserve a project key + provision its white-label home (GitHub repo + Vercel
+ * project) AHEAD of the mint, at whitelist time, so the agent has somewhere to
+ * build from the moment it's launched and the live site URL exists to put into
+ * the pump.fun token's website link (alongside the loop.fun token-page link
+ * already threaded into the description). Reserves the SAME key
+ * `slugify(ticker, name)` the eventual mint would otherwise compute, so
+ * approvePrelaunch reuses this exact repo/Vercel project instead of a second,
+ * mismatched one. Idempotent + best-effort: a GitHub/Vercel hiccup never blocks
+ * whitelisting — re-run this (the admin "Provision home" retry) to pick up where
+ * it left off.
+ */
+export async function provisionDraftHome(
+  draftWallet: string,
+): Promise<{ ok: boolean; note: string; key?: string; repo?: string; vercelUrl?: string }> {
+  const sb = supabaseAdmin;
+  if (!sb) return { ok: false, note: "no service-role client" };
+
+  const { data: row } = await sb
+    .from("launch_waitlist")
+    .select("id,name,ticker,prompt,home_key")
+    .eq("wallet", draftWallet)
+    .in("status", ["draft", "whitelisted", "launching"])
+    .maybeSingle();
+  if (!row) return { ok: false, note: "no active draft for that wallet" };
+  const r = row as { id: number; name: string | null; ticker: string | null; prompt: string | null; home_key: string | null };
+  if (!r.name || !r.ticker) return { ok: false, note: "draft is missing a name/ticker" };
+
+  let key = r.home_key;
+  if (!key) {
+    key = slugify(r.ticker, r.name);
+    // Collision-check against both live projects AND other drafts' already-
+    // reserved keys (a live mint hasn't happened yet, so `projects` alone isn't
+    // enough — two whitelisted drafts could otherwise slugify to the same name).
+    const { data: existingProject } = await sb.from("projects").select("key").eq("key", key).maybeSingle();
+    const { data: existingHome } = await sb
+      .from("launch_waitlist")
+      .select("id")
+      .eq("home_key", key)
+      .neq("id", r.id)
+      .in("status", ["draft", "whitelisted", "launching"])
+      .maybeSingle();
+    if (existingProject || existingHome) key = `${key}-${Date.now().toString(36).slice(-4)}`;
+    // Claim atomically (only if still unreserved) — the partial unique index on
+    // home_key is the backstop against a concurrent double-claim.
+    const { error: claimErr } = await sb
+      .from("launch_waitlist")
+      .update({ home_key: key, updated_at: new Date().toISOString() })
+      .eq("id", r.id)
+      .is("home_key", null);
+    if (claimErr) return { ok: false, note: `key reservation failed: ${claimErr.message}` };
+  }
+
+  const { provisionProjectHome } = await import("./provisioning-exec");
+  const home = await provisionProjectHome(key, r.prompt ?? r.name);
+  const plan = provisionPlan(key);
+  // Only record a URL/repo that was actually created — Vercel might not be armed
+  // even when GitHub is (or vice versa), and a stored-but-unreal vercelUrl would
+  // go straight into the pump.fun website link as a dead link for traders.
+  if (home.repoOk || home.vercelOk) {
+    const patch: Record<string, unknown> = { home_provisioned_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    if (home.repoOk) patch.home_repo = plan.repo;
+    if (home.vercelOk) patch.home_vercel_url = plan.vercelUrl;
+    await sb.from("launch_waitlist").update(patch).eq("id", r.id);
+  }
+  return {
+    ok: home.repoOk && home.vercelOk,
+    note: home.note,
+    key,
+    repo: home.repoOk ? plan.repo : undefined,
+    vercelUrl: home.vercelOk ? plan.vercelUrl : undefined,
+  };
 }
 
 /**
@@ -567,9 +665,21 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
 
   try {
     const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
-    let key = slugify(plan.ticker, plan.name);
-    const { data: existing } = await sb.from("projects").select("key").eq("key", key).maybeSingle();
-    if (existing) key = `${key}-${Date.now().toString(36).slice(-4)}`;
+    // Reuse the key reserved (+ provisioned: repo/Vercel home) at whitelist time
+    // so the mint lands on the SAME repo/site the agent may already be sitting in
+    // — recomputing a fresh slug here would mint into a project key that doesn't
+    // match the already-live home. Falls back to a fresh slug for older drafts
+    // that whitelisted before home-provisioning existed (or never got a key).
+    let key = plan.homeKey;
+    if (key) {
+      const { data: taken } = await sb.from("projects").select("key").eq("key", key).maybeSingle();
+      if (taken) key = null; // reserved key got raced by something else — fall through
+    }
+    if (!key) {
+      key = slugify(plan.ticker, plan.name);
+      const { data: existing } = await sb.from("projects").select("key").eq("key", key).maybeSingle();
+      if (existing) key = `${key}-${Date.now().toString(36).slice(-4)}`;
+    }
 
     // The uploaded token image → pump.fun logo (placeholder on any failure).
     let logo: { bytes: Uint8Array; contentType: string; filename: string } | undefined;
@@ -587,7 +697,7 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
 
     // Every launch carries its full identity to pump.fun: real logo, a description
     // that ALWAYS references the project's Loop page, the proposer's socials, and a
-    // website link back to Loop. The CA already ends in "Loop" (vanity pool).
+    // website link. The CA already ends in "Loop" (vanity pool).
     const site = (process.env.NEXT_PUBLIC_SITE_URL || "https://looplabs.fun").replace(/\/$/, "");
     const projectUrl = `${site}/token?p=${key}`;
     const description =
@@ -595,7 +705,11 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
         0,
         DESCRIPTION_MAX,
       );
-    const links: { website: string; twitter?: string } = { website: projectUrl };
+    // The pump.fun "website" field only fits one URL — prefer the project's own
+    // live site (provisioned at whitelist time) so traders land on the actual
+    // product, while the loop.fun token page stays reachable via the description
+    // link above (in addition to, not instead of).
+    const links: { website: string; twitter?: string } = { website: plan.homeVercelUrl || projectUrl };
     if (plan.xHandle) links.twitter = `https://x.com/${plan.xHandle}`;
 
     let token: CreateTokenResult;
@@ -695,9 +809,13 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       .eq("status", "launching");
 
     // White-label home: create the project's GitHub repo + Vercel project so its
-    // agent has somewhere to build/deploy. Best-effort + env-gated — the launch is
-    // the commit point; a provisioning hiccup leaves the project launched (the repo
-    // can be created later), never aborts the mint.
+    // agent has somewhere to build/deploy. Usually a no-op here — provisionDraftHome
+    // already did this at whitelist time against the same `key` — but idempotent
+    // (createProjectRepo/createVercelProject treat "already exists" as success), so
+    // it's also the fallback for drafts that whitelisted before this existed or
+    // whose whitelist-time provisioning failed. Best-effort + env-gated: a
+    // provisioning hiccup leaves the project launched (the repo can be created
+    // later), never aborts the mint.
     let provisioning: string | undefined;
     try {
       const { provisionProjectHome } = await import("./provisioning-exec");

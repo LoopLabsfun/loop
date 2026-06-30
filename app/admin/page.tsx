@@ -27,6 +27,9 @@ interface Draft {
   feeFounderPct: number | null;
   projectKey: string | null;
   projectWallet: string | null;
+  homeKey: string | null;
+  homeRepo: string | null;
+  homeVercelUrl: string | null;
   createdAt: string;
 }
 interface Funding {
@@ -478,8 +481,15 @@ function Console({
   );
 }
 
+interface LiveProject {
+  key: string;
+  name: string;
+  ticker: string;
+}
+
 function PrelaunchPanel() {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [liveProjects, setLiveProjects] = useState<LiveProject[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // `${wallet}:${action}`
   const [pf, setPf] = useState<Record<string, { ready: boolean; checks: Check[] }>>({});
@@ -495,6 +505,18 @@ function PrelaunchPanel() {
       setDrafts(j.drafts);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "load failed");
+    }
+    // The "Launched" footer should reflect every REAL project (the projects
+    // table), not just the subset that happens to still have a launch_waitlist
+    // row pointed at them — a detached/reset draft (or a project that never
+    // went through the public waitlist at all, like LOOP itself) would
+    // otherwise silently drop out of the count despite being fully live.
+    try {
+      const r = await fetch("/api/admin/projects", { cache: "no-store" });
+      const j = await r.json();
+      if (r.ok) setLiveProjects(j.projects ?? []);
+    } catch {
+      /* best-effort — the footer just stays empty on failure */
     }
   }, []);
   useEffect(() => {
@@ -532,6 +554,26 @@ function PrelaunchPanel() {
       setResult((m) => ({ ...m, [wallet]: `Synced · +${j.added} new · ${j.funding?.totalSol ?? 0} SOL raised` }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "sync failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function provisionHome(wallet: string) {
+    setBusy(`${wallet}:provision-home`);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/prelaunch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet, action: "provision-home" }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "provisioning failed");
+      setResult((m) => ({ ...m, [wallet]: j.home?.note ?? (j.ok ? "Home provisioned" : "Provisioning failed") }));
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "provisioning failed");
     } finally {
       setBusy(null);
     }
@@ -588,17 +630,18 @@ function PrelaunchPanel() {
   }
 
   // A launched draft has already become a real project (in the Projects panel) —
-  // keep it out of the actionable pre-launch list (the Buildtopia duplicate) and
-  // show it as a compact "✓ → key" footer instead.
+  // keep it out of the actionable pre-launch list (the Buildtopia duplicate). The
+  // "Launched" footer itself is sourced from liveProjects (the real projects
+  // table), not this filter — a draft can be detached/reset (or a project like
+  // LOOP never had a draft at all) without dropping out of that count.
   const activeDrafts = (drafts ?? []).filter((d) => d.status !== "launched");
-  const launchedDrafts = (drafts ?? []).filter((d) => d.status === "launched");
   const n = activeDrafts.length;
   return (
     <Panel title={`Pre-launch · ${n}`} accent>
       {err && <div className="text-[12px] text-neg font-mono mb-2">{err}</div>}
       {drafts == null ? (
         <Empty>Loading…</Empty>
-      ) : activeDrafts.length === 0 && launchedDrafts.length === 0 ? (
+      ) : activeDrafts.length === 0 && (liveProjects?.length ?? 0) === 0 ? (
         <Empty>No drafts yet.</Empty>
       ) : (
         <div className="flex flex-col gap-3">
@@ -633,6 +676,33 @@ function PrelaunchPanel() {
                       </span>
                     )}
                     <Btn onClick={() => sync(d.wallet)} busy={isBusy("sync")}>Sync funding</Btn>
+                  </div>
+                )}
+
+                {d.status !== "draft" && (
+                  <div className="mt-2 text-[11.5px] font-mono flex items-center gap-2 flex-wrap">
+                    <span className="text-faint">home</span>
+                    {d.homeVercelUrl ? (
+                      <>
+                        <a href={d.homeVercelUrl} target="_blank" rel="noreferrer" className="text-accent-text hover:underline">
+                          {d.homeVercelUrl.replace(/^https?:\/\//, "")}
+                        </a>
+                        <span className="text-faint">·</span>
+                        <a
+                          href={`https://github.com/${d.homeRepo}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-body hover:underline"
+                        >
+                          {d.homeRepo}
+                        </a>
+                      </>
+                    ) : (
+                      <span className="text-faint">not provisioned</span>
+                    )}
+                    <Btn onClick={() => provisionHome(d.wallet)} busy={isBusy("provision-home")}>
+                      {d.homeVercelUrl ? "Re-provision" : "Provision home"}
+                    </Btn>
                   </div>
                 )}
 
@@ -709,20 +779,20 @@ function PrelaunchPanel() {
               </div>
             );
           })}
-          {launchedDrafts.length > 0 && (
+          {liveProjects && liveProjects.length > 0 && (
             <div className="border-t border-line-3 pt-2 mt-1">
-              <div className="text-[11px] font-mono text-faint mb-1">Launched · {launchedDrafts.length}</div>
+              <div className="text-[11px] font-mono text-faint mb-1">Launched · {liveProjects.length}</div>
               <div className="flex flex-col gap-1">
-                {launchedDrafts.map((d) => (
+                {liveProjects.map((p) => (
                   <a
-                    key={d.wallet}
-                    href={`/token?p=${d.projectKey}`}
+                    key={p.key}
+                    href={`/token?p=${p.key}`}
                     className="font-mono text-[12px] flex items-center gap-2 flex-wrap hover:underline"
                   >
                     <span className="text-pos">✓</span>
-                    <span className="text-body">{d.name}</span>
-                    <span className="text-accent-text">{cashtag(d.ticker)}</span>
-                    <span className="text-faint">→ {d.projectKey}</span>
+                    <span className="text-body">{p.name}</span>
+                    <span className="text-accent-text">{cashtag(p.ticker)}</span>
+                    <span className="text-faint">→ {p.key}</span>
                   </a>
                 ))}
               </div>
