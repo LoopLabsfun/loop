@@ -40,6 +40,26 @@ import type { Project } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Epoch-ms of the project's most recent agent_tasks tick, or 0 if it has never
+ * ticked. Used to schedule cron ticks FAIRLY: with more funded projects than the
+ * per-run cap, ordering by this ascending (never-ticked first) round-robins every
+ * project in instead of always starving the ones at the back of the default
+ * (official, then newest-first) order. Best-effort: 0 on no backend / error.
+ */
+export async function lastTickAt(key: string): Promise<number> {
+  if (!supabase) return 0;
+  const { data } = await supabase
+    .from("agent_tasks")
+    .select("updated_at")
+    .eq("project_key", key)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const ts = (data as { updated_at?: string } | null)?.updated_at;
+  return ts ? new Date(ts).getTime() : 0;
+}
+
+/**
  * Has the project's runtime been active within `withinMs` (default 15 min)? Real
  * signal for the "Runtime active" status — the most recent of an agent_tasks tick
  * OR an agent_posts publish (the runtime writes one or the other every cycle), vs
