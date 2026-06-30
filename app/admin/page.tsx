@@ -388,6 +388,7 @@ function Console({
         ) : (
           <Empty>Queue is empty.</Empty>
         )}
+        <AddTask control={control} busy={busy} />
       </Panel>
 
       {/* Recently shipped */}
@@ -1255,6 +1256,45 @@ function TaskList({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Founder adds a top-priority backlog task straight from the admin — also the way
+// to re-arm a project under the compute-saver (a founder/priority task clears the
+// build floor, so the agent builds it next instead of deferring band-0 busywork).
+function AddTask({
+  control,
+  busy,
+}: {
+  control: (body: Record<string, unknown>, tag: string) => void;
+  busy: string | null;
+}) {
+  const [title, setTitle] = useState("");
+  const submit = () => {
+    const t = title.trim();
+    if (!t) return;
+    control({ action: "task-add", title: t }, "task-add");
+    setTitle("");
+  };
+  return (
+    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line-4">
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+        placeholder="Add a top-priority task…"
+        className="flex-1 min-w-0 font-mono text-[12px] px-2 h-[30px] rounded-[7px] border border-line-2 bg-surface-2 outline-none focus:border-accent/50"
+      />
+      <button
+        onClick={submit}
+        disabled={!!busy || !title.trim()}
+        className="font-mono text-[12px] px-3 h-[30px] rounded-[7px] bg-accent text-white hover:opacity-90 disabled:opacity-50 flex-none"
+      >
+        {busy === "task-add" ? "…" : "Add"}
+      </button>
     </div>
   );
 }
