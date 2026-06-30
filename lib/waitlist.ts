@@ -237,10 +237,30 @@ export async function joinWaitlist(
   // rely on supabase-js upsert inference) — re-submitting refines the draft.
   const { data: existing } = await sb
     .from("launch_waitlist")
-    .select("id")
+    .select("id, status")
     .eq("wallet", wallet)
     .maybeSingle();
   const already = Boolean(existing);
+
+  // Once a wallet's draft has moved past `draft` (whitelisted/launched/rejected),
+  // the update path below only touches the DRAFT fields (name/ticker/prompt/
+  // images) — never `status`/`project_key` — so a wallet resubmitting after its
+  // project already launched would silently overwrite that launched project's
+  // historical pitch with new, unrelated content while leaving status="launched"
+  // and project_key pointing at the real project (observed: a launched founder's
+  // wallet resubmitted a totally different idea, corrupting the launched row's
+  // displayed name/ticker/prompt). Refuse instead — one wallet gets one pre-
+  // launch slot, and it's locked once it leaves `draft`.
+  const existingStatus = (existing as { status?: string } | null)?.status;
+  if (existingStatus && existingStatus !== "draft") {
+    return {
+      ok: false,
+      error:
+        existingStatus === "launched"
+          ? "This wallet already launched a project — pre-launch drafting is closed for it."
+          : "This wallet's draft is already in review — it can no longer be edited here.",
+    };
+  }
 
   // Entry gate: the FIRST submit pays the toll (SOL fee + 1M $LOOP to the platform),
   // verified on-chain. Refining an existing draft is free. Off until the founder

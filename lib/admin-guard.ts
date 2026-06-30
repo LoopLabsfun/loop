@@ -1,5 +1,6 @@
 import "server-only";
 import { verifyAdminToken, ADMIN_COOKIE } from "./admin-session";
+import { getProject } from "./queries";
 import type { Project } from "./types";
 
 /** Read one cookie value off a Request's Cookie header (no next/headers dep). */
@@ -20,15 +21,25 @@ export function adminWallet(req: Request): string | null {
 
 /**
  * Founder gate for every admin request: the session cookie must be valid AND its
- * wallet must equal the project's creator_wallet. Defense-in-depth — the session
- * is only minted after a founder-signature check, but we re-bind to the live
- * creator_wallet here so a stale token can't outlive a creator change, and a
- * project with no founder bolt set can never be administered.
+ * wallet must EITHER equal the target project's own creator_wallet, OR be the
+ * LOOP platform super-admin (LOOP's own creator_wallet) — the platform
+ * operator's oversight account, which administers every project regardless of
+ * who that individual project's own founder is. Each launched project gets its
+ * own distinct creator_wallet (the per-project founder payout), so without this
+ * the platform wallet would only ever administer "loop" itself.
+ *
+ * Defense-in-depth — the session is only minted after a founder-signature
+ * check, but we re-bind to the live creator_wallet here so a stale token can't
+ * outlive a creator change, and a project with no founder bolt set can never be
+ * administered (unless the caller is the super-admin).
  */
-export function isFounder(
+export async function isFounder(
   req: Request,
   project: Pick<Project, "creatorWallet">
-): boolean {
+): Promise<boolean> {
   const w = adminWallet(req);
-  return Boolean(w && project.creatorWallet && w === project.creatorWallet);
+  if (!w) return false;
+  if (project.creatorWallet && w === project.creatorWallet) return true;
+  const loop = await getProject("loop");
+  return Boolean(loop?.creatorWallet && w === loop.creatorWallet);
 }

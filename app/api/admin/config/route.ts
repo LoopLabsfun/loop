@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const key = searchParams.get("p") || "loop";
   const project = await getProject(key);
   if (!project) return NextResponse.json({ error: "project not found" }, { status: 404 });
-  if (!isFounder(req, project)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await isFounder(req, project))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const knobs = await getConfigView(project.key);
   return NextResponse.json({ knobs }, { headers: { "Cache-Control": "no-store" } });
 }
