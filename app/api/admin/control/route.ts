@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getAgentState, reconcileBuildingTasks } from "@/lib/agent-data";
 import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { runAgentTick } from "@/lib/agent-runtime";
+import { previewSweep, execSweep, previewClaim, execClaim } from "@/lib/treasury-actions";
 import type { TaskCategory, TaskSource, TaskStatus } from "@/lib/agent";
 
 // Founder admin controls — the safe interactive surface of the console. Every
@@ -17,6 +18,8 @@ import type { TaskCategory, TaskSource, TaskStatus } from "@/lib/agent";
 //   task-priority  → re-rank a task (backlog manager); optional source override
 //   task-add       → founder adds a top-priority backlog task
 //   task-remove    → delete a task from the backlog
+//   treasury-sweep → drain a project's agent wallet → treasury (preview, or confirm to sign)
+//   treasury-claim → collect pump.fun creator fees for the signer (preview/confirm; mainnet)
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,6 +41,7 @@ export async function POST(req: Request) {
     title?: string;
     detail?: string;
     category?: string;
+    confirm?: boolean;
   };
   try {
     body = await req.json();
@@ -150,6 +154,26 @@ export async function POST(req: Request) {
       const { error } = await sb.from("agent_tasks").delete().eq("id", id).eq("project_key", key);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ ok: true, removed: id });
+    }
+    // Treasury money-moves — two-phase: preview (read-only figures) unless the
+    // founder re-POSTs with confirm:true, which signs + sends. Both re-checked
+    // isFounder above.
+    case "treasury-sweep": {
+      if (!body.confirm) {
+        const preview = await previewSweep(project);
+        return NextResponse.json({ ok: true, preview });
+      }
+      const r = await execSweep(project);
+      if (!r.ok) return NextResponse.json({ error: r.error ?? "sweep failed" }, { status: 409 });
+      return NextResponse.json({ ok: true, txSig: r.txSig });
+    }
+    case "treasury-claim": {
+      if (!body.confirm) {
+        return NextResponse.json({ ok: true, preview: previewClaim() });
+      }
+      const r = await execClaim();
+      if (!r.ok) return NextResponse.json({ error: r.error ?? "claim failed" }, { status: 409 });
+      return NextResponse.json({ ok: true, txSig: r.txSig, claimedSol: r.claimedSol });
     }
     default:
       return NextResponse.json({ error: "unknown action" }, { status: 400 });

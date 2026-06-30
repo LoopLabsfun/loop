@@ -1373,10 +1373,82 @@ function AddTask({
 // the fee_ledger (earned/claimed/claimable per role), and agent_actions totals.
 // Polls nothing — fetches on mount + when the project switches, plus a manual
 // refresh (chain reads are a touch slow, so we don't auto-poll this).
+interface MoveState {
+  op: "treasury-sweep" | "treasury-claim";
+  label: string;
+  preview: Record<string, unknown>;
+}
+
 function TreasuryPanel({ activeKey }: { activeKey: string }) {
   const [diag, setDiag] = useState<TreasuryDiag | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Two-phase money-move: stage a preview, then confirm to sign + send.
+  const [move, setMove] = useState<MoveState | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveResult, setMoveResult] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const postControl = useCallback(
+    async (op: MoveState["op"], confirm: boolean) => {
+      const r = await fetch("/api/admin/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: activeKey, action: op, confirm }),
+      });
+      return { ok: r.ok, body: await r.json() };
+    },
+    [activeKey]
+  );
+
+  // Phase 1: fetch the preview and stage the confirm bar.
+  const stage = useCallback(
+    async (op: MoveState["op"], label: string) => {
+      setErr(null);
+      setMoveResult(null);
+      setMoveBusy(true);
+      try {
+        const { ok, body } = await postControl(op, false);
+        if (!ok) {
+          setErr(body.error || "preview failed");
+          return;
+        }
+        setMove({ op, label, preview: body.preview ?? {} });
+      } catch {
+        setErr("network error");
+      } finally {
+        setMoveBusy(false);
+      }
+    },
+    [postControl]
+  );
+
+  // Phase 2: confirm — sign + send, then refresh the diagnostic.
+  const confirmMove = useCallback(async () => {
+    if (!move) return;
+    setMoveBusy(true);
+    setErr(null);
+    try {
+      const { ok, body } = await postControl(move.op, true);
+      if (!ok) {
+        setErr(body.error || "action failed");
+        return;
+      }
+      const sig = body.txSig as string | undefined;
+      const claimed = body.claimedSol as number | undefined;
+      setMoveResult(
+        sig
+          ? `✓ ${move.label} sent${claimed != null ? ` · ${claimed.toFixed(4)} SOL` : ""} · ${sig.slice(0, 12)}…`
+          : `✓ ${move.label} done`
+      );
+      setMove(null);
+      setRefreshTick((t) => t + 1); // re-read balances after the move lands
+    } catch {
+      setErr("network error");
+    } finally {
+      setMoveBusy(false);
+    }
+  }, [move, postControl]);
 
   const fetchDiag = useCallback(async () => {
     setLoading(true);
@@ -1395,11 +1467,17 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
     } finally {
       setLoading(false);
     }
-  }, [activeKey]);
+  }, [activeKey, refreshTick]);
 
   useEffect(() => {
     fetchDiag();
   }, [fetchDiag]);
+
+  // Clear any staged move when switching projects (its preview is project-bound).
+  useEffect(() => {
+    setMove(null);
+    setMoveResult(null);
+  }, [activeKey]);
 
   const sol = (n: number | null | undefined) =>
     n == null ? "—" : `${n.toFixed(4)} SOL`;
@@ -1489,6 +1567,64 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
               </div>
             </div>
           )}
+
+          {/* Money-moves — preview → confirm. Sweep is per-project; claim is the
+              launch signer's pump.fun creator fees (signer-wide, mainnet-only). */}
+          <div className="border-t border-line-4 pt-4">
+            <div className="text-[10px] uppercase tracking-[0.02em] text-faint mb-2">
+              Money moves — preview, then confirm
+            </div>
+            {move ? (
+              <div className="border border-accent/50 rounded-[10px] px-3 py-3 flex flex-col gap-2">
+                <div className="font-mono text-[12px] text-ink">
+                  Confirm: <span className="font-semibold">{move.label}</span>
+                </div>
+                <pre className="font-mono text-[11px] text-muted whitespace-pre-wrap leading-[1.5] m-0">
+                  {Object.entries(move.preview)
+                    .map(([k, v]) => `${k}: ${typeof v === "number" ? v : String(v)}`)
+                    .join("\n")}
+                </pre>
+                <div className="flex gap-2">
+                  <button
+                    onClick={confirmMove}
+                    disabled={moveBusy}
+                    className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    {moveBusy ? "Sending…" : `Confirm ${move.op === "treasury-sweep" ? "sweep" : "claim"}`}
+                  </button>
+                  <button
+                    onClick={() => setMove(null)}
+                    disabled={moveBusy}
+                    className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => stage("treasury-sweep", `Sweep ${activeKey} agent wallet → treasury`)}
+                  disabled={moveBusy}
+                  title="Drain the agent (Privy) wallet to the project treasury, leaving a rent+fee buffer"
+                  className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+                >
+                  {moveBusy ? "…" : "Sweep agent → treasury"}
+                </button>
+                <button
+                  onClick={() => stage("treasury-claim", "Claim pump.fun creator fees (signer-wide)")}
+                  disabled={moveBusy}
+                  title="Collect accrued pump.fun creator fees for the launch signer (mainnet, all its tokens)"
+                  className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+                >
+                  {moveBusy ? "…" : "Claim creator fees"}
+                </button>
+              </div>
+            )}
+            {moveResult && (
+              <div className="text-[12px] text-pos font-mono mt-2">{moveResult}</div>
+            )}
+          </div>
         </div>
       )}
     </div>
