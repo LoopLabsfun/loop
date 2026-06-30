@@ -98,10 +98,10 @@ export function loopLedger(): LedgerEntry[] {
       provider: "Vercel",
       category: "hosting",
       cadence: "monthly",
-      usd: envUsd("LEDGER_VERCEL_USD", 20),
+      usd: envUsd("LEDGER_VERCEL_USD", 49),
       currency: "USD",
       since: LEDGER_GENESIS,
-      note: "App hosting, force-dynamic renders, and the */2 agent heartbeat cron.",
+      note: "App hosting, force-dynamic renders, the agent heartbeat cron, and per-project deploys.",
     },
     {
       id: "e2b",
