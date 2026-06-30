@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { brainMode, sdkSessionConfig, buildPathReadiness } from "./agent-session-enqueue";
+import { brainMode, sdkSessionConfig, buildPathReadiness, shouldDeferBuild } from "./agent-session-enqueue";
 
 describe("brainMode", () => {
   it("defaults to legacy when unset or anything but 'sdk'", () => {
@@ -66,5 +66,30 @@ describe("sdkSessionConfig", () => {
     const c = sdkSessionConfig({ AGENT_SDK_MAX_TURNS: "0", AGENT_SDK_WALL_MS: "nope" });
     expect(c.maxTurns).toBe(40);
     expect(c.wallMs).toBe(600_000);
+  });
+});
+
+describe("shouldDeferBuild (compute saver)", () => {
+  const on = { COMPUTE_SAVER: "1" };
+  it("never defers when the saver is off (default behaviour unchanged)", () => {
+    expect(shouldDeferBuild({ source: "agent" }, {}).defer).toBe(false);
+    expect(shouldDeferBuild({ source: "agent", priority: 0 }, {}).defer).toBe(false);
+  });
+  it("defers un-prioritised agent busywork when on (band 0 < floor 1)", () => {
+    expect(shouldDeferBuild({ source: "agent" }, on).defer).toBe(true);
+    expect(shouldDeferBuild({ source: "agent", priority: 0 }, on).defer).toBe(true);
+  });
+  it("never defers founder/holder asks or explicitly-prioritised work", () => {
+    expect(shouldDeferBuild({ source: "founder" }, on).defer).toBe(false); // band 100
+    expect(shouldDeferBuild({ source: "holder" }, on).defer).toBe(false); // band 50
+    expect(shouldDeferBuild({ source: "agent", priority: 5 }, on).defer).toBe(false);
+  });
+  it("never defers a retry after a prior failure (finish what was started)", () => {
+    expect(shouldDeferBuild({ source: "agent", priority: 0, lastOutcome: "build failed" }, on).defer).toBe(false);
+  });
+  it("honours a custom floor (stricter = defer more)", () => {
+    // floor 50 ⇒ even holder band (50) clears it, but a priority-10 agent task defers.
+    expect(shouldDeferBuild({ source: "agent", priority: 10 }, { ...on, COMPUTE_SAVER_MIN_PRIORITY: "50" }).defer).toBe(true);
+    expect(shouldDeferBuild({ source: "holder" }, { ...on, COMPUTE_SAVER_MIN_PRIORITY: "50" }).defer).toBe(false);
   });
 });
