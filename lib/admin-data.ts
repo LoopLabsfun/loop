@@ -3,6 +3,7 @@ import { supabaseAdmin } from "./supabase";
 import type { Project } from "./types";
 import { canAffordTick } from "./budget";
 import { tickCooldownMs } from "./agent-tick-throttle";
+import { effectiveEnv } from "./project-config";
 import { brainMode } from "./agent-session-enqueue";
 import { effectivePriority } from "./agent-backlog";
 import type { TaskSource } from "./agent";
@@ -59,7 +60,9 @@ export async function getAdminSnapshot(p: Project): Promise<AdminSnapshot> {
     paused: Boolean(p.agentPaused),
     brain: brainMode(),
     treasurySol: p.treasurySol,
-    cooldownMs: tickCooldownMs(),
+    // Per-project cooldown: platform env with this project's config overrides
+    // on top (Lot 5), so the status reflects what the cron actually uses.
+    cooldownMs: tickCooldownMs(await effectiveEnv(p.key)),
   };
   const sb = supabaseAdmin;
   if (!sb) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
 import { supabaseAdmin } from "@/lib/supabase";
+import { effectiveEnv } from "@/lib/project-config";
 import { getAgentState, resolveDueProposals, lastTickAt, recordTickAttempt, reconcileBuildingTasks } from "@/lib/agent-data";
 import { tickCadenceMinutes, cadenceBounds } from "@/lib/agent-cadence";
 import {
@@ -138,12 +139,11 @@ export async function GET(req: Request) {
   // SDK-in-E2B session on Trigger.dev (no 300s cap). Default legacy — unchanged.
   const mode = brainMode();
 
-  // Adaptive per-project cadence: instead of one flat cooldown for everyone, each
-  // project's interval is derived from its own live state (backlog, congestion,
-  // runway) — see lib/agent-cadence. Resolve the env bounds once per run; the
-  // per-project interval is computed inside the loop from its state. AGENT_PAUSED
+  // Adaptive per-project cadence: each project's interval is derived from its own
+  // live state (backlog, congestion, runway) — see lib/agent-cadence — AND its own
+  // operator-config overrides (Lot 5, project_config) laid over the platform env.
+  // The bounds are resolved per project inside the loop (effectiveEnv). AGENT_PAUSED
   // + the empty-treasury budget gate stay the instant hard stops.
-  const bounds = cadenceBounds();
 
   // Build-path preflight: log which path is live and whether it can actually ship
   // code. A misconfig (sdk without TRIGGER_SECRET_KEY, or legacy missing E2B/token)
@@ -180,6 +180,9 @@ export async function GET(req: Request) {
       // project's own interval has elapsed since its last tick (lastTickAt, reused
       // from the fair-scheduling sort). The free governance pass above still runs.
       const budget = canAffordTick(p);
+      // Per-project cadence bounds: platform env with this project's config
+      // overrides on top (Lot 5). Falls back to the env defaults when unset.
+      const bounds = cadenceBounds(await effectiveEnv(p.key));
       const cadenceMin = tickCadenceMinutes(
         {
           treasurySol: budget.treasurySol,
