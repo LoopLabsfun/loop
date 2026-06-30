@@ -5,7 +5,7 @@ import {
   vercelConfigured,
   type ProvisionPlan,
 } from "./provisioning";
-import { brandedLayoutJsx, brandedPageJsx, type ProjectBrand } from "./project-template-brand";
+import { brandedLayoutJsx, brandedPageJsx, isGenericTemplateContent, type ProjectBrand } from "./project-template-brand";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROVISIONING — EXECUTION. lib/provisioning PLANS the white-label home
@@ -109,10 +109,14 @@ interface RepoResult {
 }
 
 /** Create the project's GitHub repo (from the template, else empty). Idempotent:
- *  a repo that already exists is treated as success (and left untouched — it
- *  may already hold real agent work). On a FRESH template-generated repo, also
- *  commits the project's branded landing page before returning (see
- *  applyTemplateBranding). Never throws. */
+ *  a repo that already exists is treated as success. On a FRESH template-
+ *  generated repo, also commits the project's branded landing page before
+ *  returning (see applyTemplateBranding). An EXISTING repo gets the same
+ *  branding retroactively, but ONLY if its app/page.jsx still IS the generic
+ *  template's placeholder (isGenericTemplateContent) — this is what makes the
+ *  admin "Re-provision" retry able to fix a repo that was created before this
+ *  branding step existed, while still never touching a repo the agent has
+ *  already started real work in. Never throws. */
 export async function createProjectRepo(plan: ProvisionPlan, brand: ProjectBrand): Promise<RepoResult> {
   if (!githubConfigured()) return { ok: false, note: "GITHUB_TOKEN unset" };
   const [owner, name] = plan.repo.split("/");
@@ -121,7 +125,14 @@ export async function createProjectRepo(plan: ProvisionPlan, brand: ProjectBrand
     const exists = await fetch(`${GH}/repos/${owner}/${name}`, { headers: ghHeaders(), cache: "no-store" });
     if (exists.ok) {
       const j = (await exists.json()) as { id: number; default_branch: string };
-      return { ok: true, repoUrl: plan.repoUrl, repoId: j.id, defaultBranch: j.default_branch, note: "repo already exists" };
+      const base = { ok: true as const, repoUrl: plan.repoUrl, repoId: j.id, defaultBranch: j.default_branch };
+      const pageR = await fetch(`${GH}/repos/${owner}/${name}/contents/app/page.jsx`, { headers: ghHeaders(), cache: "no-store" });
+      if (!pageR.ok) return { ...base, note: "repo already exists" };
+      const pageJ = (await pageR.json()) as { content?: string };
+      const content = pageJ.content ? Buffer.from(pageJ.content, "base64").toString("utf8") : "";
+      if (!isGenericTemplateContent(content)) return { ...base, note: "repo already exists" };
+      const branding = await applyTemplateBranding(plan, brand);
+      return { ...base, note: `repo already exists (was still generic) · branding: ${branding.note}` };
     }
 
     const desc = brand.description.slice(0, 200);
