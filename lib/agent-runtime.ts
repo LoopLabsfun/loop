@@ -15,6 +15,7 @@ import {
   type LearningCategory,
 } from "./learnings";
 import { getTopLearnings, recordLearning, dedupeNewBacklogTitles } from "./agent-data";
+import { effectiveEnv } from "./project-config";
 import { rankBacklog, effectivePriority, isBusyworkOnly } from "./agent-backlog";
 import { EXTERNAL_LINKS } from "./links";
 import { buildShipTweet } from "./x-recap";
@@ -1159,7 +1160,8 @@ export function routeAction(action: AgentAction, spentTodaySol = 0): RoutedActio
 /** Ask Claude for the next action. Throws if the runtime isn't configured. */
 export async function decideNextAction(
   p: Project,
-  state: { tasks: AgentTask[]; directives: FeedItem[]; inbox?: InboxMessage[] }
+  state: { tasks: AgentTask[]; directives: FeedItem[]; inbox?: InboxMessage[] },
+  env: Record<string, string | undefined> = process.env
 ): Promise<{ decision: AgentDecision; costUsd: number }> {
   if (!agentRuntimeConfigured()) {
     throw new Error("Agent runtime selected but ANTHROPIC_API_KEY is not set.");
@@ -1287,7 +1289,7 @@ export async function decideNextAction(
     ...(effort ? { output_config: { effort } } : {}),
     system: buildSystemPrompt(p, mandate, {
       canCommit: process.env.AGENT_REPO_HANDS === "1",
-      readRounds: readLoopConfig().maxRounds,
+      readRounds: readLoopConfig(env).maxRounds,
       quiet: silent,
       marketing: process.env.AGENT_MARKETING === "1",
       canEmail: process.env.AGENT_EMAIL_SEND === "1",
@@ -2194,7 +2196,8 @@ export async function runAgentTick(
   p: Project,
   state: { tasks: AgentTask[]; directives: FeedItem[]; inbox?: InboxMessage[] }
 ): Promise<AgentDecision> {
-  const { decision, costUsd: tickCostUsd } = await decideNextAction(p, state);
+  const env = await effectiveEnv(p.key);
+  const { decision, costUsd: tickCostUsd } = await decideNextAction(p, state, env);
 
   // The objective verifier signal for this cycle (maker ≠ checker, A1): a sandbox
   // run distinct from the agent. Set by repo-hands (a real push) or a plain
