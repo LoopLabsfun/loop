@@ -17,6 +17,21 @@ export function isEscalationKind(x: unknown): x is EscalationKind {
   return typeof x === "string" && (ESCALATION_KINDS as string[]).includes(x);
 }
 
+/**
+ * Count the run of consecutive failures at the head of a newest-first list of
+ * dispositions (e.g. recent fee-claim attempts). Stops at the first non-"failed"
+ * row. Pure — the caller fetches the rows and decides whether to escalate (see
+ * shouldEscalateClaim in lib/creator-fees.ts). 'skipped' is not a failure.
+ */
+export function countLeadingFailures(dispositions: string[]): number {
+  let n = 0;
+  for (const d of dispositions) {
+    if (d === "failed") n++;
+    else break;
+  }
+  return n;
+}
+
 export interface EscalationRow {
   id: number;
   project_key: string;

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { planResolution, isEscalationKind, ESCALATION_KINDS } from "./escalations";
+import {
+  planResolution,
+  isEscalationKind,
+  ESCALATION_KINDS,
+  countLeadingFailures,
+} from "./escalations";
 
 describe("isEscalationKind", () => {
   it("accepts the four typed kinds and rejects others", () => {
@@ -41,5 +46,16 @@ describe("planResolution", () => {
   it("caps a note at 2000 chars", () => {
     const plan = planResolution("info", "done", "x".repeat(5000));
     expect(plan.ok && plan.note?.length).toBe(2000);
+  });
+});
+
+describe("countLeadingFailures", () => {
+  it("counts the run of leading 'failed' (newest-first), stopping at the first non-failure", () => {
+    expect(countLeadingFailures([])).toBe(0);
+    expect(countLeadingFailures(["executed"])).toBe(0);
+    expect(countLeadingFailures(["failed", "failed", "failed"])).toBe(3);
+    expect(countLeadingFailures(["failed", "failed", "executed", "failed"])).toBe(2);
+    // a 'skipped' at the head is not a failure and stops the run
+    expect(countLeadingFailures(["skipped", "failed", "failed"])).toBe(0);
   });
 });
