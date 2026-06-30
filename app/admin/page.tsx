@@ -1677,9 +1677,43 @@ function ProvisioningPanel({ activeKey }: { activeKey: string }) {
 }
 
 interface MoveState {
-  op: "treasury-sweep" | "treasury-claim";
+  op: "treasury-sweep" | "treasury-claim" | "treasury-distribute";
   label: string;
   preview: Record<string, unknown>;
+}
+
+// Renders the fee-distribution preview: the per-role transfers that WOULD be
+// sent (bounded to the ledger's claimable) + anything held back, before confirm.
+function DistributePreview({ preview }: { preview: Record<string, unknown> }) {
+  const transfers = (preview.transfers as { role: string; to: string; sol: number }[]) ?? [];
+  const skipped = (preview.skipped as string[]) ?? [];
+  const claimable = preview.claimable as
+    | { founderSol: number; agentSol: number; platformSol: number }
+    | undefined;
+  return (
+    <div className="font-mono text-[11px] text-muted leading-[1.6] flex flex-col gap-1">
+      {claimable && (
+        <div className="text-faint">
+          claimable — founder {claimable.founderSol.toFixed(4)} · agent {claimable.agentSol.toFixed(4)} · platform{" "}
+          {claimable.platformSol.toFixed(4)}
+        </div>
+      )}
+      {transfers.length ? (
+        transfers.map((t, i) => (
+          <div key={i} className="text-ink">
+            → {t.role} {t.sol.toFixed(4)} SOL → {t.to.slice(0, 8)}…{t.to.slice(-4)}
+          </div>
+        ))
+      ) : (
+        <div>Nothing to distribute right now.</div>
+      )}
+      {skipped.map((s, i) => (
+        <div key={`s${i}`} className="text-faint">
+          · {s}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function TreasuryPanel({ activeKey }: { activeKey: string }) {
@@ -1739,10 +1773,13 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
       }
       const sig = body.txSig as string | undefined;
       const claimed = body.claimedSol as number | undefined;
+      const note = body.note as string | undefined;
       setMoveResult(
         sig
           ? `✓ ${move.label} sent${claimed != null ? ` · ${claimed.toFixed(4)} SOL` : ""} · ${sig.slice(0, 12)}…`
-          : `✓ ${move.label} done`
+          : note
+            ? `✓ ${move.label} · ${note}`
+            : `✓ ${move.label} done`
       );
       setMove(null);
       setRefreshTick((t) => t + 1); // re-read balances after the move lands
@@ -1882,18 +1919,24 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
                 <div className="font-mono text-[12px] text-ink">
                   Confirm: <span className="font-semibold">{move.label}</span>
                 </div>
-                <pre className="font-mono text-[11px] text-muted whitespace-pre-wrap leading-[1.5] m-0">
-                  {Object.entries(move.preview)
-                    .map(([k, v]) => `${k}: ${typeof v === "number" ? v : String(v)}`)
-                    .join("\n")}
-                </pre>
+                {move.op === "treasury-distribute" ? (
+                  <DistributePreview preview={move.preview} />
+                ) : (
+                  <pre className="font-mono text-[11px] text-muted whitespace-pre-wrap leading-[1.5] m-0">
+                    {Object.entries(move.preview)
+                      .map(([k, v]) => `${k}: ${typeof v === "number" ? v : String(v)}`)
+                      .join("\n")}
+                  </pre>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={confirmMove}
                     disabled={moveBusy}
                     className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
                   >
-                    {moveBusy ? "Sending…" : `Confirm ${move.op === "treasury-sweep" ? "sweep" : "claim"}`}
+                    {moveBusy
+                      ? "Sending…"
+                      : `Confirm ${move.op === "treasury-sweep" ? "sweep" : move.op === "treasury-claim" ? "claim" : "distribute"}`}
                   </button>
                   <button
                     onClick={() => setMove(null)}
@@ -1921,6 +1964,14 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
                   className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
                 >
                   {moveBusy ? "…" : "Claim creator fees"}
+                </button>
+                <button
+                  onClick={() => stage("treasury-distribute", `Distribute ${activeKey} fee shares (agent + platform)`)}
+                  disabled={moveBusy}
+                  title="Send the accrued agent (65%) + platform (5%) fee shares from the treasury to their wallets (bounded to the ledger's claimable)"
+                  className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+                >
+                  {moveBusy ? "…" : "Distribute fee shares"}
                 </button>
               </div>
             )}

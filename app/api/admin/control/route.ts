@@ -180,6 +180,20 @@ export async function POST(req: Request) {
       if (!r.ok) return NextResponse.json({ error: r.error ?? "claim failed" }, { status: 409 });
       return NextResponse.json({ ok: true, txSig: r.txSig, claimedSol: r.claimedSol });
     }
+    case "treasury-distribute": {
+      const { previewFeeDistribution, executeFeeDistribution } = await import(
+        "@/lib/fee-distribute-exec"
+      );
+      if (!body.confirm) {
+        const view = await previewFeeDistribution(key);
+        return NextResponse.json({ ok: true, preview: view });
+      }
+      // Founder-confirmed manual distribute: bypass the cron's FEE_DISTRIBUTE env
+      // arm gate (force), but the signer==source bolt + ledger bounds still hold.
+      const out = await executeFeeDistribution(key, { force: true });
+      if (!out.ok) return NextResponse.json({ error: out.note ?? "distribute failed" }, { status: 409 });
+      return NextResponse.json({ ok: true, note: out.note, sent: out.sent });
+    }
     // Provisioning retries (Lot 4) — create the project's white-label home
     // (repo + Vercel) or its agent wallet. Infra only, no funds; idempotent.
     case "provision-home": {
