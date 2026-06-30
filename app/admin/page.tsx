@@ -314,6 +314,14 @@ function Console({
               </button>
             )}
             <button
+              onClick={() => control({ action: "reconcile" }, "reconcile")}
+              disabled={!!busy}
+              title="Reconcile the building queue against the repo (landed → shipped, stalled → blocked)"
+              className="font-mono text-[12px] px-3 h-[32px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+            >
+              {busy === "reconcile" ? "Reconciling…" : "Reconcile"}
+            </button>
+            <button
               onClick={() => control({ action: "force-tick" }, "force")}
               disabled={!!busy || s.paused}
               title={s.paused ? "Resume first" : "Run one tick now (bypasses cooldown — costs compute)"}
@@ -369,13 +377,17 @@ function Console({
       {/* Building now */}
       {snap.building.length > 0 && (
         <Panel title={`Building now · ${snap.building.length}`}>
-          <TaskList rows={snap.building} />
+          <TaskList rows={snap.building} kind="building" control={control} busy={busy} />
         </Panel>
       )}
 
       {/* Queue */}
       <Panel title={`Up next · ${snap.todo.length}`}>
-        {snap.todo.length ? <TaskList rows={snap.todo} /> : <Empty>Queue is empty.</Empty>}
+        {snap.todo.length ? (
+          <TaskList rows={snap.todo} kind="todo" control={control} busy={busy} />
+        ) : (
+          <Empty>Queue is empty.</Empty>
+        )}
       </Panel>
 
       {/* Recently shipped */}
@@ -386,7 +398,7 @@ function Console({
       {/* Blocked */}
       {snap.blocked.length > 0 && (
         <Panel title={`Blocked · ${snap.blocked.length}`}>
-          <TaskList rows={snap.blocked} />
+          <TaskList rows={snap.blocked} kind="blocked" control={control} busy={busy} />
         </Panel>
       )}
 
@@ -1151,21 +1163,98 @@ function Btn({ children, onClick, busy, danger }: { children: ReactNode; onClick
   );
 }
 
-function TaskList({ rows, shipped }: { rows: AdminTaskRow[]; shipped?: boolean }) {
+function TaskBtn({
+  onClick,
+  busy,
+  danger,
+  children,
+}: {
+  onClick: () => void;
+  busy?: boolean;
+  danger?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className={`font-mono text-[10.5px] px-2 h-[26px] rounded-[6px] flex-none disabled:opacity-50 ${
+        danger
+          ? "border border-line-2 text-neg hover:bg-neg/5"
+          : "border border-line-2 hover:bg-surface-2"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Shared task list. With `kind` + `control` it becomes the actionable stuck-task /
+// backlog surface: building/blocked rows can be marked shipped or requeued (the
+// reconcile-by-hand for a leaked "building" task), todo rows can be promoted to the
+// top of the queue ("build next") or removed. `shipped` stays read-only.
+function TaskList({
+  rows,
+  shipped,
+  kind,
+  control,
+  busy,
+}: {
+  rows: AdminTaskRow[];
+  shipped?: boolean;
+  kind?: "building" | "todo" | "blocked";
+  control?: (body: Record<string, unknown>, tag: string) => void;
+  busy?: string | null;
+}) {
+  const act = (id: number, body: Record<string, unknown>) =>
+    control?.({ ...body, taskId: id }, `task-${id}`);
   return (
     <div className="flex flex-col">
-      {rows.map((r, i) => (
-        <div key={i} className="flex items-start gap-3 py-2 border-b border-line-4 last:border-0">
-          <span
-            className={`font-mono text-[10px] px-[6px] py-[2px] rounded-[5px] flex-none mt-[1px] ${
-              shipped ? "bg-pos/10 text-pos" : "bg-surface-2 text-muted"
-            }`}
-          >
-            {r.category}
-          </span>
-          <span className="text-[12.5px] text-ink leading-[1.4]">{r.title}</span>
-        </div>
-      ))}
+      {rows.map((r) => {
+        const rowBusy = busy === `task-${r.id}`;
+        return (
+          <div key={r.id} className="flex items-start gap-3 py-2 border-b border-line-4 last:border-0">
+            <span
+              className={`font-mono text-[10px] px-[6px] py-[2px] rounded-[5px] flex-none mt-[1px] ${
+                shipped ? "bg-pos/10 text-pos" : "bg-surface-2 text-muted"
+              }`}
+            >
+              {r.category}
+            </span>
+            <span className="text-[12.5px] text-ink leading-[1.4] flex-1 min-w-0">{r.title}</span>
+            {kind === "todo" && (
+              <span className="font-mono text-[10px] text-faint flex-none mt-[3px] whitespace-nowrap">
+                {r.source !== "agent" ? `${r.source} ` : ""}p{r.priority}
+              </span>
+            )}
+            {control && kind && (
+              <div className="flex gap-1 flex-none">
+                {(kind === "building" || kind === "blocked") && (
+                  <>
+                    <TaskBtn onClick={() => act(r.id, { action: "task-status", status: "shipped" })} busy={rowBusy}>
+                      ✓ shipped
+                    </TaskBtn>
+                    <TaskBtn onClick={() => act(r.id, { action: "task-status", status: "todo" })} busy={rowBusy}>
+                      ↩ requeue
+                    </TaskBtn>
+                  </>
+                )}
+                {kind === "todo" && (
+                  <TaskBtn
+                    onClick={() => act(r.id, { action: "task-priority", priority: 120, source: "founder" })}
+                    busy={rowBusy}
+                  >
+                    ↑ build next
+                  </TaskBtn>
+                )}
+                <TaskBtn onClick={() => act(r.id, { action: "task-remove" })} busy={rowBusy} danger>
+                  ✕
+                </TaskBtn>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
