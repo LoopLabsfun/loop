@@ -59,9 +59,16 @@ export function AgentOperator({
   /**
    * Real business metrics, server-fetched. `visitors` = total Vercel Web
    * Analytics visitors since launch; `holders` = live on-chain holder count
-   * (already a formatted string). Either null/undefined ⇒ honest "—".
+   * (already a formatted string). `sessions` / `ticks` = optional DB-level
+   * overrides; if omitted they fall back to summaries.length / tasks.length.
+   * Any null/undefined ⇒ honest "—".
    */
-  metrics?: { visitors?: number | null; holders?: string | null };
+  metrics?: {
+    visitors?: number | null;
+    holders?: string | null;
+    sessions?: number | null;
+    ticks?: number | null;
+  };
 }) {
   const [tab, setTab] = useState<Tab>("tasks");
   const { inspect } = useInspector();
@@ -88,6 +95,11 @@ export function AgentOperator({
         )
       : "—";
   const holders = metrics?.holders && metrics.holders.length ? metrics.holders : "—";
+  // Sessions = distinct active days (one DailySummary per day), with optional
+  // DB-level override from callers that have a real session count.
+  const sessions = metrics?.sessions != null ? metrics.sessions : summaries.length;
+  // Ticks = total task-queue entries seen, with optional DB-level override.
+  const ticks = metrics?.ticks != null ? metrics.ticks : tasks.length;
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -155,11 +167,13 @@ export function AgentOperator({
         </div>
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
             buyback/airdrop/bounty to holders), surfaced in Project Wallet. */}
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {/* Real metrics where we have a source, honest "—" otherwise.
               Shipped = distinct things the agent has built; Visitors = total Vercel
               Web Analytics visitors since launch; Holders = live on-chain count of
-              wallets holding the token; Email = real sent/received from the mailbox. */}
+              wallets holding the token; Email = real sent/received from the mailbox;
+              Sessions = distinct active days from summaries; Ticks = total task-queue
+              entries seen. */}
           <Stat
             label="Shipped"
             value={shipped ? String(shipped) : "—"}
@@ -183,6 +197,16 @@ export function AgentOperator({
                 ? "Agent mailbox: emails sent + received"
                 : "No emails yet — inbound routing (EMAIL_INBOUND_SECRET) and autonomous send (AGENT_EMAIL_SEND) are off, so the mailbox is empty until wired"
             }
+          />
+          <Stat
+            label="Sessions"
+            value={sessions ? String(sessions) : "—"}
+            title="Distinct active days the agent has run (one per daily summary)"
+          />
+          <Stat
+            label="Ticks"
+            value={ticks ? String(ticks) : "—"}
+            title="Total task-queue entries the agent has processed"
           />
         </div>
       </div>
