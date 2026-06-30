@@ -30,13 +30,16 @@ export const maxDuration = 300;
 // How many projects to tick per cron fire. In LEGACY brain mode each tick runs a
 // real E2B build INLINE, and one build (esp. the big LOOP repo) can eat most of
 // the 300s function budget — so ticking 3/fire made every invocation TIME OUT at
-// maxDuration and ship NOTHING. Default 1: one project ships reliably per fire,
-// and fair-scheduling rotates all funded projects across consecutive fires (at the
-// */10 Vercel cron that's every project ~every 40min). Raise via AGENT_MAX_PER_RUN
-// once the build path is durable (SDK/Trigger.dev offloads builds off the 300s cap).
+// maxDuration and ship NOTHING. The default-live SDK brain mode offloads the
+// actual build onto Trigger.dev (this function only decides + enqueues, which is
+// cheap), so that timeout risk no longer applies — default 2: with 4 live
+// projects, fair-scheduling (least-recently-ticked first) now covers every
+// project within 2 cron fires instead of 4, roughly halving the worst-case wait
+// a thin-treasury project can see before its own adaptive cadence gets a chance
+// to fire. Raise/lower via AGENT_MAX_PER_RUN (drop to 1 if running legacy mode).
 const MAX_PER_RUN = (() => {
   const n = Number(process.env.AGENT_MAX_PER_RUN);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 2;
 })();
 
 export async function GET(req: Request) {
