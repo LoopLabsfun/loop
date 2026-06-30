@@ -278,7 +278,14 @@ export async function setPrelaunchStatus(
     .in("status", ["draft", "whitelisted", "launching"]);
   if (status === "whitelisted") {
     await provisionProjectWallet(wallet); // best-effort
-    await provisionDraftHome(wallet); // best-effort — repo + Vercel home, ready before mint
+    // best-effort — repo + Vercel home, ready before mint. provisionDraftHome
+    // shouldn't throw, but whitelisting must never fail because a GitHub/Vercel
+    // call (or a future change to that function) did something unexpected.
+    try {
+      await provisionDraftHome(wallet);
+    } catch {
+      /* the admin "Provision home" retry covers a failed/partial attempt */
+    }
   }
 }
 
@@ -338,21 +345,23 @@ export async function provisionDraftHome(
   const { provisionProjectHome } = await import("./provisioning-exec");
   const home = await provisionProjectHome(key, r.prompt ?? r.name);
   const plan = provisionPlan(key);
-  // Only record a URL/repo that was actually created — Vercel might not be armed
-  // even when GitHub is (or vice versa), and a stored-but-unreal vercelUrl would
-  // go straight into the pump.fun website link as a dead link for traders.
+  // Only record a URL/repo that's actually real. A created-but-undeployed Vercel
+  // project serves nothing at its alias — linking the repo doesn't itself trigger
+  // a build, only a fresh push does — so home_vercel_url is gated on the first
+  // deploy actually firing, not just the project existing. Otherwise this would
+  // go straight into the pump.fun website link as a dead/empty site for traders.
   if (home.repoOk || home.vercelOk) {
     const patch: Record<string, unknown> = { home_provisioned_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     if (home.repoOk) patch.home_repo = plan.repo;
-    if (home.vercelOk) patch.home_vercel_url = plan.vercelUrl;
+    if (home.vercelOk && home.deployOk) patch.home_vercel_url = plan.vercelUrl;
     await sb.from("launch_waitlist").update(patch).eq("id", r.id);
   }
   return {
-    ok: home.repoOk && home.vercelOk,
+    ok: home.repoOk && home.vercelOk && home.deployOk,
     note: home.note,
     key,
     repo: home.repoOk ? plan.repo : undefined,
-    vercelUrl: home.vercelOk ? plan.vercelUrl : undefined,
+    vercelUrl: home.vercelOk && home.deployOk ? plan.vercelUrl : undefined,
   };
 }
 
