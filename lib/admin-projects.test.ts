@@ -5,7 +5,46 @@ import {
   normalizeTelegram,
   normalizeDiscord,
   normalizeWebsite,
+  restrictPatchForRole,
 } from "./admin-projects";
+
+describe("restrictPatchForRole", () => {
+  const full = {
+    name: "N",
+    description: "D",
+    twitter: "@x",
+    website: "foo.com",
+    tokenImageUrl: "u",
+    bannerUrl: "b",
+    feeFounderPct: 40,
+    prompt: "P",
+    repo: "github.com/o/r",
+    guardrails: "G",
+    contentPolicy: "C",
+  };
+
+  it("passes everything through for the super-admin", () => {
+    expect(restrictPatchForRole(full, "admin")).toEqual(full);
+  });
+
+  it("keeps only brand + social for a creator", () => {
+    expect(restrictPatchForRole(full, "creator")).toEqual({
+      name: "N",
+      description: "D",
+      twitter: "@x",
+      website: "foo.com",
+      tokenImageUrl: "u",
+      bannerUrl: "b",
+    });
+  });
+
+  it("drops fee/prompt/repo/guardrails/contentPolicy for a creator", () => {
+    const out = restrictPatchForRole(full, "creator");
+    for (const k of ["feeFounderPct", "prompt", "repo", "guardrails", "contentPolicy"]) {
+      expect(k in out).toBe(false);
+    }
+  });
+});
 
 describe("sanitizeProjectPatch", () => {
   it("only touches keys that are present (partial edit)", () => {

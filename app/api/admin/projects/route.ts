@@ -1,47 +1,56 @@
 import { NextResponse } from "next/server";
 import { getProject } from "@/lib/queries";
-import { isFounder } from "@/lib/admin-guard";
+import { isFounder, adminWallet } from "@/lib/admin-guard";
 import { secretsConfigured } from "@/lib/project-secrets";
 import {
   listAdminProjects,
   updateProjectFields,
   setProjectPaused,
   setProjectAgentKey,
+  restrictPatchForRole,
   type ProjectFieldPatch,
+  type AdminRole,
 } from "@/lib/admin-projects";
 
-// PLATFORM-ADMIN project control. Gated on the LOOP creator_wallet (the platform
-// super-admin), so the founder can administer EVERY project — third-party ones
-// included — from one signed-in session.
-//   GET            → every launched project + its mutable fields (+ hasAgentKey)
-//   POST edit      → patch fields (fee %, description, prompt, repo, cover, steering)
-//   POST set-key   → store a project's BYO Anthropic key (encrypted; write-only)
-//   POST pause/resume → flip its agent's agent_paused
+// PROJECT EDITING — two roles share one surface:
+//   • LOOP super-admin (the LOOP creator_wallet) can administer EVERY project;
+//   • a project's OWN creator_wallet can edit THEIR project's brand + social only.
+// Both authenticate the same way (a wallet-signed session cookie, lib/admin-session);
+// the difference is scope, enforced here per target project.
+//   GET            → projects the caller may edit (all for super-admin, else own)
+//   POST edit      → patch fields (creator: brand/social only; admin: everything)
+//   POST set-key   → store a project's BYO Anthropic key  (super-admin only)
+//   POST pause/resume → flip its agent's agent_paused      (super-admin only)
+// Custom domains have their own route: /api/admin/projects/domain.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function gate(req: Request) {
+/** Resolve the caller's identity: a valid session wallet + whether it's the LOOP
+ *  super-admin. Returns an error response when there's no valid admin session. */
+async function caller(req: Request) {
+  const wallet = adminWallet(req);
+  if (!wallet) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   const loop = await getProject("loop");
-  if (!loop) return { error: NextResponse.json({ error: "loop project not found" }, { status: 404 }) };
-  // Platform super-admin = the LOOP creator wallet (same session as the rest of /admin).
-  if (!isFounder(req, loop)) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  return { ok: true as const };
+  const isSuper = Boolean(loop && isFounder(req, loop));
+  return { wallet, isSuper };
 }
 
 export async function GET(req: Request) {
-  const g = await gate(req);
-  if ("error" in g) return g.error;
-  // secretsArmed lets the UI distinguish "no key set" from "key store is off"
-  // (PROJECT_SECRETS_KEY unset) — so set-key isn't offered when it can only fail.
+  const c = await caller(req);
+  if ("error" in c) return c.error;
+  const all = await listAdminProjects();
+  // Super-admin sees every project; a creator sees only the ones they launched.
+  const projects = c.isSuper ? all : all.filter((p) => p.creatorWallet === c.wallet);
   return NextResponse.json({
-    projects: await listAdminProjects(),
+    projects,
     secretsArmed: secretsConfigured(),
+    isSuper: c.isSuper,
   });
 }
 
 export async function POST(req: Request) {
-  const g = await gate(req);
-  if ("error" in g) return g.error;
+  const c = await caller(req);
+  if ("error" in c) return c.error;
 
   let body: { key?: string; action?: string; fields?: ProjectFieldPatch; anthropicKey?: string };
   try {
@@ -54,9 +63,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "valid project key required" }, { status: 400 });
   }
 
+  // Authorize against the TARGET project: the LOOP super-admin, or its own creator.
+  const target = await getProject(key);
+  if (!target) return NextResponse.json({ error: "project not found" }, { status: 404 });
+  const isCreatorOfTarget = Boolean(target.creatorWallet && c.wallet === target.creatorWallet);
+  if (!c.isSuper && !isCreatorOfTarget) {
+    return NextResponse.json({ error: "not your project" }, { status: 403 });
+  }
+  const role: AdminRole = c.isSuper ? "admin" : "creator";
+
+  // Operational/economic controls stay super-admin only.
+  const superOnly = body.action === "set-key" || body.action === "pause" || body.action === "resume";
+  if (superOnly && !c.isSuper) {
+    return NextResponse.json({ error: "reserved for the platform admin" }, { status: 403 });
+  }
+
   try {
     if (body.action === "edit") {
-      await updateProjectFields(key, body.fields ?? {});
+      await updateProjectFields(key, restrictPatchForRole(body.fields ?? {}, role));
       return NextResponse.json({ ok: true });
     }
     if (body.action === "set-key") {

@@ -55,6 +55,8 @@ export interface AdminProjectRow {
   website: string | null;
   tokenImageUrl: string | null;
   bannerUrl: string | null;
+  /** External custom domain attached to the project's Vercel project (verified). */
+  domain: string | null;
 }
 
 const COVER_MAX = 40;
@@ -68,7 +70,7 @@ export async function listAdminProjects(): Promise<AdminProjectRow[]> {
   const { data } = await sb
     .from("projects")
     .select(
-      "key,name,ticker,description,prompt,repo,cover,guardrails,content_policy,fee_founder_pct,official,network,mint,creator_wallet,treasury_wallet,agent_wallet,agent_paused,treasury_sol,earned_sol,twitter,telegram,discord,website,token_image_url,banner_url,created_at",
+      "key,name,ticker,description,prompt,repo,cover,guardrails,content_policy,fee_founder_pct,official,network,mint,creator_wallet,treasury_wallet,agent_wallet,agent_paused,treasury_sol,earned_sol,twitter,telegram,discord,website,token_image_url,banner_url,domain,created_at",
     )
     .order("created_at", { ascending: false });
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -114,8 +116,42 @@ export async function listAdminProjects(): Promise<AdminProjectRow[]> {
       website: (r.website as string) ?? null,
       tokenImageUrl: (r.token_image_url as string) ?? null,
       bannerUrl: (r.banner_url as string) ?? null,
+      domain: (r.domain as string) ?? null,
     };
   });
+}
+
+// ── Role-scoped editing ─────────────────────────────────────────────────────────
+// The LOOP super-admin can edit every field; a project's own creator is limited to
+// BRAND + SOCIAL (name, description, the social links, and the logo/banner images).
+// The economic/safety levers (fee %, prompt/steering, guardrails, content policy,
+// repo) and operational controls (BYO key, pause/resume) stay LOOP-only. The custom
+// domain is handled by its own route (lib/project-domain), open to both roles.
+
+export type AdminRole = "admin" | "creator";
+
+/** Fields a non-super-admin CREATOR may change on their own project. */
+export const CREATOR_EDITABLE_FIELDS: ReadonlyArray<keyof ProjectFieldPatch> = [
+  "name",
+  "description",
+  "twitter",
+  "telegram",
+  "discord",
+  "website",
+  "tokenImageUrl",
+  "bannerUrl",
+];
+
+/** Drop any field a creator isn't allowed to touch. The super-admin passes through
+ *  unchanged. Pure — defense-in-depth behind the route's role gate. */
+export function restrictPatchForRole(input: ProjectFieldPatch, role: AdminRole): ProjectFieldPatch {
+  if (role === "admin") return input;
+  const allowed = new Set<string>(CREATOR_EDITABLE_FIELDS as readonly string[]);
+  const out: ProjectFieldPatch = {};
+  for (const k of Object.keys(input) as (keyof ProjectFieldPatch)[]) {
+    if (allowed.has(k)) (out as Record<string, unknown>)[k] = input[k];
+  }
+  return out;
 }
 
 export interface ProjectFieldPatch {
