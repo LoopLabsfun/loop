@@ -61,6 +61,12 @@ interface AdminProject {
   hasAgentKey: boolean;
   treasurySol: number | null;
   earnedSol: number | null;
+  twitter: string | null;
+  telegram: string | null;
+  discord: string | null;
+  website: string | null;
+  tokenImageUrl: string | null;
+  bannerUrl: string | null;
 }
 // Editable subset of a launched project (mirrors ProjectFieldPatch on the server).
 interface ProjectFields {
@@ -72,6 +78,10 @@ interface ProjectFields {
   guardrails?: string;
   contentPolicy?: string;
   feeFounderPct?: number;
+  twitter?: string;
+  telegram?: string;
+  discord?: string;
+  website?: string;
 }
 interface Check {
   label: string;
@@ -908,6 +918,10 @@ function ProjectEditForm({
   const [cover, setCover] = useState(project.cover ?? "");
   const [guardrails, setGuardrails] = useState(project.guardrails ?? "");
   const [contentPolicy, setContentPolicy] = useState(project.contentPolicy ?? "");
+  const [twitter, setTwitter] = useState(project.twitter ?? "");
+  const [telegram, setTelegram] = useState(project.telegram ?? "");
+  const [discord, setDiscord] = useState(project.discord ?? "");
+  const [website, setWebsite] = useState(project.website ?? "");
   const [fee, setFee] = useState(project.feeFounderPct == null ? "" : String(project.feeFounderPct));
 
   function save() {
@@ -919,6 +933,10 @@ function ProjectEditForm({
       cover,
       guardrails,
       contentPolicy,
+      twitter,
+      telegram,
+      discord,
+      website,
     };
     const f = Number(fee);
     if (fee.trim() !== "" && Number.isFinite(f)) fields.feeFounderPct = f;
@@ -939,6 +957,21 @@ function ProjectEditForm({
       </div>
       <LArea label="Guardrails" value={guardrails} onChange={setGuardrails} rows={2} />
       <LArea label="Content policy" value={contentPolicy} onChange={setContentPolicy} rows={2} />
+
+      {/* Brand images — uploaded immediately to the public bucket + persisted. */}
+      <div className="grid grid-cols-[60px_1fr] gap-2.5 items-end">
+        <ImageUpload projectKey={project.key} kind="token" current={project.tokenImageUrl} circle />
+        <ImageUpload projectKey={project.key} kind="banner" current={project.bannerUrl} />
+      </div>
+
+      {/* Social links — handle or full URL; saved with the form, normalized server-side. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <LInput label="X / Twitter" value={twitter} onChange={setTwitter} mono placeholder="@handle or x.com/…" />
+        <LInput label="Telegram" value={telegram} onChange={setTelegram} mono placeholder="@name or t.me/…" />
+        <LInput label="Discord" value={discord} onChange={setDiscord} mono placeholder="discord.gg/…" />
+        <LInput label="Website" value={website} onChange={setWebsite} mono placeholder="https://…" />
+      </div>
+
       <div className="text-[11px] text-faint font-mono">
         split → {splitOf(fee.trim() !== "" && Number.isFinite(Number(fee)) ? Number(fee) : project.feeFounderPct)} (founder/agent/platform)
       </div>
@@ -946,6 +979,69 @@ function ProjectEditForm({
         <Btn onClick={save} busy={busy}>Save</Btn>
         <Btn onClick={onCancel}>Cancel</Btn>
       </div>
+    </div>
+  );
+}
+
+// ── Upload a project's logo/banner (immediate, founder-gated) ─────────────────
+function ImageUpload({
+  projectKey,
+  kind,
+  current,
+  circle,
+}: {
+  projectKey: string;
+  kind: "token" | "banner";
+  current: string | null;
+  circle?: boolean;
+}) {
+  const [url, setUrl] = useState<string | null>(current);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function pick(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("key", projectKey);
+      fd.append("kind", kind);
+      fd.append("file", file);
+      const r = await fetch("/api/admin/projects/media", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "upload failed");
+      setUrl(j.url as string);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="block text-[12.5px] text-muted">{kind === "token" ? "Token logo" : "Banner"}</label>
+      <label
+        className={`relative flex items-center justify-center overflow-hidden border border-dashed border-line-3 bg-surface-2 cursor-pointer hover:border-line-hover transition-colors ${
+          circle ? "h-[60px] w-[60px] rounded-full" : "h-[60px] w-full rounded-[10px]"
+        }`}
+      >
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-[11px] text-faint">{busy ? "…" : "+ image"}</span>
+        )}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(e) => pick(e.target.files?.[0] ?? null)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          aria-label={`Upload ${kind} image`}
+        />
+      </label>
+      {err && <span className="text-[11px] text-neg">{err}</span>}
     </div>
   );
 }
