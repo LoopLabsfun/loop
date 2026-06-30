@@ -99,7 +99,7 @@ interface Check {
 // gated endpoint. No new infra — it reads the agent_* tables already in Supabase.
 export const dynamic = "force-dynamic";
 
-const KEY = "loop";
+const DEFAULT_KEY = "loop";
 
 export default function AdminPage() {
   const wallet = useWallet();
@@ -108,10 +108,16 @@ export default function AdminPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
+  // Which project's ops the founder is viewing. The session cookie is wallet-
+  // bound (not project-bound), so a founder who signed in for loop can switch to
+  // any project sharing the same creator_wallet without re-signing — the log/
+  // control routes re-bind to each project's creator_wallet (isFounder).
+  const [key, setKey] = useState<string>(DEFAULT_KEY);
+  const [opsKeys, setOpsKeys] = useState<string[]>([DEFAULT_KEY]);
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/admin/log?p=${KEY}`, { cache: "no-store" });
+      const r = await fetch(`/api/admin/log?p=${key}`, { cache: "no-store" });
       if (r.status === 401) {
         setAuthed(false);
         return;
@@ -125,12 +131,35 @@ export default function AdminPage() {
     } finally {
       setChecked(true);
     }
-  }, []);
+  }, [key]);
 
   // On mount, try the log: a still-valid session cookie skips the wallet prompt.
   useEffect(() => {
     load();
   }, [load]);
+
+  // Once authed, fetch the set of projects this founder can administer (same
+  // creator_wallet) so we can offer ops tabs for each — not just loop.
+  useEffect(() => {
+    if (!authed) return;
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/admin/projects", { cache: "no-store" });
+        if (!r.ok) return;
+        const j = (await r.json()) as { projects?: { key: string }[] };
+        const keys = (j.projects ?? []).map((p) => p.key);
+        if (live && keys.length) {
+          setOpsKeys(keys.includes(DEFAULT_KEY) ? keys : [DEFAULT_KEY, ...keys]);
+        }
+      } catch {
+        /* keep the default single tab */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [authed]);
 
   // Poll while authed.
   useEffect(() => {
@@ -143,7 +172,7 @@ export default function AdminPage() {
     setErr(null);
     setBusy("signin");
     try {
-      const proof = await wallet.signAdminProof(KEY);
+      const proof = await wallet.signAdminProof(key);
       if (!proof) {
         setErr("This wallet can't sign (connect Phantom/Solflare).");
         return;
@@ -151,7 +180,7 @@ export default function AdminPage() {
       const r = await fetch("/api/admin/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: KEY, proof }),
+        body: JSON.stringify({ key, proof }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -174,7 +203,7 @@ export default function AdminPage() {
       const r = await fetch("/api/admin/control", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: KEY, ...body }),
+        body: JSON.stringify({ key, ...body }),
       });
       const j = await r.json();
       if (!r.ok) setErr(j.error || "action failed");
@@ -255,7 +284,14 @@ export default function AdminPage() {
       ) : !snap ? (
         <div className="text-[13px] text-muted font-mono">Loading…</div>
       ) : (
-        <Console snap={snap} busy={busy} control={control} />
+        <Console
+          snap={snap}
+          busy={busy}
+          control={control}
+          activeKey={key}
+          opsKeys={opsKeys}
+          onSwitch={setKey}
+        />
       )}
     </main>
   );
@@ -265,10 +301,16 @@ function Console({
   snap,
   busy,
   control,
+  activeKey,
+  opsKeys,
+  onSwitch,
 }: {
   snap: AdminSnapshot;
   busy: string | null;
   control: (body: Record<string, unknown>, tag: string) => Promise<void>;
+  activeKey: string;
+  opsKeys: string[];
+  onSwitch: (key: string) => void;
 }) {
   const s = snap.status;
   const ago = (ms: number | null) =>
@@ -281,6 +323,28 @@ function Console({
       {/* Platform-admin control over EVERY launched project — fields, fee split,
           per-project agent API key, pause/resume (third-party projects included). */}
       <ProjectsPanel />
+
+      {/* Ops project switcher — the panels below (status / tasks / backlog /
+          reconcile / force-tick) act on the SELECTED project, not just loop. */}
+      {opsKeys.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[11px] text-faint">Agent ops:</span>
+          {opsKeys.map((k) => (
+            <button
+              key={k}
+              onClick={() => onSwitch(k)}
+              disabled={!!busy}
+              className={`font-mono text-[12px] px-3 h-[28px] rounded-[8px] border transition-colors disabled:opacity-60 ${
+                k === activeKey
+                  ? "bg-accent text-white border-accent"
+                  : "border-line-2 hover:bg-surface-2"
+              }`}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Status + controls */}
       <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
