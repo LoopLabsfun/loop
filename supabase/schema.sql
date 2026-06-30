@@ -54,7 +54,10 @@ comment on column public.projects.network is 'mainnet | devnet — which cluster
 
 -- creator wallet (signature proof)
 alter table public.projects add column if not exists creator_wallet text;
-comment on column public.projects.creator_wallet is 'Base58 pubkey of the wallet that signed the launch proof; null if unproven.';
+comment on column public.projects.creator_wallet is 'Base58 pubkey of the wallet that signed the launch proof; null if unproven. Also the destination of the founder fee share.';
+
+alter table public.projects add column if not exists fee_creator_wallet text;
+comment on column public.projects.fee_creator_wallet is 'On-chain pump.fun creator — the wallet creator fees accrue to / are claimed FROM (distinct from creator_wallet, the founder payout). Several projects can share one (shared launch signer); the claimed lump is attributed across them off-chain (lib/fee-attribution.ts).';
 
 -- pay-to-launch: the on-chain SOL launch-fee payment signature (creator → platform
 -- wallet), verified server-side before insert. Null when untolled. The partial
@@ -79,6 +82,25 @@ comment on column public.projects.guardrails is 'Editable guardrails the agent r
 -- (a DB-backed, runtime-mutable counterpart to the global AGENT_PAUSED env).
 alter table public.projects add column if not exists agent_paused boolean not null default false;
 comment on column public.projects.agent_paused is 'Founder kill switch (admin console): when true the cron skips this project''s brain — no Claude spend, no redeploy needed.';
+
+-- per-project social links + brand images, editable from the platform-admin console
+-- (lib/admin-projects.ts). Stored as canonical https URLs (twitter/telegram/discord/
+-- website) and public bucket URLs (token_image_url/banner_url, in waitlist-media under
+-- projects/<key>/…). These drive the Loop token page; on-chain pump.fun metadata is
+-- frozen at mint, so editing here never rewrites an already-minted token's page.
+alter table public.projects
+  add column if not exists twitter text,
+  add column if not exists telegram text,
+  add column if not exists discord text,
+  add column if not exists website text,
+  add column if not exists token_image_url text,
+  add column if not exists banner_url text;
+comment on column public.projects.twitter is 'Canonical https://x.com/<handle> for the project, or null.';
+comment on column public.projects.telegram is 'Canonical https://t.me/<name> for the project, or null.';
+comment on column public.projects.discord is 'Canonical https://discord.gg/<code> invite for the project, or null.';
+comment on column public.projects.website is 'Project website (canonical https URL), or null → falls back to the Loop token page.';
+comment on column public.projects.token_image_url is 'Public URL of the token logo (waitlist-media bucket); null → mascot/placeholder.';
+comment on column public.projects.banner_url is 'Public URL of the project banner (waitlist-media bucket); null → gradient cover.';
 
 -- ── profiles ─────────────────────────────────────────────────────────────────
 -- One row per user wallet. The wallet IS the identity on Loop (everything is

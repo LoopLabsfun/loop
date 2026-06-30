@@ -40,23 +40,55 @@ import type { Project } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Epoch-ms of the project's most recent agent_tasks tick, or 0 if it has never
- * ticked. Used to schedule cron ticks FAIRLY: with more funded projects than the
- * per-run cap, ordering by this ascending (never-ticked first) round-robins every
- * project in instead of always starving the ones at the back of the default
- * (official, then newest-first) order. Best-effort: 0 on no backend / error.
+ * Epoch-ms of the project's most recent tick — the LATER of its newest agent_tasks
+ * row and its last tick ATTEMPT (agent_tick_attempts, written before the heavy
+ * build). 0 if it has never ticked. Used to schedule cron ticks FAIRLY (order
+ * ascending so never-ticked goes first) AND to break the starvation DEADLOCK: a
+ * project whose tick times out still advances this marker via the attempt row, so
+ * it isn't re-picked first on every fire while the others starve. Best-effort.
  */
 export async function lastTickAt(key: string): Promise<number> {
   if (!supabase) return 0;
-  const { data } = await supabase
-    .from("agent_tasks")
-    .select("updated_at")
-    .eq("project_key", key)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const ts = (data as { updated_at?: string } | null)?.updated_at;
-  return ts ? new Date(ts).getTime() : 0;
+  const [task, attempt] = await Promise.all([
+    supabase
+      .from("agent_tasks")
+      .select("updated_at")
+      .eq("project_key", key)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("agent_tick_attempts")
+      .select("attempted_at")
+      .eq("project_key", key)
+      .maybeSingle(),
+  ]);
+  const stamps = [
+    (task.data as { updated_at?: string } | null)?.updated_at,
+    (attempt.data as { attempted_at?: string } | null)?.attempted_at,
+  ]
+    .filter((s): s is string => Boolean(s))
+    .map((s) => new Date(s).getTime());
+  return stamps.length ? Math.max(...stamps) : 0;
+}
+
+/**
+ * Record that THIS cron fire is about to tick `key`, BEFORE the heavy E2B build
+ * runs. Persisted immediately so that even if the tick then times out (the function
+ * is killed at maxDuration), fair scheduling has already advanced past this project
+ * — the next fire picks the next-stalest one instead of re-picking this one forever
+ * (the deadlock that starved every project behind the heavy LOOP repo). Best-effort:
+ * a failed write just means the old behaviour for this fire, never throws.
+ */
+export async function recordTickAttempt(key: string): Promise<void> {
+  if (!supabaseAdmin) return;
+  try {
+    await supabaseAdmin
+      .from("agent_tick_attempts")
+      .upsert({ project_key: key, attempted_at: new Date().toISOString() });
+  } catch {
+    /* best-effort — never block a tick on the marker write */
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
-import { getAgentState, resolveDueProposals, lastTickAt } from "@/lib/agent-data";
+import { getAgentState, resolveDueProposals, lastTickAt, recordTickAttempt } from "@/lib/agent-data";
 import { tickCadenceMinutes, cadenceBounds } from "@/lib/agent-cadence";
 import {
   runAgentTick,
@@ -158,6 +158,12 @@ export async function GET(req: Request) {
         );
         continue;
       }
+      // Commit to ticking this project: record the ATTEMPT now, BEFORE the heavy
+      // E2B build. If the build then overruns the 300s function budget and the
+      // function is killed (the big LOOP repo does), this marker has already
+      // advanced its "last ticked" time — so the next fire picks the next-stalest
+      // project instead of re-picking this one forever and starving the others.
+      await recordTickAttempt(p.key);
       // Daily founder recap (once per UTC day, official projects only) — runs in
       // both brain modes since the SDK path returns early below. Self-guarding +
       // failure-safe, so it never affects the tick.
