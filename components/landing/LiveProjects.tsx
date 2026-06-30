@@ -106,19 +106,28 @@ function ProjectCard({
           <LoopMark width={64} height={38} stroke="var(--accent)" />
         </div>
       ) : (
-        <div className="h-[120px] relative">
-          {p.bannerUrl ? (
+        <div className={`h-[120px] relative ${COVERS[p.cover]}`}>
+          {p.bannerUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.bannerUrl} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <div className={`w-full h-full ${COVERS[p.cover]}`} />
+            <img
+              src={p.bannerUrl}
+              alt=""
+              className="w-full h-full object-cover"
+              // Broken/404 banner → hide so the gradient cover behind shows (never a broken icon).
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
           )}
           {p.tokenImageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={p.tokenImageUrl}
               alt=""
-              className="absolute left-4 -bottom-5 w-11 h-11 rounded-full object-cover border-2 border-surface"
+              className="absolute left-4 -bottom-5 w-11 h-11 rounded-full object-cover border-2 border-surface bg-surface"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
             />
           )}
         </div>

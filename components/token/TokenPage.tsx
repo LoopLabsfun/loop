@@ -496,11 +496,18 @@ function MergedHero({
         {/* Left — identity · contract · price · buy */}
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-[10px] flex-wrap">
-            <div className="w-[42px] h-[42px] rounded-[12px] border border-line-2 bg-accent-tint flex items-center justify-center flex-none overflow-hidden">
-              {p.tokenImageUrl ? (
-                <img src={p.tokenImageUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <LoopMark width={26} height={16} stroke="var(--accent)" />
+            <div className="relative w-[42px] h-[42px] rounded-[12px] border border-line-2 bg-accent-tint flex items-center justify-center flex-none overflow-hidden">
+              <LoopMark width={26} height={16} stroke="var(--accent)" />
+              {p.tokenImageUrl && (
+                <img
+                  src={p.tokenImageUrl}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                  // Broken/404 image → hide so the LoopMark behind shows (never a broken icon).
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
               )}
             </div>
             <h1 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0">{p.name}</h1>
