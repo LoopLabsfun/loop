@@ -177,9 +177,23 @@ export function buildHandsScript(opts: HandsScriptOpts): string {
   const gate = [
     `GATE_RESULT=ok`,
     `: > ${LOG}`,
-    step(`npm ci --no-audit --no-fund`),
-    step(`npx tsc --noEmit`),
-    step(`npx vitest run --reporter=dot`),
+    // Install: `npm ci` is strict (needs a committed lockfile) — the right gate for
+    // a mature repo (LOOP). A freshly-provisioned project repo may not have a
+    // lockfile yet, so fall back to `npm install` instead of hard-failing the gate
+    // on day one. LOOP is unaffected: its lockfile is present so `npm ci` succeeds
+    // and the fallback never runs.
+    step(`npm ci --no-audit --no-fund || npm install --no-audit --no-fund`),
+    // Typecheck only when the repo is actually TypeScript (has a tsconfig). A
+    // mature repo has one ⇒ tsc runs and a type error still fails the gate; a fresh
+    // JS-only scaffold has none ⇒ skip rather than fail on "No inputs were found".
+    step(`if [ -f tsconfig.json ]; then npx tsc --noEmit; fi`),
+    // Tests only when the repo actually has a test runner configured (vitest in
+    // package.json or a vitest config). --passWithNoTests so a repo that has the
+    // runner but no tests yet still goes green; a repo with no runner skips
+    // entirely instead of npx-fetching vitest and failing on "no test files".
+    step(
+      `if [ -f vitest.config.ts ] || [ -f vitest.config.js ] || grep -q '"vitest"' package.json 2>/dev/null; then npx vitest run --reporter=dot --passWithNoTests; fi`
+    ),
     ...(fullGate ? [step(`npx next build`)] : []),
     // On failure, surface a short tail so the build log says WHY it didn't ship.
     `if [ "$GATE_RESULT" != "ok" ]; then echo "----- gate tail -----"; tail -n 25 ${LOG}; echo "---------------------"; fi`,
