@@ -722,6 +722,18 @@ comment on table public.compute_ledger is 'Per-project compute funding: cumulati
 alter table public.compute_ledger enable row level security;
 create policy "compute_ledger public read" on public.compute_ledger for select to anon, authenticated using (true);
 
+-- Per-project LAST TICK ATTEMPT (written by the cron BEFORE the heavy E2B build).
+-- lastTickAt() (lib/agent-data) takes the later of this and the newest agent_tasks
+-- row, so a tick that times out (the heavy LOOP repo overruns the 300s function
+-- budget) still advances the project's "last ticked" marker — otherwise fair
+-- scheduling re-picks it first on every fire and starves the others (deadlock).
+create table if not exists public.agent_tick_attempts (
+  project_key text primary key,
+  attempted_at timestamptz not null default now()
+);
+comment on table public.agent_tick_attempts is 'Last tick-attempt time per project (written before the heavy build) so fair scheduling advances even when a tick times out.';
+alter table public.agent_tick_attempts enable row level security;
+
 -- ── Phase A: LOOP-only (close public project creation) ───────────────────────
 -- No anon insert policy on projects → only the service-role launch script can
 -- create a project. Reopen with a hardened insert policy for the public phase.
