@@ -44,9 +44,11 @@ export interface AgentWallet {
 }
 
 /**
- * Provision a Solana agent wallet via Privy for a project. Idempotent-ish: Privy
- * keys it by external_id, so re-running returns/serves the same logical wallet
- * (look it up with `getAgentWallet`). Throws if custody isn't configured.
+ * Provision a Solana agent wallet via Privy for a project. Idempotent: a wallet
+ * keyed by this project's external_id is reused if it already exists — Privy
+ * returns 500 on a duplicate-external_id create rather than serving the existing
+ * wallet, so a blind create would wedge any retry of a launch whose earlier
+ * attempt created the wallet then failed downstream. Throws if custody isn't set.
  */
 export async function provisionAgentWallet(
   projectKey: string
@@ -56,6 +58,10 @@ export async function provisionAgentWallet(
       "Agent wallet custody selected but PRIVY_APP_ID/PRIVY_APP_SECRET not set."
     );
   }
+  // Reuse the existing wallet (the retry-safe path) before attempting a create.
+  const existing = await getAgentWallet(projectKey);
+  if (existing) return existing;
+
   const res = await fetch(`${PRIVY_BASE}/wallets`, {
     method: "POST",
     headers: authHeaders(),
@@ -67,6 +73,10 @@ export async function provisionAgentWallet(
     }),
   });
   if (!res.ok) {
+    // A concurrent create (or a just-registered prior attempt) can win the race
+    // and 500 us — serve the now-existing wallet instead of failing the launch.
+    const raced = await getAgentWallet(projectKey);
+    if (raced) return raced;
     throw new Error(`Privy wallet create failed: ${res.status} ${await res.text()}`);
   }
   const json = (await res.json()) as { id?: string; address?: string };
