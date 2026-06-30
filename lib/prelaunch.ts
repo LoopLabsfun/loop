@@ -725,11 +725,18 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
     // website link. The CA already ends in "Loop" (vanity pool).
     const site = (process.env.NEXT_PUBLIC_SITE_URL || "https://looplabs.fun").replace(/\/$/, "");
     const projectUrl = `${site}/token?p=${key}`;
-    const description =
-      `${plan.prompt}\n\nBuilt autonomously by its AI agent on Loop — follow the build live: ${projectUrl}`.slice(
-        0,
-        DESCRIPTION_MAX,
-      );
+    // Reserve room for the Loop link FIRST, then truncate the pitch to fit —
+    // slicing the whole concatenated string instead would silently drop the
+    // suffix (link included) for any pitch longer than ~90 chars, since
+    // DESCRIPTION_MAX (200) counts the pitch + suffix together. A long pitch
+    // (the common case — MEMEFORGE's is 470+ chars) would otherwise ship with
+    // NO Loop link at all, contradicting the "always references the Loop page"
+    // promise above.
+    const followSuffix = `\n\nBuilt autonomously by its AI agent on Loop — follow the build live: ${projectUrl}`;
+    const promptBudget = Math.max(0, DESCRIPTION_MAX - followSuffix.length);
+    const truncatedPrompt =
+      plan.prompt.length > promptBudget ? `${plan.prompt.slice(0, Math.max(0, promptBudget - 1))}…` : plan.prompt;
+    const description = `${truncatedPrompt}${followSuffix}`.slice(0, DESCRIPTION_MAX);
     // The pump.fun "website" field only fits one URL — prefer the project's own
     // live site (provisioned at whitelist time) so traders land on the actual
     // product, while the loop.fun token page stays reachable via the description
@@ -811,6 +818,17 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       runway: "booting",
       mint: token.mint,
       treasury_wallet: token.treasuryWallet,
+      // The ACTUAL on-chain pump.fun creator the fees accrue to — the shared
+      // LAUNCH_SIGNER pubkey in the default path, or this project's own Privy
+      // wallet in privy-creator mode (token.treasuryWallet is exactly that
+      // address either way). Without this, the cron's fee-claim grouping
+      // (`feeCreatorWallet === signerPubkey`) silently excludes this project
+      // from attribution the moment its fees get swept — its traders' fees
+      // would be attributed to OTHER projects sharing the same signer instead
+      // of credited here. Every existing project (loop/ploop/fame/build)
+      // already has this set; without it, a freshly minted project starts
+      // with NULL and needs the same manual DB fix-up after the fact.
+      fee_creator_wallet: token.treasuryWallet,
       network: token.cluster,
       creator_wallet: wallet,
       agent_wallet: agentAddress,
