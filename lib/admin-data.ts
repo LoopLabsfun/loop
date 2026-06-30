@@ -4,6 +4,8 @@ import type { Project } from "./types";
 import { canAffordTick } from "./budget";
 import { tickCooldownMs } from "./agent-tick-throttle";
 import { brainMode } from "./agent-session-enqueue";
+import { effectivePriority } from "./agent-backlog";
+import type { TaskSource } from "./agent";
 
 // The unified read for the founder admin console: one snapshot of everything the
 // agent is doing + queued + waiting on the founder. Pulls straight from the
@@ -11,10 +13,13 @@ import { brainMode } from "./agent-session-enqueue";
 // at the route). Shaped for direct JSON return — the page renders it verbatim.
 
 export interface AdminTaskRow {
+  id: number;
   title: string;
   detail: string;
   category: string;
   status: string;
+  priority: number;
+  source: string;
   created_at: string;
   updated_at: string;
 }
@@ -57,7 +62,7 @@ export async function getAdminSnapshot(p: Project): Promise<AdminSnapshot> {
       building: [], todo: [], shipped: [], blocked: [], escalations: [], learnings: [],
     };
   }
-  const sel = "title,detail,category,status,created_at,updated_at";
+  const sel = "id,title,detail,category,status,priority,source,created_at,updated_at";
   const [tasksR, escR, learnR] = await Promise.all([
     sb.from("agent_tasks").select(sel).eq("project_key", p.key).order("updated_at", { ascending: false }).limit(150),
     sb.from("agent_escalations").select("id,body,status,created_at").eq("project_key", p.key).eq("status", "open").order("created_at", { ascending: false }).limit(20),
@@ -66,7 +71,13 @@ export async function getAdminSnapshot(p: Project): Promise<AdminSnapshot> {
   const rows = (tasksR.data ?? []) as AdminTaskRow[];
   const byStatus = (s: string) => rows.filter((r) => r.status === s);
   const building = byStatus("building");
-  const todo = byStatus("todo").sort((a, b) => a.created_at.localeCompare(b.created_at));
+  // Show `todo` in the SAME order the agent builds it — curated impact (priority +
+  // source band) first, then oldest — so the backlog manager mirrors reality.
+  const eff = (r: AdminTaskRow) =>
+    effectivePriority({ priority: r.priority, source: r.source as TaskSource });
+  const todo = byStatus("todo").sort(
+    (a, b) => eff(b) - eff(a) || a.created_at.localeCompare(b.created_at)
+  );
   const shippedAll = byStatus("shipped");
   const blocked = byStatus("blocked");
   const lastTickAt = rows.length
