@@ -75,6 +75,18 @@ describe("buildSdkHandsScript", () => {
     expect(script).toContain('echo "PUSHED=yes"');
     expect(script).toContain("COMMIT_SHA=$(git rev-parse HEAD)");
   });
+  it("provisions the session runner + SDK into the sandbox (works in fresh repos)", () => {
+    // Fresh project scaffolds ship neither the runner nor the Agent SDK, so the
+    // session must be fetched + the SDK installed at runtime, then run from there.
+    expect(script).toContain('curl -fsSL');
+    expect(script).toContain("scripts/agent-sdk-session.mjs"); // fetched from LOOP repo
+    expect(script).toContain('npm install --prefix "$HOME/.agent-sdk"');
+    expect(script).toContain("@anthropic-ai/claude-agent-sdk");
+    // the session is RUN from the provisioned path, after the token is unset
+    const idxRun = script.indexOf('node "$HOME/.agent-sdk/session.mjs"');
+    const idxUnset = script.indexOf("unset GITHUB_TOKEN");
+    expect(idxRun).toBeGreaterThan(idxUnset);
+  });
   it("omits `next build` unless fullGate", () => {
     expect(script).not.toContain("npx next build");
     expect(buildSdkHandsScript({ ...base, fullGate: true })).toContain("npx next build");
