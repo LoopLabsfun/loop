@@ -13,6 +13,7 @@ import {
 } from "@/lib/agent";
 import { useInspector } from "@/lib/inspector";
 import type { Project } from "@/lib/types";
+import { projectSiteUrl } from "@/lib/project-site";
 
 // Real social identities only when actually configured (platform-level for now,
 // Phase A / LOOP). Otherwise the UI shows an honest "soon" — never a fake handle
@@ -108,9 +109,9 @@ export function AgentOperator({
   const xUrl = p.twitter ?? (X_HANDLE ? `https://x.com/${X_HANDLE}` : null);
   const tgUrl = p.telegram ?? (TELEGRAM_USERNAME ? `https://t.me/${TELEGRAM_USERNAME}` : null);
   const discordUrl = p.discord ?? null;
-  // Prefer a verified custom domain (the project's real deployed site), then the
-  // creator-set website link, then the configured global default.
-  const siteUrl = (p.domain ? `https://${p.domain}` : p.website) ?? SITE_URL ?? null;
+  // The project's real live site: verified custom domain → creator website → its
+  // OWN per-project Vercel deploy (<slug>-loop-labs-fun.vercel.app) → platform site.
+  const siteUrl = projectSiteUrl(p, SITE_URL || null);
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
@@ -174,22 +175,27 @@ export function AgentOperator({
                 </a>
               </>
             )}
-            {/* Site — per-project website, else a configured global site. */}
-            {siteUrl && (
-              <>
-                <span className="text-faint">·</span>
-                <a
-                  href={siteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-accent-text transition-colors"
-                >
-                  {host(siteUrl)}
-                </a>
-              </>
-            )}
           </div>
         </div>
+
+        {/* Live site — the project's OWN deployed website (its per-project Vercel
+            URL, or a verified custom domain). This is where holders open the real,
+            agent-built product and watch it evolve. */}
+        {siteUrl && (
+          <a
+            href={siteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open the project's live, agent-built website"
+            className="mt-3 flex items-center gap-2 rounded-[10px] border border-line-3 bg-surface-2/50 px-3 py-2 hover:border-accent/50 hover:bg-surface-2 transition-colors group"
+          >
+            <span className="w-[7px] h-[7px] rounded-full bg-pos-bright flex-none" />
+            <span className="font-mono text-[12.5px] text-accent-text truncate">{host(siteUrl)}</span>
+            <span className="font-mono text-[11px] text-faint group-hover:text-muted ml-auto flex-none">
+              live site ↗
+            </span>
+          </a>
+        )}
         {/* Traction stats — no fiat "revenue" line: value is on-chain (token +
             buyback/airdrop/bounty to holders), surfaced in Project Wallet. */}
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
