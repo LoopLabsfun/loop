@@ -10,6 +10,8 @@ import {
 import { brainMode, buildPathReadiness, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { sendDailyDigest } from "@/lib/agent-daily-digest";
 import { canAffordTick } from "@/lib/budget";
+import { creditBalanceUsd } from "@/lib/compute-rail";
+import { getComputeLedger } from "@/lib/compute-ledger-store";
 import { secretsMatch } from "@/lib/api-auth";
 
 // Scheduler entrypoint: Vercel Cron hits this on a schedule (see vercel.json) and
@@ -81,7 +83,25 @@ export async function GET(req: Request) {
   // affordable set by least-recently-ticked (never-ticked = 0 sorts first) so every
   // project round-robins in across cron fires. The cooldown below still prevents
   // re-ticking one that ran recently.
-  const affordable = all.filter((p) => canAffordTick(p).ok);
+  let affordable = all.filter((p) => canAffordTick(p).ok);
+
+  // COMPUTE-BUDGET HARD STOP (opt-in via COMPUTE_BUDGET_GATE=1): a funded project
+  // ALSO sleeps once its metered Claude spend (compute_ledger.consumed_usd) has
+  // caught up to the credit funded for it (credited_usd) — a real per-project $
+  // cap so one project can't drain the shared Anthropic account. Mirrors the
+  // treasury gate above. OFF by default: when unset, only the treasury gate
+  // applies and the (extra per-project) ledger reads are skipped entirely.
+  let computeAsleep: string[] = [];
+  if (process.env.COMPUTE_BUDGET_GATE === "1") {
+    const withCredit = await Promise.all(
+      affordable.map(async (p) => ({
+        p,
+        ok: creditBalanceUsd(await getComputeLedger(p.key)) > 0,
+      }))
+    );
+    computeAsleep = withCredit.filter((x) => !x.ok).map((x) => x.p.key);
+    affordable = withCredit.filter((x) => x.ok).map((x) => x.p);
+  }
   const tickedAt = new Map(
     await Promise.all(affordable.map(async (p) => [p.key, await lastTickAt(p.key)] as const))
   );
@@ -390,6 +410,7 @@ export async function GET(req: Request) {
     {
       ticked: results.length,
       asleep,
+      ...(computeAsleep.length ? { computeAsleep } : {}),
       resolvedProposals,
       chatsAnswered,
       communityAnswered,
