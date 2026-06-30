@@ -188,6 +188,22 @@ export async function POST(req: Request) {
       const r = await provisionProjectHome(key, desc);
       return NextResponse.json({ ok: r.repoOk || r.vercelOk, ...r });
     }
+    // Per-project operator config (Lot 5) — set/clear a whitelisted runtime knob.
+    case "config-set": {
+      const { setProjectConfig } = await import("@/lib/project-config");
+      const knob = (body.kind ?? "").trim();
+      const value = (body.response ?? "").trim();
+      const r = await setProjectConfig(key, knob, value);
+      if (!r.ok) return NextResponse.json({ error: r.error ?? "config set failed" }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
+    case "config-clear": {
+      const { clearProjectConfig } = await import("@/lib/project-config");
+      const knob = (body.kind ?? "").trim();
+      const r = await clearProjectConfig(key, knob);
+      if (!r.ok) return NextResponse.json({ error: r.error ?? "config clear failed" }, { status: 400 });
+      return NextResponse.json({ ok: true });
+    }
     case "provision-wallet": {
       const { provisionAgentWallet, agentWalletConfigured } = await import("@/lib/agent-wallet");
       if (!agentWalletConfigured()) {

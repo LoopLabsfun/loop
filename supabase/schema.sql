@@ -466,6 +466,21 @@ create index if not exists agent_social_plan_project_idx on public.agent_social_
 alter table public.agent_social_plan enable row level security;
 create policy "agent_social_plan public read" on public.agent_social_plan for select to public using (true);
 
+-- Per-project OPERATOR knobs (Lot 5) with env fallback. Generic key/value the
+-- founder edits per project; the runtime reads `{...process.env, ...overrides}`
+-- so an unset key uses the platform env default. service_role only — these are
+-- operator controls, NOT public (no public-read policy, unlike the feed tables).
+create table if not exists public.project_config (
+  project_key text not null references public.projects(key) on delete cascade,
+  key text not null,
+  value text not null,
+  updated_at timestamptz not null default now(),
+  primary key (project_key, key)
+);
+comment on table public.project_config is 'Per-project operator knobs (env-fallback). service_role only.';
+create index if not exists project_config_project_idx on public.project_config (project_key);
+alter table public.project_config enable row level security;
+
 create index if not exists agent_tasks_project_idx      on public.agent_tasks      (project_key, created_at desc);
 create index if not exists agent_emails_project_idx     on public.agent_emails     (project_key, created_at desc);
 create index if not exists agent_posts_project_idx      on public.agent_posts      (project_key, created_at desc);

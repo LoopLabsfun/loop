@@ -7,6 +7,7 @@ import { shortAddr, cashtag } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
 import type { TreasuryDiag } from "@/lib/treasury-diag";
 import type { ProvisioningChecklist } from "@/lib/provisioning-check";
+import type { KnobView } from "@/lib/project-config";
 import { ProjectDomainManager } from "@/components/token/ProjectDomainManager";
 
 // founder/agent/platform split label from the single founder lever (platform = 5).
@@ -415,6 +416,9 @@ function Console({
       {/* Provisioning checklist — green/red infra bricks for the selected project,
           with provision/retry on the missing ones (infra only, no funds). */}
       <ProvisioningPanel activeKey={activeKey} />
+
+      {/* Runtime config — per-project operator knobs (override the platform env). */}
+      <ConfigPanel activeKey={activeKey} />
 
       {/* Waiting on founder — the typed agent→founder request queue */}
       {snap.escalations.length > 0 && (
@@ -1438,6 +1442,126 @@ function EscalationItem({
           >
             Send
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Per-project runtime config (Lot 5). Each whitelisted knob shows its effective
+// value (override, else the platform env default) with an inline override input
+// and a Clear-to-default. Writes go through /api/admin/control (config-set/clear).
+function ConfigPanel({ activeKey }: { activeKey: string }) {
+  const [knobs, setKnobs] = useState<KnobView[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/admin/config?p=${activeKey}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "failed to load");
+        setKnobs(null);
+        return;
+      }
+      setKnobs(j.knobs as KnobView[]);
+      setDraft({});
+    } catch {
+      setErr("network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeKey]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const act = async (action: string, knob: string, value?: string) => {
+    setBusy(knob);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: activeKey, action, kind: knob, response: value }),
+      });
+      const j = await r.json();
+      if (!r.ok) setErr(j.error || "config failed");
+      await load();
+    } catch {
+      setErr("network error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="font-display font-semibold text-[14px]">
+          Runtime config{" "}
+          <span className="text-faint font-mono text-[11px]">· {activeKey} · overrides the platform env</span>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="font-mono text-[12px] px-3 h-[28px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+        >
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+
+      {err ? (
+        <Empty>{err}</Empty>
+      ) : !knobs ? (
+        <Empty>{loading ? "Loading…" : "No data."}</Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {knobs.map((k) => (
+            <div key={k.key} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <span className="font-mono text-[12.5px] text-ink">{k.label}</span>
+                  <span className="font-mono text-[10.5px] text-faint ml-2">{k.key}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-muted">
+                    now: <span className="text-ink">{k.effective || "(default)"}</span>
+                    {k.override == null && <span className="text-faint"> · env default</span>}
+                  </span>
+                  <input
+                    value={draft[k.key] ?? ""}
+                    onChange={(e) => setDraft((d) => ({ ...d, [k.key]: e.target.value }))}
+                    placeholder="override…"
+                    className="w-[110px] font-mono text-[12px] px-2 h-[28px] rounded-[7px] border border-line-2 bg-surface-2 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => act("config-set", k.key, draft[k.key])}
+                    disabled={busy === k.key || !(draft[k.key] ?? "").trim()}
+                    className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    {busy === k.key ? "…" : "Set"}
+                  </button>
+                  {k.override != null && (
+                    <button
+                      onClick={() => act("config-clear", k.key)}
+                      disabled={busy === k.key}
+                      className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="font-mono text-[10.5px] text-faint">{k.hint}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
