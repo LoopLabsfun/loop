@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, supabaseAdmin } from "./supabase";
 import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./solana";
 import { withLiveMarket } from "./token-market";
 import { getPrelaunchProjectBySlug } from "./prelaunch-public";
@@ -110,6 +110,24 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
       if (live !== null) {
         next.treasurySol = live;
         next.treasuryLive = true;
+        // Keep the stored snapshot in step with the live balance. The budget gate
+        // (lib/budget.canAffordTick) runs off treasury_sol, and a later read that
+        // fails (RPC blip / Helius rate-limit on the cron's concurrent fan-out)
+        // falls back to that stored value. If the snapshot is stale-0, one failed
+        // read wrongly SLEEPS a funded project — the bug that left build/ploop/fame
+        // dormant. Persist the last-known balance so the fallback is real, not 0.
+        // Service-role write (RLS forbids anon updates); best-effort + throttled to
+        // material moves so it never churns the hot read path or breaks a render.
+        if (supabaseAdmin && Math.abs(live - (p.treasurySol ?? 0)) > 0.0005) {
+          try {
+            await supabaseAdmin
+              .from("projects")
+              .update({ treasury_sol: live })
+              .eq("key", p.key);
+          } catch {
+            /* best-effort — a failed snapshot write must never break the read */
+          }
+        }
       }
       if (tokenUi !== null) next.treasuryTokenUi = tokenUi;
       if (history && history.length) next.treasuryHistory = history;
