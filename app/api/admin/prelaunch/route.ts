@@ -12,6 +12,7 @@ import {
   getPrelaunchFunding,
   refundPrelaunch,
   updatePrelaunchDraft,
+  provisionDraftHome,
   type DraftFieldPatch,
 } from "@/lib/prelaunch";
 
@@ -73,8 +74,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
     if (action === "whitelist") {
-      await setPrelaunchStatus(wallet, "whitelisted");
+      await setPrelaunchStatus(wallet, "whitelisted"); // also provisions the repo + Vercel home
       return NextResponse.json({ ok: true, status: "whitelisted" });
+    }
+    if (action === "provision-home") {
+      // Manual retry — whitelisting already attempts this; use this when GitHub/
+      // Vercel weren't armed yet at whitelist time, or the first attempt failed.
+      const home = await provisionDraftHome(wallet);
+      return NextResponse.json({ ok: home.ok, home });
     }
     if (action === "reject") {
       await setPrelaunchStatus(wallet, "rejected");

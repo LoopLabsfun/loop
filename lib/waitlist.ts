@@ -348,6 +348,12 @@ export interface PrelaunchSummary {
   xHandle: string | null;
   /** Set once the draft has been launched into a real project. */
   projectKey: string | null;
+  /** The project key reserved for this draft's white-label home (repo + Vercel),
+   *  provisioned at WHITELIST time — set before launch so the agent has somewhere
+   *  to build and the live site URL exists ahead of the mint. */
+  homeKey: string | null;
+  homeRepo: string | null;
+  homeVercelUrl: string | null;
   createdAt: string;
 }
 
@@ -365,7 +371,9 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
   if (!sb) return null;
   const { data } = await sb
     .from("launch_waitlist")
-    .select("name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,x_handle,project_key,created_at")
+    .select(
+      "name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,x_handle,project_key,home_key,home_repo,home_vercel_url,created_at",
+    )
     .eq("wallet", wallet)
     .not("name", "is", null)
     .in("status", ["draft", "whitelisted", "launching"])
@@ -381,6 +389,9 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
     feeFounderPct: data.fee_founder_pct ?? null,
     xHandle: data.x_handle ?? null,
     projectKey: data.project_key ?? null,
+    homeKey: data.home_key ?? null,
+    homeRepo: data.home_repo ?? null,
+    homeVercelUrl: data.home_vercel_url ?? null,
     createdAt: data.created_at,
   };
 }
