@@ -42,6 +42,7 @@ interface ProjectRow {
   website: string | null;
   token_image_url: string | null;
   banner_url: string | null;
+  domain: string | null;
 }
 
 function rowToProject(r: ProjectRow): Project {
@@ -81,6 +82,7 @@ function rowToProject(r: ProjectRow): Project {
     website: r.website ?? null,
     tokenImageUrl: r.token_image_url ?? null,
     bannerUrl: r.banner_url ?? null,
+    domain: r.domain ?? null,
     treasuryLive: false,
   };
 }
