@@ -42,7 +42,7 @@ if (!brief) {
   process.exit(0); // never hard-fail: the wrapper reads markers, an empty diff => no push
 }
 
-const model = process.env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-4-6";
+const model = process.env.AGENT_SDK_MODEL?.trim() || "claude-sonnet-5";
 const maxTurns = Math.max(1, Math.min(Number(process.env.AGENT_SDK_MAX_TURNS) || 24, 60));
 const wallMs = Math.max(20_000, Number(process.env.AGENT_SDK_WALL_MS) || 150_000);
 

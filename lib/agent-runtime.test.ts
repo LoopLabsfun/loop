@@ -715,7 +715,7 @@ describe("sdkHandsConfig (Agent SDK hands)", () => {
   it("is OFF by default with safe bounded defaults", () => {
     const c = sdkHandsConfig({});
     expect(c.enabled).toBe(false);
-    expect(c.model).toBe("claude-sonnet-4-6"); // cheap default
+    expect(c.model).toBe("claude-sonnet-5"); // cheap default
     expect(c.maxTurns).toBe(24);
     expect(c.timeoutMs).toBeLessThanOrEqual(285_000); // under the 300s cron cap
     expect(c.minIntervalMs).toBe(900_000);
