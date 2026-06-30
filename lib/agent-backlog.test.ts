@@ -33,6 +33,33 @@ describe("effectivePriority", () => {
     expect(effectivePriority({})).toBe(SOURCE_BASE_PRIORITY.agent);
     expect(effectivePriority({ priority: NaN, source: "holder" })).toBe(SOURCE_BASE_PRIORITY.holder);
   });
+
+  describe("staleness boost", () => {
+    const DAY = 86_400_000;
+    const now = Date.parse("2026-06-30T12:00:00Z");
+
+    it("grows an unprioritised agent task's priority by 2/day, capped at 20", () => {
+      expect(effectivePriority({ source: "agent", createdAtMs: now }, now)).toBe(0); // brand new
+      expect(effectivePriority({ source: "agent", createdAtMs: now - 3 * DAY }, now)).toBe(6);
+      expect(effectivePriority({ source: "agent", createdAtMs: now - 30 * DAY }, now)).toBe(20); // capped
+    });
+
+    it("never lets an aged agent task reach the holder/founder band", () => {
+      const boosted = effectivePriority({ source: "agent", createdAtMs: now - 365 * DAY }, now);
+      expect(boosted).toBeLessThan(SOURCE_BASE_PRIORITY.holder);
+    });
+
+    it("does not apply to founder/holder tasks or when createdAtMs is absent", () => {
+      expect(effectivePriority({ source: "holder", createdAtMs: now - 30 * DAY }, now)).toBe(
+        SOURCE_BASE_PRIORITY.holder
+      );
+      expect(effectivePriority({ source: "agent" }, now)).toBe(SOURCE_BASE_PRIORITY.agent);
+    });
+
+    it("an explicit priority still wins over the staleness boost", () => {
+      expect(effectivePriority({ source: "agent", priority: 5, createdAtMs: now - 30 * DAY }, now)).toBe(5);
+    });
+  });
 });
 
 describe("rankBacklog", () => {
@@ -67,6 +94,36 @@ describe("rankBacklog", () => {
 
   it("returns a null top when there is no todo work", () => {
     expect(rankBacklog([task({ status: "shipped" }), task({ status: "building" })]).top).toBeNull();
+  });
+
+  describe("category fairness", () => {
+    it("boosts a category absent from recently-shipped work above a same-band peer", () => {
+      const tasks = [
+        task({ id: "feature", status: "todo", source: "agent", category: "feature" }),
+        task({ id: "ops", status: "todo", source: "agent", category: "ops" }),
+        // Only "feature" has shipped recently — "ops" is starved and should rank first.
+        task({ id: "s1", status: "shipped", category: "feature" }),
+        task({ id: "s2", status: "shipped", category: "feature" }),
+      ];
+      expect(rankBacklog(tasks).top?.id).toBe("ops");
+    });
+
+    it("never lets the fairness boost outrank a founder/holder ask", () => {
+      const tasks = [
+        task({ id: "founderFeature", status: "todo", source: "founder", category: "feature" }),
+        task({ id: "agentOps", status: "todo", source: "agent", category: "ops" }), // starved category
+        task({ id: "shippedFeature", status: "shipped", category: "feature" }),
+      ];
+      expect(rankBacklog(tasks).top?.id).toBe("founderFeature");
+    });
+
+    it("applies no boost when no category has shipped yet (uniform — preserves prior ordering)", () => {
+      const tasks = [
+        task({ id: "a", status: "todo", source: "agent", category: "feature" }),
+        task({ id: "b", status: "todo", source: "founder", category: "fix" }),
+      ];
+      expect(rankBacklog(tasks).top?.id).toBe("b"); // founder band still wins, no category skew
+    });
   });
 });
 

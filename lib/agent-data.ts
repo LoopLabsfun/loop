@@ -359,7 +359,7 @@ const TITLE_STOP = new Set([
 ]);
 
 /** Significant tokens of a task title (camelCase split, punctuation stripped). */
-function titleTokens(title: string): Set<string> {
+export function titleTokens(title: string): Set<string> {
   return new Set(
     title
       .replace(/([a-z])([A-Z])/g, "$1 $2") // budgetStatus → budget Status
@@ -371,7 +371,7 @@ function titleTokens(title: string): Set<string> {
 }
 
 /** Jaccard overlap of two token sets (0..1). */
-function titleSimilarity(a: Set<string>, b: Set<string>): number {
+export function titleSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
   let inter = 0;
   a.forEach((w) => {
@@ -400,6 +400,41 @@ export function dedupeSimilarTasks<T extends { title: string }>(
     if (keptTokens.some((k) => titleSimilarity(tok, k) >= threshold)) continue;
     keptTokens.push(tok);
     out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Filter candidate self-groomed backlog titles down to genuinely NEW ones — not
+ * an exact title match against `existing`, and not fuzzy-similar (token overlap
+ * >= threshold, same default as dedupeSimilarTasks) to any still-OPEN
+ * (non-shipped) existing task. A stalled/retried tick can re-propose the same
+ * logical task under a reworded title (e.g. "Build Loop landing page hero with
+ * game value prop and CTA" vs "Build the Loop landing page hero — game pitch +
+ * CTAs") — exact-match dedup alone misses that, which is how a project's backlog
+ * ends up with several near-identical rows for one piece of work. Pure + exported
+ * for testing.
+ */
+export function dedupeNewBacklogTitles<T extends { title: string }>(
+  candidates: T[],
+  existing: { title: string; status: string }[],
+  taskTitle: string,
+  threshold = 0.6
+): T[] {
+  const seen = new Set(existing.map((r) => r.title.trim().toLowerCase()));
+  seen.add(taskTitle.trim().toLowerCase());
+  const openTokens = existing
+    .filter((r) => r.status !== "shipped")
+    .map((r) => titleTokens(r.title));
+  const out: T[] = [];
+  for (const c of candidates) {
+    const key = c.title.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    const tok = titleTokens(c.title);
+    if (openTokens.some((k) => titleSimilarity(tok, k) >= threshold)) continue;
+    seen.add(key);
+    openTokens.push(tok);
+    out.push(c);
   }
   return out;
 }
@@ -476,6 +511,7 @@ export async function getAgentState(p: Project): Promise<AgentState> {
         priority: typeof r.priority === "number" ? r.priority : undefined,
         source: SOURCES.includes(r.source as TaskSource) ? (r.source as TaskSource) : undefined,
         lastOutcome: r.last_outcome ?? undefined,
+        createdAtMs: new Date(r.created_at).getTime(),
       }));
 
     const emailRows = (e.data as EmailRow[] | null) ?? [];

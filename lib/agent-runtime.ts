@@ -14,7 +14,7 @@ import {
   type Learning,
   type LearningCategory,
 } from "./learnings";
-import { getTopLearnings, recordLearning } from "./agent-data";
+import { getTopLearnings, recordLearning, dedupeNewBacklogTitles } from "./agent-data";
 import { rankBacklog, effectivePriority, isBusyworkOnly } from "./agent-backlog";
 import { EXTERNAL_LINKS } from "./links";
 import { buildShipTweet } from "./x-recap";
@@ -1757,27 +1757,19 @@ export async function applyDecision(
 
   // BACKLOG GROOMING: persist the agent's mandate-derived candidate tasks as
   // `todo` rows so future ticks draw from a real queue (the self-improving,
-  // fixation-proof backlog). Deduped against ALL existing task titles for this
-  // project (case-insensitive) and against the task just upserted, so re-grooming
-  // never creates duplicates. Failure-safe — never aborts the cycle.
+  // fixation-proof backlog). Deduped (exact + fuzzy title similarity against
+  // still-open tasks — see dedupeNewBacklogTitles) so a stalled/retried tick that
+  // re-proposes the same logical task under a reworded title never creates a
+  // duplicate (observed: 3 near-identical "Build the landing hero" rows from one
+  // stalled morning). Failure-safe — never aborts the cycle.
   if (d.backlog?.length) {
     try {
       const { data: rows } = await supabaseAdmin
         .from("agent_tasks")
-        .select("title")
+        .select("title, status")
         .eq("project_key", p.key);
-      const seen = new Set(
-        ((rows as { title: string }[] | null) ?? []).map((r) =>
-          r.title.trim().toLowerCase()
-        )
-      );
-      seen.add(d.task.title.trim().toLowerCase());
-      const fresh = d.backlog.filter((b) => {
-        const key = b.title.trim().toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key); // dedupe within this batch too
-        return true;
-      });
+      const allRows = (rows as { title: string; status: string }[] | null) ?? [];
+      const fresh = dedupeNewBacklogTitles(d.backlog, allRows, d.task.title);
       if (fresh.length) {
         await supabaseAdmin.from("agent_tasks").insert(
           fresh.map((b) => ({
