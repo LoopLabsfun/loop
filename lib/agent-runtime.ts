@@ -1300,16 +1300,6 @@ export async function decideNextAction(
   // SDK dereferences as `this._client` (→ "Cannot read properties of undefined").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const create = (client.messages.create as any).bind(client.messages);
-  const res = (await create(params)) as {
-    content: Array<{ type: string; text?: string }>;
-    usage?: TokenUsage;
-  };
-  costUsd += tokensToUsd(res.usage, AGENT_MODEL);
-
-  const text = res.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("");
   // Tolerant JSON extraction: with no structured-output grammar, a model may wrap
   // the object in ```json fences or add a stray sentence. Strip fences, then take
   // the outermost {...}. coerceDecision is the real shape validator.
@@ -1320,14 +1310,37 @@ export async function decideNextAction(
     const b = body.lastIndexOf("}");
     return JSON.parse(a >= 0 && b > a ? body.slice(a, b + 1) : body);
   };
-  let parsed: unknown;
-  try {
-    parsed = parseDecisionJson(text);
-  } catch {
-    throw new Error("Agent returned non-JSON output.");
+  // Decision call with ONE retry: a model can occasionally emit malformed/short
+  // output (fenced prose, a refusal-shaped stub, a JSON object missing summary/
+  // title) that fails coerceDecision — a single deterministic throw then wastes the
+  // whole tick. Re-ask once before giving up, and surface the raw text on final
+  // failure so a SYSTEMATIC bad output (e.g. a content refusal tied to a project's
+  // theme) is diagnosable from the log instead of a blind "failed validation".
+  let decision: AgentDecision | null = null;
+  let lastRaw = "";
+  for (let attempt = 0; attempt < 2 && !decision; attempt++) {
+    const res = (await create(params)) as {
+      content: Array<{ type: string; text?: string }>;
+      usage?: TokenUsage;
+    };
+    costUsd += tokensToUsd(res.usage, AGENT_MODEL);
+    const text = res.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
+      .join("");
+    lastRaw = text;
+    let parsed: unknown;
+    try {
+      parsed = parseDecisionJson(text);
+    } catch {
+      continue; // non-JSON this attempt — retry once before giving up
+    }
+    decision = coerceDecision(parsed);
   }
-  const decision = coerceDecision(parsed);
-  if (!decision) throw new Error("Agent decision failed validation.");
+  if (!decision) {
+    const snippet = lastRaw.replace(/\s+/g, " ").trim().slice(0, 300) || "(empty)";
+    throw new Error(`Agent decision failed validation. Raw: ${snippet}`);
+  }
 
   // A2 two-pass: if the agent asked to READ files before acting, fetch their real
   // contents and re-ask for a FINAL decision grounded in them — so its edits and
@@ -1347,7 +1360,7 @@ export async function decideNextAction(
       // once — byte-identical to the original single read→act pass.
       const convo: Turn[] = [
         { role: "user", content: userTurn(userContent) },
-        { role: "assistant", content: text },
+        { role: "assistant", content: lastRaw },
       ];
       // Rolling cache breakpoint: each read round appends file contents the next
       // round replays. We cache that growing context by marking only the NEWEST
@@ -2490,15 +2503,14 @@ export async function answerOpenChats(p: Project, max = 3): Promise<number> {
       /* repo unreadable — answer from mission only */
     }
     const model = chatModel();
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic();
+    const { chatComplete } = await import("./llm");
     let answered = 0;
     let chatCostUsd = 0;
     for (const r of rows) {
       try {
-        const msg = await client.messages.create({
+        const res = await chatComplete({
           model,
-          max_tokens: 400,
+          maxTokens: 400,
           system:
             `You are the autonomous AI agent that builds ${p.name} (${p.ticker}). Mission: ${mandate.mission}. ` +
             (shipsBlock ? `Your recent ships:\n${shipsBlock}\n` : ``) +
@@ -2511,13 +2523,8 @@ export async function answerOpenChats(p: Project, max = 3): Promise<number> {
             },
           ],
         });
-        chatCostUsd += tokensToUsd(msg.usage as TokenUsage, model);
-        const blocks = (msg.content ?? []) as Array<{ type: string; text?: string }>;
-        const text = blocks
-          .map((b) => (b.type === "text" ? b.text ?? "" : ""))
-          .join(" ")
-          .trim()
-          .slice(0, 2000);
+        chatCostUsd += tokensToUsd(res.usage as TokenUsage, res.model);
+        const text = res.text.trim().slice(0, 2000);
         if (!text) continue;
         const { error } = await supabaseAdmin
           .from("agent_chat")
