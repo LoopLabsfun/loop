@@ -24,6 +24,7 @@ import { agentGitIdentity } from "./agent-git-identity";
 import { effortForTask } from "./agent-effort";
 import { effectivePriority } from "./agent-backlog";
 import { commitMessageWithThrottle } from "./deploy-throttle";
+import { effectiveEnv } from "./project-config";
 import type { AgentSessionPayload } from "../trigger/agent-session";
 
 export function brainMode(env: Record<string, string | undefined> = process.env): "legacy" | "sdk" {
@@ -124,7 +125,12 @@ export async function enqueueSdkSession(
   state: { tasks: AgentTask[]; directives: FeedItem[]; inbox?: InboxMessage[] },
   opts: { dryRun?: boolean } = {}
 ): Promise<{ enqueued: boolean; runId?: string; note: string }> {
-  const { decision } = await decideNextAction(p, state);
+  // Per-project operator overrides (Lot 5, project_config) laid over the
+  // platform env — read once and threaded through every knob below (decision
+  // read-rounds, compute-saver, SDK model + effort) so a founder override in the
+  // admin cockpit actually takes effect, not just the cadence knobs.
+  const env = await effectiveEnv(p.key);
+  const { decision } = await decideNextAction(p, state, env);
 
   if (!CODE_CATEGORIES.includes(decision.task.category)) {
     // outreach/ops: no sandbox needed. Pass the reply allow-list so an
@@ -151,7 +157,7 @@ export async function enqueueSdkSession(
   // them from the backlog row. No match = a brand-new self-proposed task ⇒ treat as
   // the agent/0 band (defers under the saver unless the floor is lowered).
   const backlogMatch = state.tasks.find((t) => t.title === decision.task.title);
-  const saver = shouldDeferBuild(backlogMatch ?? {});
+  const saver = shouldDeferBuild(backlogMatch ?? {}, env);
   if (saver.defer) {
     return {
       enqueued: false,
@@ -159,7 +165,7 @@ export async function enqueueSdkSession(
     };
   }
 
-  const cfg = sdkSessionConfig();
+  const cfg = sdkSessionConfig(env);
   const repoSlug = p.repo
     .replace(/^https?:\/\//, "")
     .replace(/^github\.com\//, "")
@@ -172,7 +178,7 @@ export async function enqueueSdkSession(
   // task's complexity (a typo fix at `low`, a multi-file feature at `high`),
   // bounded by the AGENT_SDK_MAX_TURNS ceiling. Cheap polish stops costing what a
   // hard feature costs, without capping the hard ones.
-  const plan = effortForTask(decision.task);
+  const plan = effortForTask(decision.task, env);
 
   // Vercel build economy: batch the agent's commits into ~1 deploy per interval
   // by stamping a `[no-deploy]` trailer on commits between deploys (lib/deploy-

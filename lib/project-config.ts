@@ -39,6 +39,31 @@ export const CONFIGURABLE_KNOBS: KnobSpec[] = [
     label: "Max cadence (min)",
     hint: "Slowest the project stretches to when idle. Default 720.",
   },
+  {
+    key: "AGENT_SDK_MODEL",
+    label: "SDK coding model",
+    hint: "Claude model the SDK-in-sandbox session codes with, e.g. claude-sonnet-5 or claude-opus-4-8.",
+  },
+  {
+    key: "AGENT_SDK_EFFORT",
+    label: "Forced effort",
+    hint: "low|medium|high — forces a fixed reasoning effort for every task on this project (overrides per-task auto-classification).",
+  },
+  {
+    key: "AGENT_READ_ROUNDS",
+    label: "Read-loop rounds",
+    hint: "Max read→reflect rounds before the agent must act (1-6). Higher = deeper exploration, more decision-model spend per tick. Default 1.",
+  },
+  {
+    key: "COMPUTE_SAVER",
+    label: "Compute saver",
+    hint: "'1' arms it: defers the costly build session for un-prioritised agent busywork (founder/holder asks always build).",
+  },
+  {
+    key: "COMPUTE_SAVER_MIN_PRIORITY",
+    label: "Compute saver floor",
+    hint: "Minimum effective priority a task needs to build when the saver is armed. Default 1.",
+  },
 ];
 
 const KNOB_KEYS = new Set(CONFIGURABLE_KNOBS.map((k) => k.key));

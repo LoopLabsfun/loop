@@ -5,6 +5,8 @@ import { getFeeLedger } from "./fee-ledger-store";
 import { claimable, type RoleTotals } from "./fee-ledger";
 import { getSolBalance, getSplBalance, type Network } from "./solana";
 import { getAgentWallet } from "./agent-wallet";
+import { getComputeLedger } from "./compute-ledger-store";
+import { creditBalanceUsd } from "./compute-rail";
 
 // Founder TREASURY DIAGNOSTIC — the read-only view of a project's real money
 // state, lifting scripts/diag-treasury.ts into the admin cockpit. Server-only,
@@ -23,6 +25,14 @@ export interface ActionAgg {
   sol: number;
 }
 
+export interface ComputeDiag {
+  creditedUsd: number;
+  consumedUsd: number;
+  balanceUsd: number;
+  /** Is the per-project compute hard-cap (COMPUTE_BUDGET_GATE) actually armed? */
+  gateArmed: boolean;
+}
+
 export interface TreasuryDiag {
   key: string;
   network: string;
@@ -35,6 +45,7 @@ export interface TreasuryDiag {
   buybackTxCount: number;
   treasury: OnChainWallet;
   agent: OnChainWallet;
+  compute: ComputeDiag;
 }
 
 /** Build the founder treasury diagnostic for one project (read-only). */
@@ -97,6 +108,11 @@ export async function getTreasuryDiag(p: Project): Promise<TreasuryDiag> {
     readWallet(agentAddr),
   ]);
 
+  // Real Claude $ spend tracking (lib/compute-rail) — the founder's other budget
+  // gate, alongside the SOL treasury above. Read-only here; same posture as the
+  // rest of this diagnostic.
+  const computeLedger = await getComputeLedger(p.key).catch(() => ({ creditedUsd: 0, consumedUsd: 0 }));
+
   return {
     key: p.key,
     network: net,
@@ -109,5 +125,11 @@ export async function getTreasuryDiag(p: Project): Promise<TreasuryDiag> {
     buybackTxCount,
     treasury,
     agent,
+    compute: {
+      creditedUsd: computeLedger.creditedUsd,
+      consumedUsd: computeLedger.consumedUsd,
+      balanceUsd: creditBalanceUsd(computeLedger),
+      gateArmed: process.env.COMPUTE_BUDGET_GATE === "1",
+    },
   };
 }

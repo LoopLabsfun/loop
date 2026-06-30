@@ -1889,6 +1889,22 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
               value={sol(diag.treasurySnapshotSol)}
             />
           </div>
+
+          {/* Compute (Claude $) — the agent's other budget, alongside the SOL
+              treasury above. Gate is the per-project COMPUTE_BUDGET_GATE knob. */}
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.02em] text-faint mb-2">
+              Compute (Claude $){" "}
+              <span className="text-faint">
+                · {diag.compute.gateArmed ? "hard-capped" : "soft (gate off — informational only)"}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Stat label="Credited" value={`$${diag.compute.creditedUsd.toFixed(2)}`} />
+              <Stat label="Consumed" value={`$${diag.compute.consumedUsd.toFixed(2)}`} />
+              <Stat label="Balance" value={`$${diag.compute.balanceUsd.toFixed(2)}`} />
+            </div>
+          </div>
           {diag.actions.length > 0 && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.02em] text-faint mb-2">
