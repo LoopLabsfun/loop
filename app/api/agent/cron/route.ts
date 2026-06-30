@@ -78,6 +78,29 @@ export async function GET(req: Request) {
   // Budget hard-stop: only tick projects whose treasury can absorb a cycle.
   // Empty/dust treasury ⇒ the agent sleeps until buyers refill it.
   const asleep = all.filter((p) => !canAffordTick(p).ok).map((p) => p.key);
+
+  // Treasury auto-raise (Lot 3): surface an empty treasury to the founder as a
+  // typed `action` request ("fund the agent wallet"), and AUTO-CLEAR it once the
+  // treasury recovers — so the queue never carries stale "fund me" rows after a
+  // refund. De-duped (one open row per project). DB-only, no Claude; best-effort.
+  if (supabaseAdmin) {
+    const { raiseEscalation, resolveOpenByBody, TREASURY_EMPTY_BODY } = await import(
+      "@/lib/escalations"
+    );
+    await Promise.all(
+      all.map(async (p) => {
+        try {
+          if (canAffordTick(p).ok) {
+            await resolveOpenByBody(p.key, "action", TREASURY_EMPTY_BODY);
+          } else {
+            await raiseEscalation(p.key, "action", TREASURY_EMPTY_BODY);
+          }
+        } catch {
+          /* per-project best-effort — never affects the run */
+        }
+      })
+    );
+  }
   // FAIR SCHEDULING: more funded projects than MAX_PER_RUN would otherwise starve
   // whoever sits at the back of the default (official, then newest-first) order —
   // e.g. the oldest non-official project never reaches the tick loop. Order the

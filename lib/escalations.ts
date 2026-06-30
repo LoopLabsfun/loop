@@ -13,6 +13,12 @@ import { supabaseAdmin } from "./supabase";
 export type EscalationKind = "credential" | "action" | "decision" | "info";
 export const ESCALATION_KINDS: EscalationKind[] = ["credential", "action", "decision", "info"];
 
+// Stable body for the auto-raised "treasury empty" request. Stable so it both
+// de-dupes (one open row per project) and can be auto-cleared when the project's
+// treasury recovers (resolveOpenByBody matches on it). project_key scopes it.
+export const TREASURY_EMPTY_BODY =
+  "Treasury is empty — fund the agent wallet to wake the agent.";
+
 export function isEscalationKind(x: unknown): x is EscalationKind {
   return typeof x === "string" && (ESCALATION_KINDS as string[]).includes(x);
 }
@@ -77,6 +83,30 @@ export async function raiseEscalation(
     .single();
   if (error) return null;
   return (data?.id as number) ?? null;
+}
+
+/**
+ * Auto-clear: resolve every OPEN escalation of a given kind+body for a project
+ * (e.g. the "treasury empty" request once the treasury recovers). Returns how
+ * many rows were closed, or 0 on no-op / error. Best-effort.
+ */
+export async function resolveOpenByBody(
+  projectKey: string,
+  kind: EscalationKind,
+  body: string
+): Promise<number> {
+  const sb = supabaseAdmin;
+  if (!sb) return 0;
+  const { data, error } = await sb
+    .from("agent_escalations")
+    .update({ status: "done", resolved_at: new Date().toISOString() })
+    .eq("project_key", projectKey)
+    .eq("kind", kind)
+    .eq("body", body)
+    .eq("status", "open")
+    .select("id");
+  if (error) return 0;
+  return (data ?? []).length;
 }
 
 export interface ResolveResult {
