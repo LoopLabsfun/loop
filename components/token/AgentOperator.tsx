@@ -108,7 +108,9 @@ export function AgentOperator({
   const xUrl = p.twitter ?? (X_HANDLE ? `https://x.com/${X_HANDLE}` : null);
   const tgUrl = p.telegram ?? (TELEGRAM_USERNAME ? `https://t.me/${TELEGRAM_USERNAME}` : null);
   const discordUrl = p.discord ?? null;
-  const siteUrl = p.website ?? SITE_URL ?? null;
+  // Prefer a verified custom domain (the project's real deployed site), then the
+  // creator-set website link, then the configured global default.
+  const siteUrl = (p.domain ? `https://${p.domain}` : p.website) ?? SITE_URL ?? null;
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
+import { ProjectDomainManager } from "@/components/token/ProjectDomainManager";
 
 // founder/agent/platform split label from the single founder lever (platform = 5).
 const splitOf = (f: number | null) => `${f ?? 30}/${100 - 5 - (f ?? 30)}/5`;
@@ -67,6 +68,7 @@ interface AdminProject {
   website: string | null;
   tokenImageUrl: string | null;
   bannerUrl: string | null;
+  domain: string | null;
 }
 // Editable subset of a launched project (mirrors ProjectFieldPatch on the server).
 interface ProjectFields {
@@ -975,6 +977,12 @@ function ProjectEditForm({
       <div className="text-[11px] text-faint font-mono">
         split → {splitOf(fee.trim() !== "" && Number.isFinite(Number(fee)) ? Number(fee) : project.feeFounderPct)} (founder/agent/platform)
       </div>
+
+      {/* Custom domain — same widget the creator uses on /token. */}
+      <div className="border-t border-line-3 pt-2.5">
+        <ProjectDomainManager projectKey={project.key} currentDomain={project.domain} />
+      </div>
+
       <div className="flex items-center gap-2">
         <Btn onClick={save} busy={busy}>Save</Btn>
         <Btn onClick={onCancel}>Cancel</Btn>

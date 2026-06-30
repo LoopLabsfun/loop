@@ -12,6 +12,7 @@ import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { buildSwapTx } from "@/lib/pump";
 import { AgentFeed } from "./AgentFeed";
 import { AgentOperator } from "./AgentOperator";
+import { ProjectSettings } from "./ProjectSettings";
 import { ProjectWallet } from "./ProjectWallet";
 import { AgentFace } from "./AgentFace";
 import { AgentEngine } from "../AgentEngine";
@@ -227,6 +228,9 @@ export function TokenPage({
             summaries={agentState?.summaries}
             metrics={{ visitors, holders: p.holders }}
           />
+          {/* Creator-only: edit brand/social + attach a custom domain (renders
+              nothing unless the connected wallet is this project's creator). */}
+          <ProjectSettings project={p} />
           {/* Project Wallet — the agent's on-chain positions (buyback/burn/airdrop) */}
           <ProjectWallet project={p} actions={agentState?.actions} agentSol={agentSol} />
           {/* Chart */}

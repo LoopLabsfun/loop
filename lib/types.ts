@@ -77,6 +77,9 @@ export interface Project {
   tokenImageUrl?: string | null;
   /** Public URL of the project banner; null → gradient cover. */
   bannerUrl?: string | null;
+  /** External custom domain attached to the project's Vercel project (verified);
+   *  null → the default <slug>.vercel.app. Drives the public "Website" link. */
+  domain?: string | null;
   /** True when `treasurySol` came from a live on-chain read this request. */
   treasuryLive?: boolean;
   /**
