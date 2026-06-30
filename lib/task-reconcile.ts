@@ -43,3 +43,37 @@ export function landedBuildingTitles(
   }
   return Array.from(out);
 }
+
+export interface AgeTask {
+  title: string;
+  status: string;
+  /** Epoch-ms of the task's last update (when it entered "building"). */
+  updatedAtMs: number;
+}
+
+/**
+ * Pure: titles of `building` tasks that have sat past `maxBuildMs` — well beyond
+ * any session wall — and did NOT land (their title isn't in `landedTitles`). The
+ * session's finish callback was missed; leaving them "building" leaks phantom
+ * in-flight work forever (the `landedBuildingTitles` self-heal only catches an
+ * EXACT title↔commit match, so a reworded landing slips through). The caller
+ * flips these to a non-building, founder-triage state — never auto-rebuilds them,
+ * so a reworded-but-actually-landed task can't be duplicated. Excludes the just-
+ * reconciled `landedTitles` so a task is never both shipped and reaped.
+ */
+export function stalledBuildingTitles(
+  tasks: AgeTask[],
+  nowMs: number,
+  maxBuildMs: number,
+  landedTitles: string[] = []
+): string[] {
+  const landed = new Set(landedTitles.map(norm));
+  const out = new Set<string>();
+  for (const t of tasks) {
+    if (t?.status !== "building") continue;
+    if (landed.has(norm(t?.title ?? ""))) continue;
+    if (!Number.isFinite(t?.updatedAtMs)) continue;
+    if (nowMs - t.updatedAtMs >= maxBuildMs) out.add(t.title);
+  }
+  return Array.from(out);
+}

@@ -92,6 +92,84 @@ export async function recordTickAttempt(key: string): Promise<void> {
 }
 
 /**
+ * Reconcile a project's `building` queue against its repo — the SDK-path self-heal.
+ *
+ * The legacy brain (lib/agent-runtime) calls `landedBuildingTitles`, but the LIVE
+ * SDK path (enqueueSdkSession) never did, so a missed finish callback (session
+ * timeout / push race / parse miss) left tasks "building" forever — a growing pile
+ * of phantom in-flight work that also throttles the project via false "congestion"
+ * (lib/agent-cadence). This runs that self-heal in the SDK path:
+ *   • a `building` task whose work already landed (title in a recent commit) → shipped
+ *   • a `building` task older than `staleBuildMs` that did NOT land → blocked
+ *     (founder-triage in the admin cockpit; never auto-rebuilt, so a reworded-but-
+ *     landed task can't be duplicated).
+ * Best-effort: any failure returns zeros and never aborts the tick.
+ */
+export async function reconcileBuildingTasks(
+  p: Project
+): Promise<{ shipped: number; stalled: number }> {
+  if (!supabaseAdmin) return { shipped: 0, stalled: 0 };
+  try {
+    const { data } = await supabaseAdmin
+      .from("agent_tasks")
+      .select("id,title,updated_at")
+      .eq("project_key", p.key)
+      .eq("status", "building");
+    const rows = (data ?? []) as { id: number; title: string; updated_at: string }[];
+    if (!rows.length) return { shipped: 0, stalled: 0 };
+
+    const { getRecentCommits } = await import("./commits");
+    let commits: { msg?: string }[] = [];
+    try {
+      commits = await getRecentCommits(p.repo);
+    } catch {
+      /* repo unreadable — fall through with no landed matches */
+    }
+
+    const { landedBuildingTitles, stalledBuildingTitles } = await import("./task-reconcile");
+    const { staleBuildMs } = await import("./agent-tick-throttle");
+
+    const reconcileTasks = rows.map((r) => ({ title: r.title, status: "building" }));
+    const landed = commits.length ? landedBuildingTitles(reconcileTasks, commits) : [];
+
+    const ageTasks = rows.map((r) => ({
+      title: r.title,
+      status: "building",
+      updatedAtMs: new Date(r.updated_at).getTime(),
+    }));
+    const stalled = stalledBuildingTitles(ageTasks, Date.now(), staleBuildMs(), landed);
+
+    if (landed.length) {
+      await supabaseAdmin
+        .from("agent_tasks")
+        .update({ status: "shipped" })
+        .eq("project_key", p.key)
+        .eq("status", "building")
+        .in("title", landed);
+    }
+    if (stalled.length) {
+      await supabaseAdmin
+        .from("agent_tasks")
+        .update({ status: "blocked" })
+        .eq("project_key", p.key)
+        .eq("status", "building")
+        .in("title", stalled);
+    }
+    if (landed.length || stalled.length) {
+      console.log(
+        `[reconcile-sdk] ${JSON.stringify({ key: p.key, shipped: landed.length, stalled: stalled.length })}`
+      );
+    }
+    return { shipped: landed.length, stalled: stalled.length };
+  } catch (e) {
+    console.error(
+      `[reconcile-sdk] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : String(e) })}`
+    );
+    return { shipped: 0, stalled: 0 };
+  }
+}
+
+/**
  * Has the project's runtime been active within `withinMs` (default 15 min)? Real
  * signal for the "Runtime active" status — the most recent of an agent_tasks tick
  * OR an agent_posts publish (the runtime writes one or the other every cycle), vs
