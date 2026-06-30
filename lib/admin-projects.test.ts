@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeProjectPatch } from "./admin-projects";
+import {
+  sanitizeProjectPatch,
+  normalizeTwitter,
+  normalizeTelegram,
+  normalizeDiscord,
+  normalizeWebsite,
+} from "./admin-projects";
 
 describe("sanitizeProjectPatch", () => {
   it("only touches keys that are present (partial edit)", () => {
@@ -46,5 +52,58 @@ describe("sanitizeProjectPatch", () => {
 
   it("returns {} when nothing valid is provided", () => {
     expect(sanitizeProjectPatch({})).toEqual({});
+  });
+
+  it("normalizes social links to canonical URLs and maps to snake_case", () => {
+    const p = sanitizeProjectPatch({
+      twitter: "@loop",
+      telegram: "t.me/looplabs",
+      discord: "discord.gg/abc123",
+      website: "looplabs.fun",
+    });
+    expect(p).toEqual({
+      twitter: "https://x.com/loop",
+      telegram: "https://t.me/looplabs",
+      discord: "https://discord.gg/abc123",
+      website: "https://looplabs.fun",
+    });
+  });
+
+  it("clears a social link when the input is empty or invalid (null)", () => {
+    expect(sanitizeProjectPatch({ twitter: "" }).twitter).toBe(null);
+    expect(sanitizeProjectPatch({ website: "not a url" }).website).toBe(null);
+    // present-but-null is still written (so a link can be removed)
+    expect("twitter" in sanitizeProjectPatch({ twitter: "" })).toBe(true);
+  });
+});
+
+describe("social-link normalizers", () => {
+  it("twitter: handle or URL → https://x.com/<handle>", () => {
+    expect(normalizeTwitter("@Loop")).toBe("https://x.com/Loop");
+    expect(normalizeTwitter("loop")).toBe("https://x.com/loop");
+    expect(normalizeTwitter("https://twitter.com/loop/")).toBe("https://x.com/loop");
+    expect(normalizeTwitter("https://x.com/loop?ref=1")).toBe("https://x.com/loop");
+    expect(normalizeTwitter("way too long a handle here")).toBe(null);
+    expect(normalizeTwitter("")).toBe(null);
+  });
+
+  it("telegram: handle or t.me URL → https://t.me/<name>", () => {
+    expect(normalizeTelegram("@looplabs")).toBe("https://t.me/looplabs");
+    expect(normalizeTelegram("https://t.me/looplabs")).toBe("https://t.me/looplabs");
+    expect(normalizeTelegram("ab")).toBe(null); // too short
+  });
+
+  it("discord: invite URL or code → https://discord.gg/<code>", () => {
+    expect(normalizeDiscord("discord.gg/abc123")).toBe("https://discord.gg/abc123");
+    expect(normalizeDiscord("https://discord.com/invite/abc123")).toBe("https://discord.gg/abc123");
+    expect(normalizeDiscord("abc123")).toBe("https://discord.gg/abc123");
+    expect(normalizeDiscord("not a discord")).toBe(null);
+  });
+
+  it("website: bare host or URL → canonical https, rejects junk", () => {
+    expect(normalizeWebsite("looplabs.fun")).toBe("https://looplabs.fun");
+    expect(normalizeWebsite("http://x.io/path/")).toBe("http://x.io/path");
+    expect(normalizeWebsite("javascript:alert(1)")).toBe(null);
+    expect(normalizeWebsite("nodot")).toBe(null);
   });
 });

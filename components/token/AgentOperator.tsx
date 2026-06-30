@@ -101,6 +101,15 @@ export function AgentOperator({
   // Ticks = total task-queue entries seen, with optional DB-level override.
   const ticks = metrics?.ticks != null ? metrics.ticks : tasks.length;
 
+  // Social links: prefer the project's own (admin-set) links, else fall back to the
+  // configured global handles. Stored values are canonical https URLs.
+  const tail = (u: string) => u.replace(/\/+$/, "").split("/").pop() || u;
+  const host = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const xUrl = p.twitter ?? (X_HANDLE ? `https://x.com/${X_HANDLE}` : null);
+  const tgUrl = p.telegram ?? (TELEGRAM_USERNAME ? `https://t.me/${TELEGRAM_USERNAME}` : null);
+  const discordUrl = p.discord ?? null;
+  const siteUrl = p.website ?? SITE_URL ?? null;
+
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] overflow-hidden">
       {/* Header — agent identity */}
@@ -120,46 +129,60 @@ export function AgentOperator({
             >
               {stats.email}
             </a>
-            {/* X — live link only when a real handle is configured. */}
+            {/* X — per-project handle, else the configured global, else "soon". */}
             <span className="text-faint">·</span>
-            {X_HANDLE ? (
+            {xUrl ? (
               <a
-                href={`https://x.com/${X_HANDLE}`}
+                href={xUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-accent-text transition-colors"
               >
-                @{X_HANDLE}
+                @{tail(xUrl)}
               </a>
             ) : (
               <span className="text-faint">X soon</span>
             )}
-            {/* Telegram — live link only when a real bot username is configured. */}
+            {/* Telegram — per-project link, else the configured global, else "soon". */}
             <span className="text-faint">·</span>
-            {TELEGRAM_USERNAME ? (
+            {tgUrl ? (
               <a
-                href={`https://t.me/${TELEGRAM_USERNAME}`}
+                href={tgUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Join the project's Telegram"
                 className="hover:text-accent-text transition-colors"
               >
-                @{TELEGRAM_USERNAME}
+                @{tail(tgUrl)}
               </a>
             ) : (
               <span className="text-faint">Telegram soon</span>
             )}
-            {/* Site — only shown when a real per-project site is provisioned. */}
-            {SITE_URL && (
+            {/* Discord — only when the project has an invite set. */}
+            {discordUrl && (
               <>
                 <span className="text-faint">·</span>
                 <a
-                  href={SITE_URL}
+                  href={discordUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-accent-text transition-colors"
                 >
-                  {SITE_URL.replace(/^https?:\/\//, "")}
+                  Discord
+                </a>
+              </>
+            )}
+            {/* Site — per-project website, else a configured global site. */}
+            {siteUrl && (
+              <>
+                <span className="text-faint">·</span>
+                <a
+                  href={siteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-accent-text transition-colors"
+                >
+                  {host(siteUrl)}
                 </a>
               </>
             )}

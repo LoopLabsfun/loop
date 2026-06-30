@@ -11,6 +11,7 @@ import {
   GITHUB_RE,
 } from "./launch";
 import { setProjectAnthropicKey, secretsConfigured } from "./project-secrets";
+import { normalizeMediaUrl } from "./waitlist";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PLATFORM-ADMIN PROJECT CONTROL — the founder's "hand" over EVERY project.
@@ -47,9 +48,17 @@ export interface AdminProjectRow {
   hasAgentKey: boolean;
   treasurySol: number | null;
   earnedSol: number | null;
+  // Per-project social links + brand images (canonical https / public-bucket URLs).
+  twitter: string | null;
+  telegram: string | null;
+  discord: string | null;
+  website: string | null;
+  tokenImageUrl: string | null;
+  bannerUrl: string | null;
 }
 
 const COVER_MAX = 40;
+const URL_MAX = 300;
 
 /** Every launched project for the platform-admin panel (newest first). Best-effort:
  *  a cold backend returns []. Reports whether each has a stored agent key (not the key). */
@@ -59,7 +68,7 @@ export async function listAdminProjects(): Promise<AdminProjectRow[]> {
   const { data } = await sb
     .from("projects")
     .select(
-      "key,name,ticker,description,prompt,repo,cover,guardrails,content_policy,fee_founder_pct,official,network,mint,creator_wallet,treasury_wallet,agent_wallet,agent_paused,treasury_sol,earned_sol,created_at",
+      "key,name,ticker,description,prompt,repo,cover,guardrails,content_policy,fee_founder_pct,official,network,mint,creator_wallet,treasury_wallet,agent_wallet,agent_paused,treasury_sol,earned_sol,twitter,telegram,discord,website,token_image_url,banner_url,created_at",
     )
     .order("created_at", { ascending: false });
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -99,6 +108,12 @@ export async function listAdminProjects(): Promise<AdminProjectRow[]> {
       hasAgentKey: keysWithSecret.has(r.key as string),
       treasurySol: typeof r.treasury_sol === "number" ? (r.treasury_sol as number) : null,
       earnedSol: typeof r.earned_sol === "number" ? (r.earned_sol as number) : null,
+      twitter: (r.twitter as string) ?? null,
+      telegram: (r.telegram as string) ?? null,
+      discord: (r.discord as string) ?? null,
+      website: (r.website as string) ?? null,
+      tokenImageUrl: (r.token_image_url as string) ?? null,
+      bannerUrl: (r.banner_url as string) ?? null,
     };
   });
 }
@@ -112,12 +127,74 @@ export interface ProjectFieldPatch {
   guardrails?: string | null;
   contentPolicy?: string | null;
   feeFounderPct?: number | null;
+  // Social links (handle OR URL accepted; normalized to a canonical https URL).
+  twitter?: string | null;
+  telegram?: string | null;
+  discord?: string | null;
+  website?: string | null;
+  // Brand images (public-bucket URLs minted by the media upload route).
+  tokenImageUrl?: string | null;
+  bannerUrl?: string | null;
 }
 
 function cap(s: unknown, n: number): string | null {
   if (typeof s !== "string") return null;
   const t = s.trim();
   return t ? t.slice(0, n) : null;
+}
+
+// ── Social-link normalizers ───────────────────────────────────────────────────
+// Each accepts a bare handle OR a full URL and returns the canonical https URL, or
+// null for empty/invalid input (null clears the field). Pure + unit-tested.
+
+/** X/Twitter: "@foo", "foo", or any x.com/twitter.com URL → https://x.com/foo. */
+export function normalizeTwitter(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  const handle = s
+    .trim()
+    .replace(/^(https?:\/\/)?(www\.)?(x|twitter)\.com\//i, "")
+    .replace(/^@/, "")
+    .split(/[/?#]/)[0];
+  return /^[A-Za-z0-9_]{1,15}$/.test(handle) ? `https://x.com/${handle}` : null;
+}
+
+/** Telegram: "@foo", "foo", or any t.me/telegram.me URL → https://t.me/foo. */
+export function normalizeTelegram(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  const name = s
+    .trim()
+    .replace(/^(https?:\/\/)?(www\.)?t(elegram)?\.me\//i, "")
+    .replace(/^@/, "")
+    .split(/[/?#]/)[0];
+  return /^[A-Za-z0-9_]{3,32}$/.test(name) ? `https://t.me/${name}` : null;
+}
+
+/** Discord: a discord.gg / discord.com/invite URL or a bare code → https://discord.gg/<code>. */
+export function normalizeDiscord(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  const t = s.trim();
+  if (!t) return null;
+  const m = t.match(
+    /(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/([A-Za-z0-9-]{2,32})/i,
+  );
+  if (m) return `https://discord.gg/${m[1]}`;
+  return /^[A-Za-z0-9-]{2,32}$/.test(t) ? `https://discord.gg/${t}` : null;
+}
+
+/** Any website: bare host or http(s) URL → canonical https URL (trailing slash stripped), else null. */
+export function normalizeWebsite(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  let t = s.trim();
+  if (!t || t.length > URL_MAX) return null;
+  if (!/^https?:\/\//i.test(t)) t = `https://${t}`;
+  try {
+    const u = new URL(t);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (!u.hostname.includes(".")) return null;
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -145,6 +222,14 @@ export function sanitizeProjectPatch(input: ProjectFieldPatch): Record<string, u
   if ("feeFounderPct" in input && input.feeFounderPct != null && Number.isFinite(Number(input.feeFounderPct))) {
     patch.fee_founder_pct = makeSplit(Number(input.feeFounderPct)).founderPct;
   }
+  // Social links — normalized to a canonical URL (null clears the field).
+  if ("twitter" in input) patch.twitter = normalizeTwitter(input.twitter);
+  if ("telegram" in input) patch.telegram = normalizeTelegram(input.telegram);
+  if ("discord" in input) patch.discord = normalizeDiscord(input.discord);
+  if ("website" in input) patch.website = normalizeWebsite(input.website);
+  // Brand images — only our own public-bucket URLs are accepted (else cleared).
+  if ("tokenImageUrl" in input) patch.token_image_url = normalizeMediaUrl(input.tokenImageUrl);
+  if ("bannerUrl" in input) patch.banner_url = normalizeMediaUrl(input.bannerUrl);
   return patch;
 }
 
@@ -181,4 +266,53 @@ export async function setProjectAgentKey(key: string, plain: string): Promise<vo
   if (!k) throw new Error("Empty key.");
   if (!/^sk-ant-/.test(k)) throw new Error("That doesn't look like an Anthropic key (expected sk-ant-…).");
   await setProjectAnthropicKey(key, k);
+}
+
+// ── Brand images ──────────────────────────────────────────────────────────────
+const MEDIA_BUCKET = "waitlist-media"; // reuse the public pre-launch media bucket
+const MEDIA_MAX_BYTES = 2 * 1024 * 1024; // 2 MB (mirrors the bucket limit)
+const MEDIA_MIME_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+export type ProjectMediaKind = "banner" | "token";
+
+/**
+ * Upload a project's logo/banner to the public bucket (under projects/<key>/…) and
+ * persist its URL onto the row (token_image_url / banner_url). Founder-gated at the
+ * route; the service role bypasses storage RLS so this stays the only writer. Throws
+ * on a bad type/size/missing project; returns the new public URL.
+ */
+export async function uploadProjectMedia(
+  key: string,
+  kind: ProjectMediaKind,
+  file: File,
+): Promise<string> {
+  const sb = supabaseAdmin;
+  if (!sb) throw new Error("Supabase service role not configured.");
+  const ext = MEDIA_MIME_EXT[file.type];
+  if (!ext) throw new Error("Image must be PNG, JPEG, WebP, or GIF.");
+  if (file.size <= 0 || file.size > MEDIA_MAX_BYTES) throw new Error("Image must be 1 byte–2 MB.");
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const path = `projects/${key}/${kind}-${Date.now()}.${ext}`;
+  const { error } = await sb.storage
+    .from(MEDIA_BUCKET)
+    .upload(path, buf, { contentType: file.type, upsert: true });
+  if (error) throw new Error(error.message);
+  const url = sb.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  if (!url) throw new Error("Upload succeeded but no public URL was returned.");
+
+  const col = kind === "token" ? "token_image_url" : "banner_url";
+  const { data, error: upErr } = await sb
+    .from("projects")
+    .update({ [col]: url })
+    .eq("key", key)
+    .select("key");
+  if (upErr) throw new Error(upErr.message);
+  if (!data || data.length === 0) throw new Error(`Project ${key} not found.`);
+  return url;
 }
