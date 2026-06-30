@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
-import { getAgentState, resolveDueProposals, lastTickAt, recordTickAttempt } from "@/lib/agent-data";
+import { getAgentState, resolveDueProposals, lastTickAt, recordTickAttempt, reconcileBuildingTasks } from "@/lib/agent-data";
 import { tickCadenceMinutes, cadenceBounds } from "@/lib/agent-cadence";
 import {
   runAgentTick,
@@ -145,6 +145,10 @@ export async function GET(req: Request) {
         console.log(`[agent-paused] ${JSON.stringify({ key: p.key })}`);
         continue;
       }
+      // SDK-path self-heal: reconcile leaked "building" tasks against the repo
+      // BEFORE reading state, so the decision sees a clean queue (landed → shipped,
+      // stalled → blocked). Best-effort; the legacy brain does this internally.
+      await reconcileBuildingTasks(p);
       const state = await getAgentState(p);
       // Adaptive cadence: the project paces its OWN ticks from its live state —
       // hot backlog / unanswered inbound ⇒ sooner; idle / congested / thin runway

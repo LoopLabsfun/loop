@@ -40,3 +40,21 @@ export function tickCooldownMs(
   const minutes = Number.isFinite(n) && n > 0 ? n : DEFAULT_TICK_COOLDOWN_MIN;
   return Math.round(minutes * 60_000);
 }
+
+/** Default age past which a "building" task is considered STALLED, minutes. An
+ *  SDK session caps at ~17min wall, so 90min is far beyond any live build — a task
+ *  still "building" after this lost its finish callback (lib/task-reconcile). */
+export const DEFAULT_STALE_BUILD_MIN = 90;
+
+/**
+ * Milliseconds past which a `building` task is reaped as stalled. Reads
+ * `AGENT_STALE_BUILD_MIN` (minutes); non-positive / unparseable falls back to the
+ * conservative default so the reaper can never fire on a still-running session.
+ */
+export function staleBuildMs(
+  env: Record<string, string | undefined> = process.env
+): number {
+  const n = Number(env.AGENT_STALE_BUILD_MIN?.trim());
+  const minutes = Number.isFinite(n) && n > 0 ? n : DEFAULT_STALE_BUILD_MIN;
+  return Math.round(minutes * 60_000);
+}
