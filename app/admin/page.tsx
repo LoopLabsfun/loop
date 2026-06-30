@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr, cashtag } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
+import type { TreasuryDiag } from "@/lib/treasury-diag";
 import { ProjectDomainManager } from "@/components/token/ProjectDomainManager";
 
 // founder/agent/platform split label from the single founder lever (platform = 5).
@@ -405,6 +406,10 @@ function Console({
           />
         </div>
       </div>
+
+      {/* Treasury & fees — read-only diagnostic for the selected project (chain +
+          fee_ledger + agent_actions). No money moves; informs claim/sweep decisions. */}
+      <TreasuryPanel activeKey={activeKey} />
 
       {/* Waiting on founder — escalations */}
       {snap.escalations.length > 0 && (
@@ -1359,6 +1364,133 @@ function AddTask({
       >
         {busy === "task-add" ? "…" : "Add"}
       </button>
+    </div>
+  );
+}
+
+// Read-only treasury diagnostic for the selected project. Lifts
+// scripts/diag-treasury.ts into the cockpit: on-chain treasury/agent balances,
+// the fee_ledger (earned/claimed/claimable per role), and agent_actions totals.
+// Polls nothing — fetches on mount + when the project switches, plus a manual
+// refresh (chain reads are a touch slow, so we don't auto-poll this).
+function TreasuryPanel({ activeKey }: { activeKey: string }) {
+  const [diag, setDiag] = useState<TreasuryDiag | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fetchDiag = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/admin/treasury?p=${activeKey}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "failed to load");
+        setDiag(null);
+        return;
+      }
+      setDiag(j as TreasuryDiag);
+    } catch {
+      setErr("network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeKey]);
+
+  useEffect(() => {
+    fetchDiag();
+  }, [fetchDiag]);
+
+  const sol = (n: number | null | undefined) =>
+    n == null ? "—" : `${n.toFixed(4)} SOL`;
+  const tok = (n: number | null | undefined) =>
+    n == null ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="font-display font-semibold text-[14px]">
+          Treasury &amp; fees{" "}
+          <span className="text-faint font-mono text-[11px]">· {activeKey} · read-only</span>
+        </div>
+        <button
+          onClick={fetchDiag}
+          disabled={loading}
+          className="font-mono text-[12px] px-3 h-[28px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+        >
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+
+      {err ? (
+        <Empty>{err}</Empty>
+      ) : !diag ? (
+        <Empty>{loading ? "Reading chain…" : "No data."}</Empty>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* On-chain balances */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Stat label="Treasury SOL" value={sol(diag.treasury.sol)} />
+            <Stat label="Treasury token" value={tok(diag.treasury.token)} />
+            <Stat label="Agent SOL" value={sol(diag.agent.sol)} />
+            <Stat label="Agent token" value={tok(diag.agent.token)} />
+          </div>
+
+          {/* Fee ledger — claimable is the actionable number (what a claim would pay each role) */}
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.02em] text-faint mb-2">
+              Fee ledger — earned / claimed → claimable
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {(["founder", "agent", "platform"] as const).map((role) => {
+                const e = diag.ledger.earned[`${role}Sol`];
+                const c = diag.ledger.claimed[`${role}Sol`];
+                const cl = diag.ledger.claimable[`${role}Sol`];
+                return (
+                  <div key={role} className="border border-line-4 rounded-[10px] px-3 py-2">
+                    <div className="text-[11px] font-mono text-muted capitalize">{role}</div>
+                    <div className="font-mono text-[13px] text-ink mt-[2px]">{cl.toFixed(4)}</div>
+                    <div className="text-[10px] text-faint font-mono mt-[2px]">
+                      {e.toFixed(3)} earned · {c.toFixed(3)} claimed
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Buyback + agent_actions totals */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <Stat
+              label="Buyback executed"
+              value={`${diag.buybackExecutedSol.toFixed(4)} SOL · ${diag.buybackTxCount} tx`}
+            />
+            <Stat label="Network" value={diag.network} />
+            <Stat
+              label="Snapshot"
+              value={sol(diag.treasurySnapshotSol)}
+            />
+          </div>
+          {diag.actions.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.02em] text-faint mb-2">
+                Agent actions — kind/disposition
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {diag.actions.map((a) => (
+                  <span
+                    key={a.key}
+                    className="font-mono text-[11px] px-2 py-[3px] rounded-[6px] bg-surface-2 text-muted"
+                    title={`${a.sol.toFixed(4)} SOL`}
+                  >
+                    {a.key} · {a.count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
