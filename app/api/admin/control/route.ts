@@ -180,6 +180,29 @@ export async function POST(req: Request) {
       if (!r.ok) return NextResponse.json({ error: r.error ?? "claim failed" }, { status: 409 });
       return NextResponse.json({ ok: true, txSig: r.txSig, claimedSol: r.claimedSol });
     }
+    // Provisioning retries (Lot 4) — create the project's white-label home
+    // (repo + Vercel) or its agent wallet. Infra only, no funds; idempotent.
+    case "provision-home": {
+      const { provisionProjectHome } = await import("@/lib/provisioning-exec");
+      const desc = project.description ?? project.name ?? key;
+      const r = await provisionProjectHome(key, desc);
+      return NextResponse.json({ ok: r.repoOk || r.vercelOk, ...r });
+    }
+    case "provision-wallet": {
+      const { provisionAgentWallet, agentWalletConfigured } = await import("@/lib/agent-wallet");
+      if (!agentWalletConfigured()) {
+        return NextResponse.json({ error: "PRIVY custody not configured" }, { status: 409 });
+      }
+      try {
+        const w = await provisionAgentWallet(key);
+        return NextResponse.json({ ok: true, address: w.address });
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : "wallet provision failed" },
+          { status: 500 }
+        );
+      }
+    }
     default:
       return NextResponse.json({ error: "unknown action" }, { status: 400 });
   }

@@ -6,6 +6,7 @@ import { useWallet } from "@/lib/wallet";
 import { shortAddr, cashtag } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
 import type { TreasuryDiag } from "@/lib/treasury-diag";
+import type { ProvisioningChecklist } from "@/lib/provisioning-check";
 import { ProjectDomainManager } from "@/components/token/ProjectDomainManager";
 
 // founder/agent/platform split label from the single founder lever (platform = 5).
@@ -410,6 +411,10 @@ function Console({
       {/* Treasury & fees — read-only diagnostic for the selected project (chain +
           fee_ledger + agent_actions). No money moves; informs claim/sweep decisions. */}
       <TreasuryPanel activeKey={activeKey} />
+
+      {/* Provisioning checklist — green/red infra bricks for the selected project,
+          with provision/retry on the missing ones (infra only, no funds). */}
+      <ProvisioningPanel activeKey={activeKey} />
 
       {/* Waiting on founder — the typed agent→founder request queue */}
       {snap.escalations.length > 0 && (
@@ -1433,6 +1438,114 @@ function EscalationItem({
           >
             Send
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Per-project provisioning checklist (Lot 4). Self-fetches green/red infra bricks
+// and offers provision/retry on the missing ones (repo+Vercel home, agent wallet).
+// Infra only — no funds. Auto-refreshes after a retry.
+function ProvisioningPanel({ activeKey }: { activeKey: string }) {
+  const [data, setData] = useState<ProvisioningChecklist | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/admin/provisioning?p=${activeKey}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "failed to load");
+        setData(null);
+        return;
+      }
+      setData(j as ProvisioningChecklist);
+    } catch {
+      setErr("network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeKey]);
+
+  useEffect(() => {
+    load();
+    setNote(null);
+  }, [load]);
+
+  const retry = async (action: string, brickKey: string) => {
+    setBusy(brickKey);
+    setNote(null);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: activeKey, action }),
+      });
+      const j = await r.json();
+      if (!r.ok) setErr(j.error || "provision failed");
+      else setNote(j.note || j.address || "done");
+      await load();
+    } catch {
+      setErr("network error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const dot = (s: string) =>
+    s === "ok" ? "bg-pos" : s === "missing" ? "bg-neg" : "bg-faint";
+
+  return (
+    <div className="bg-surface border border-line-2 rounded-[16px] px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="font-display font-semibold text-[14px]">
+          Provisioning{" "}
+          <span className="text-faint font-mono text-[11px]">
+            · {activeKey}
+            {data ? (data.ready ? " · ready" : " · incomplete") : ""}
+          </span>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="font-mono text-[12px] px-3 h-[28px] rounded-[8px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+        >
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+
+      {err ? (
+        <Empty>{err}</Empty>
+      ) : !data ? (
+        <Empty>{loading ? "Checking…" : "No data."}</Empty>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {data.bricks.map((b) => (
+            <div key={b.key} className="flex items-center justify-between gap-3 py-[3px]">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`w-[8px] h-[8px] rounded-full flex-none ${dot(b.status)}`} />
+                <span className="font-mono text-[12.5px] text-ink flex-none">{b.label}</span>
+                <span className="font-mono text-[11px] text-faint truncate">{b.detail}</span>
+              </div>
+              {b.action && b.status === "missing" && (
+                <button
+                  onClick={() => retry(b.action!, b.key)}
+                  disabled={!!busy}
+                  className="font-mono text-[11px] px-2 h-[26px] rounded-[7px] border border-line-2 hover:bg-surface-2 disabled:opacity-60 flex-none"
+                >
+                  {busy === b.key ? "…" : "Provision"}
+                </button>
+              )}
+            </div>
+          ))}
+          {note && <div className="text-[12px] text-pos font-mono mt-1 break-all">{note}</div>}
         </div>
       )}
     </div>
