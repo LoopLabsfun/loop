@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   usd,
   sol,
+  cashtag,
   fmtPrice,
   compactUsd,
   compactNum,
@@ -13,6 +14,21 @@ import {
   repoUrl,
   commitUrl,
 } from "./format";
+
+describe("cashtag", () => {
+  it("adds exactly one leading $ whether or not the ticker already has one", () => {
+    expect(cashtag("FAME")).toBe("$FAME"); // prelaunch-draft shape
+    expect(cashtag("$FAME")).toBe("$FAME"); // launched-project shape (was double-$)
+    expect(cashtag("$$FAME")).toBe("$FAME"); // collapses an already-doubled value
+  });
+  it("trims and handles empty/null", () => {
+    expect(cashtag("  LOOP ")).toBe("$LOOP");
+    expect(cashtag("")).toBe("");
+    expect(cashtag(null)).toBe("");
+    expect(cashtag(undefined)).toBe("");
+    expect(cashtag("$")).toBe("");
+  });
+});
 
 describe("usd", () => {
   it("formats with thousands separators and 2 decimals", () => {

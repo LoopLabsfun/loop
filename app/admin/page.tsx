@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import Link from "next/link";
 import { useWallet } from "@/lib/wallet";
-import { shortAddr } from "@/lib/format";
+import { shortAddr, cashtag } from "@/lib/format";
 import type { AdminSnapshot, AdminTaskRow } from "@/lib/admin-data";
 import { ProjectDomainManager } from "@/components/token/ProjectDomainManager";
 
@@ -811,12 +811,22 @@ function ProjectsPanel() {
             return (
               <div key={p.key} className="border border-line-3 rounded-[10px] p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  {p.cover && (
+                  {p.tokenImageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.cover} alt="" className="w-7 h-7 rounded-full object-cover border border-line-3" />
+                    // `cover` holds a THEME key ("neon"/"loop"), not a URL — the real
+                    // logo lives in tokenImageUrl. onError hides a 404 so we never show
+                    // a broken-image icon (mirrors LiveProjects).
+                    <img
+                      src={p.tokenImageUrl}
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover border border-line-3"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
                   )}
                   <span className="font-display font-semibold text-[14px]">{p.name}</span>
-                  <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>
+                  <span className="font-mono text-[12px] text-accent-text">{cashtag(p.ticker)}</span>
                   {p.official && (
                     <span className="font-mono text-[10px] px-2 py-[2px] rounded-full bg-accent text-white">official</span>
                   )}

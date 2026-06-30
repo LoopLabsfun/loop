@@ -19,6 +19,15 @@ export function sol(n: number, digits = 2): string {
   return n.toFixed(digits);
 }
 
+/** A token cashtag with EXACTLY one leading "$", regardless of how the ticker is
+ *  stored — launched projects keep the "$" ("$FAME"), prelaunch drafts don't
+ *  ("FAME"). Prepending "$" blindly double-stamps the launched ones ("$$FAME");
+ *  this normalises both. Empty/blank → "". */
+export function cashtag(ticker: string | null | undefined): string {
+  const t = (ticker ?? "").replace(/^\$+/, "").trim();
+  return t ? `$${t}` : "";
+}
+
 export function fmtPrice(p: number): string {
   if (!Number.isFinite(p) || p <= 0) return "$0.0000";
   if (p >= 0.01) return "$" + p.toFixed(4);

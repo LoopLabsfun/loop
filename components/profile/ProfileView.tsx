@@ -7,7 +7,7 @@ import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import dynamic from "next/dynamic";
 import { agentRunState } from "@/lib/budget";
-import { explorerUrl, shortAddr, compactUsd } from "@/lib/format";
+import { explorerUrl, shortAddr, compactUsd, cashtag } from "@/lib/format";
 import { NavUserActions } from "../NavUserActions";
 import { FollowButton } from "../FollowButton";
 import { apiEstablishSession } from "@/lib/social-client";
@@ -783,7 +783,7 @@ function PrelaunchCard({ p, isOwner }: { p: PrelaunchSummary; isOwner: boolean }
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-display font-semibold text-[15px] break-all">{p.name}</span>
-              {p.ticker && <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>}
+              {p.ticker && <span className="font-mono text-[12px] text-accent-text">{cashtag(p.ticker)}</span>}
               <span className={`font-mono text-[10.5px] px-2 py-[2px] rounded-full ${status.cls}`}>{status.label}</span>
             </div>
             {p.prompt && (
