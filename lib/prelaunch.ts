@@ -309,12 +309,19 @@ export async function provisionDraftHome(
 
   const { data: row } = await sb
     .from("launch_waitlist")
-    .select("id,name,ticker,prompt,home_key")
+    .select("id,name,ticker,prompt,home_key,token_image_url")
     .eq("wallet", draftWallet)
     .in("status", ["draft", "whitelisted", "launching"])
     .maybeSingle();
   if (!row) return { ok: false, note: "no active draft for that wallet" };
-  const r = row as { id: number; name: string | null; ticker: string | null; prompt: string | null; home_key: string | null };
+  const r = row as {
+    id: number;
+    name: string | null;
+    ticker: string | null;
+    prompt: string | null;
+    home_key: string | null;
+    token_image_url: string | null;
+  };
   if (!r.name || !r.ticker) return { ok: false, note: "draft is missing a name/ticker" };
 
   let key = r.home_key;
@@ -343,7 +350,12 @@ export async function provisionDraftHome(
   }
 
   const { provisionProjectHome } = await import("./provisioning-exec");
-  const home = await provisionProjectHome(key, r.prompt ?? r.name);
+  const home = await provisionProjectHome(key, {
+    name: r.name,
+    ticker: r.ticker,
+    description: r.prompt ?? r.name,
+    tokenImageUrl: r.token_image_url,
+  });
   const plan = provisionPlan(key);
   // Only record a URL/repo that's actually real. `plan.vercelUrl` is just a guess
   // (`<name>.vercel.app` lives in a global namespace and is essentially always
@@ -832,7 +844,12 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
     let provisioning: string | undefined;
     try {
       const { provisionProjectHome } = await import("./provisioning-exec");
-      const home = await provisionProjectHome(key, plan.prompt);
+      const home = await provisionProjectHome(key, {
+        name: plan.name,
+        ticker: plan.ticker,
+        description: plan.prompt,
+        tokenImageUrl: plan.tokenImageUrl,
+      });
       provisioning = home.note;
     } catch (e) {
       provisioning = e instanceof Error ? e.message : "provisioning error";

@@ -221,7 +221,12 @@ export async function POST(req: Request) {
     case "provision-home": {
       const { provisionProjectHome } = await import("@/lib/provisioning-exec");
       const desc = project.description ?? project.name ?? key;
-      const r = await provisionProjectHome(key, desc);
+      const r = await provisionProjectHome(key, {
+        name: project.name ?? key,
+        ticker: (project.ticker ?? key).replace(/^\$/, ""),
+        description: desc,
+        tokenImageUrl: project.tokenImageUrl,
+      });
       return NextResponse.json({ ok: r.repoOk || r.vercelOk, ...r });
     }
     // Per-project operator config (Lot 5) — set/clear a whitelisted runtime knob.

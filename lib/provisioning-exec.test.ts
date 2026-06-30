@@ -31,7 +31,7 @@ describe("provisionProjectHome (unarmed)", () => {
   });
 
   it("no-ops (no network) when nothing is configured", async () => {
-    const r = await provisionProjectHome("loop", "build a thing");
+    const r = await provisionProjectHome("loop", { name: "Loop", ticker: "LOOP", description: "build a thing" });
     expect(r.repoOk).toBe(false);
     expect(r.vercelOk).toBe(false);
     expect(r.note).toMatch(/unarmed/i);

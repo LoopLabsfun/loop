@@ -5,6 +5,7 @@ import {
   vercelConfigured,
   type ProvisionPlan,
 } from "./provisioning";
+import { brandedLayoutJsx, brandedPageJsx, type ProjectBrand } from "./project-template-brand";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROVISIONING — EXECUTION. lib/provisioning PLANS the white-label home
@@ -29,6 +30,64 @@ function ghHeaders(): Record<string, string> {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+/** Create-or-update a file via the GitHub Contents API (PUT requires the
+ *  current blob's sha to update; omitted for a brand-new file). Never throws. */
+async function putFile(
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  message: string,
+): Promise<{ ok: boolean; note: string }> {
+  try {
+    const getR = await fetch(`${GH}/repos/${owner}/${repo}/contents/${path}`, { headers: ghHeaders(), cache: "no-store" });
+    const sha = getR.ok ? ((await getR.json()) as { sha?: string }).sha : undefined;
+    const r = await fetch(`${GH}/repos/${owner}/${repo}/contents/${path}`, {
+      method: "PUT",
+      headers: ghHeaders(),
+      cache: "no-store",
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(content, "utf8").toString("base64"),
+        sha,
+      }),
+    });
+    if (!r.ok) return { ok: false, note: `PUT ${path} failed (${r.status}): ${(await r.text()).slice(0, 160)}` };
+    return { ok: true, note: `updated ${path}` };
+  } catch (e) {
+    return { ok: false, note: e instanceof Error ? e.message : `PUT ${path} error` };
+  }
+}
+
+/** Swap the bare template's placeholder pages for the project's real identity
+ *  (name, ticker, description, token image) in Loop's own look — committed
+ *  right after the repo is generated, BEFORE the agent's first commit or the
+ *  first Vercel deploy, so the very first thing anyone sees is branded, not a
+ *  generic "🚀 Building autonomously on Loop" starter. Only ever called on a
+ *  FRESHLY generated repo (never on an "already exists" repo, which may already
+ *  hold real agent work this must not clobber). GitHub's template-generate can
+ *  take a few seconds to finish copying content, so this retries briefly before
+ *  giving up. Best-effort + never throws — a failure just leaves the generic
+ *  template in place. */
+export async function applyTemplateBranding(plan: ProvisionPlan, brand: ProjectBrand): Promise<{ ok: boolean; note: string }> {
+  if (!githubConfigured()) return { ok: false, note: "GITHUB_TOKEN unset" };
+  const [owner, name] = plan.repo.split("/");
+  if (!owner || !name) return { ok: false, note: `bad repo slug ${plan.repo}` };
+  for (let attempt = 0; ; attempt++) {
+    const check = await fetch(`${GH}/repos/${owner}/${name}/contents/app/page.jsx`, { headers: ghHeaders(), cache: "no-store" });
+    if (check.ok) break;
+    if (attempt >= 4) return { ok: false, note: "template content never appeared (app/page.jsx missing)" };
+    await sleep(2000);
+  }
+  const layout = await putFile(owner, name, "app/layout.jsx", brandedLayoutJsx(brand), "brand: project identity (Loop provisioning)");
+  const page = await putFile(owner, name, "app/page.jsx", brandedPageJsx(brand), "brand: project identity (Loop provisioning)");
+  return { ok: layout.ok && page.ok, note: `layout: ${layout.note} · page: ${page.note}` };
+}
+
 /** Pure: the Vercel "create project" body (framework + git link to the repo). */
 export function vercelProjectPayload(plan: ProvisionPlan): Record<string, unknown> {
   return {
@@ -50,8 +109,11 @@ interface RepoResult {
 }
 
 /** Create the project's GitHub repo (from the template, else empty). Idempotent:
- *  a repo that already exists is treated as success. Never throws. */
-export async function createProjectRepo(plan: ProvisionPlan, description: string): Promise<RepoResult> {
+ *  a repo that already exists is treated as success (and left untouched — it
+ *  may already hold real agent work). On a FRESH template-generated repo, also
+ *  commits the project's branded landing page before returning (see
+ *  applyTemplateBranding). Never throws. */
+export async function createProjectRepo(plan: ProvisionPlan, brand: ProjectBrand): Promise<RepoResult> {
   if (!githubConfigured()) return { ok: false, note: "GITHUB_TOKEN unset" };
   const [owner, name] = plan.repo.split("/");
   if (!owner || !name) return { ok: false, note: `bad repo slug ${plan.repo}` };
@@ -62,7 +124,7 @@ export async function createProjectRepo(plan: ProvisionPlan, description: string
       return { ok: true, repoUrl: plan.repoUrl, repoId: j.id, defaultBranch: j.default_branch, note: "repo already exists" };
     }
 
-    const desc = description.slice(0, 200);
+    const desc = brand.description.slice(0, 200);
     const template = process.env.GITHUB_TEMPLATE_REPO?.trim();
     if (template) {
       const [tOwner, tName] = template.split("/");
@@ -74,7 +136,14 @@ export async function createProjectRepo(plan: ProvisionPlan, description: string
       });
       if (!r.ok) return { ok: false, note: `template generate failed (${r.status}): ${(await r.text()).slice(0, 160)}` };
       const j = (await r.json()) as { id: number; default_branch: string };
-      return { ok: true, repoUrl: plan.repoUrl, repoId: j.id, defaultBranch: j.default_branch, note: `created from template ${template}` };
+      const branding = await applyTemplateBranding(plan, brand);
+      return {
+        ok: true,
+        repoUrl: plan.repoUrl,
+        repoId: j.id,
+        defaultBranch: j.default_branch,
+        note: `created from template ${template} · branding: ${branding.note}`,
+      };
     }
 
     // No template → an empty (auto-init) repo. The agent scaffolds it; the first
@@ -116,10 +185,6 @@ export async function createVercelProject(plan: ProvisionPlan): Promise<{ ok: bo
   } catch (e) {
     return { ok: false, note: e instanceof Error ? e.message : "vercel create error" };
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((res) => setTimeout(res, ms));
 }
 
 /** Poll a deployment until it's READY (or errors/times out), then resolve its
@@ -216,19 +281,19 @@ export async function triggerFirstDeploy(
   }
 }
 
-/** Provision a launched project's white-label home (repo + Vercel project +
- *  its first deploy). Env-gated, best-effort, never throws — a failure leaves
- *  the project launched (the home can be (re-)provisioned later) rather than
- *  aborting the mint. */
+/** Provision a launched project's white-label home (branded repo + Vercel
+ *  project + its first deploy). Env-gated, best-effort, never throws — a
+ *  failure leaves the project launched (the home can be (re-)provisioned
+ *  later) rather than aborting the mint. */
 export async function provisionProjectHome(
   key: string,
-  description: string,
+  brand: Omit<ProjectBrand, "key">,
 ): Promise<{ repoOk: boolean; vercelOk: boolean; deployOk: boolean; repo: string; vercelUrl?: string; note: string }> {
   const plan = provisionPlan(key);
   if (!githubConfigured() && !vercelConfigured()) {
     return { repoOk: false, vercelOk: false, deployOk: false, repo: plan.repo, note: "provisioning unarmed (no GITHUB_TOKEN/VERCEL_TOKEN)" };
   }
-  const repo = await createProjectRepo(plan, description);
+  const repo = await createProjectRepo(plan, { ...brand, key });
   const vercel = await createVercelProject(plan);
   let deploy: { ok: boolean; note: string; url?: string } = { ok: false, note: "skipped (repo or vercel project not ready)" };
   if (repo.ok && repo.repoId != null && vercel.ok) {
