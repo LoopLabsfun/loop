@@ -22,7 +22,7 @@ import "server-only";
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Project } from "./types";
-import { tokensToUsd, type TokenUsage } from "./anthropic-cost";
+import { tokensToUsd } from "./anthropic-cost";
 import { agentRuntimeConfigured, chatModel, loadMandate, socialSilent } from "./agent-runtime";
 
 /** What the agent may author this cycle. Both optional — empty = stay silent. */
@@ -193,8 +193,7 @@ export async function authorSocial(
   // Nothing to do: not warm-up and nothing shipped ⇒ no call (bound cost).
   if (!opts.warmup && !work.shipped) return { costUsd: 0 };
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic();
+    const { chatComplete } = await import("./llm");
     const model = chatModel();
     // Ground the prompt in the agent's real mandate (founder override or the
     // project description) so it never invents a product thesis. Fail-safe.
@@ -205,29 +204,19 @@ export async function authorSocial(
     // at authoring time, not just the post-time dedup). Skipped on warm-up (no
     // posts then) to keep that call minimal.
     const recent = opts.warmup ? [] : await recentOwnPosts(p.key);
-    const params = {
+    const res = await chatComplete({
       model,
-      max_tokens: 1400,
-      output_config: { format: { type: "json_schema", schema: SOCIAL_SCHEMA } },
+      maxTokens: 1400,
+      jsonSchema: SOCIAL_SCHEMA,
       system: buildSocialSystemPrompt(p, { ...opts, mission }),
       messages: [{ role: "user", content: buildSocialUserPrompt(work, recent) }],
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const create = (client.messages.create as any).bind(client.messages);
-    const res = (await create(params)) as {
-      content: Array<{ type: string; text?: string }>;
-      usage?: TokenUsage;
-    };
-    const text = res.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
-    const parsed = coerceSocial(JSON.parse(text));
+    });
+    const parsed = coerceSocial(JSON.parse(res.text));
     // On warm-up keep only the plan; on a normal cycle keep only posts.
     const scoped: SocialAuthor = opts.warmup
       ? { socialPlan: parsed.socialPlan }
       : { posts: parsed.posts };
-    return { ...scoped, costUsd: tokensToUsd(res.usage, model) };
+    return { ...scoped, costUsd: tokensToUsd(res.usage, res.model) };
   } catch {
     return { costUsd: 0 };
   }
@@ -262,8 +251,7 @@ export async function authorRecap(
   if (socialSilent() || !agentRuntimeConfigured()) return { text: null, xText: null, costUsd: 0 };
   if (!shippedTitles.length) return { text: null, xText: null, costUsd: 0 };
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic();
+    const { chatComplete } = await import("./llm");
     const model = chatModel();
     const mission = await loadMandate(p)
       .then((m) => m.mission)
@@ -289,23 +277,14 @@ export async function authorRecap(
       .slice(0, 20)
       .map((t) => `• ${t}`)
       .join("\n")}${recentBlock}`;
-    const params = {
+    const res = await chatComplete({
       model,
-      max_tokens: 900,
-      output_config: { format: { type: "json_schema", schema: RECAP_SCHEMA } },
+      maxTokens: 900,
+      jsonSchema: RECAP_SCHEMA,
       system,
       messages: [{ role: "user", content: user }],
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const create = (client.messages.create as any).bind(client.messages);
-    const res = (await create(params)) as {
-      content: Array<{ type: string; text?: string }>;
-      usage?: TokenUsage;
-    };
-    const raw = res.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
+    });
+    const raw = res.text;
     let text: string | null = null;
     let xText: string | null = null;
     try {
@@ -319,7 +298,7 @@ export async function authorRecap(
     } catch {
       /* unparseable — stay silent */
     }
-    return { text, xText, costUsd: tokensToUsd(res.usage, model) };
+    return { text, xText, costUsd: tokensToUsd(res.usage, res.model) };
   } catch {
     return { text: null, xText: null, costUsd: 0 };
   }

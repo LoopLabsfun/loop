@@ -108,21 +108,15 @@ export async function answerCommunityQuestion(
       `• Brand: the product is "Loop", the only URL is looplabs.fun — never write "loop.fun".`,
     ].join("\n");
 
-    const model = chatModel();
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic();
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 400,
+    const { chatComplete } = await import("./llm");
+    const res = await chatComplete({
+      model: chatModel(),
+      maxTokens: 400,
       system,
       messages: [{ role: "user", content: `<community_question>\n${q.slice(0, 600)}\n</community_question>` }],
     });
-    const costUsd = tokensToUsd(msg.usage as TokenUsage, model);
-    const blocks = (msg.content ?? []) as Array<{ type: string; text?: string }>;
-    const text = blocks
-      .map((b) => (b.type === "text" ? b.text ?? "" : ""))
-      .join(" ")
-      .trim();
+    const costUsd = tokensToUsd(res.usage as TokenUsage, res.model);
+    const text = res.text.trim();
     // The model returns SKIP when it shouldn't answer; treat empty/SKIP as no-reply.
     if (!text || /^skip\b/i.test(text)) return { text: null, costUsd };
     return { text: text.slice(0, 1500), costUsd };

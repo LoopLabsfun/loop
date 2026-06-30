@@ -66,10 +66,16 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cacheWrite:
   "claude-haiku-4-5":          { input: 1.00, output:  5.00, cacheWrite: 1.25, cacheRead: 0.10 },
 };
 
-/** Convert a Messages API usage block to USD. Falls back to Opus pricing for unknown models. */
+/**
+ * Convert a Messages API usage block to USD. Unknown CLAUDE models fall back to
+ * Opus pricing (conservative); non-Claude models (e.g. a Groq open-weight routed
+ * through lib/llm.ts) are not billed to the Anthropic credit, so they cost $0 here.
+ */
 export function tokensToUsd(usage: TokenUsage | null | undefined, model: string): number {
   if (!usage) return 0;
-  const p = MODEL_PRICING[model] ?? MODEL_PRICING["claude-opus-4-8"]!;
+  const known = MODEL_PRICING[model];
+  if (!known && !model.startsWith("claude")) return 0;
+  const p = known ?? MODEL_PRICING["claude-opus-4-8"]!;
   return (
     (usage.input_tokens / 1_000_000) * p.input +
     (usage.output_tokens / 1_000_000) * p.output +

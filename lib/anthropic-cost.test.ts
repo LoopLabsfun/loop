@@ -65,8 +65,16 @@ describe("tokensToUsd", () => {
     expect(usd).toBeCloseTo(6, 6);
   });
 
-  it("falls back to Opus pricing for an unknown model and handles null usage", () => {
-    expect(tokensToUsd({ input_tokens: 1_000_000, output_tokens: 0 }, "mystery")).toBeCloseTo(5, 6);
+  it("falls back to Opus pricing for an unknown CLAUDE model and handles null usage", () => {
+    expect(
+      tokensToUsd({ input_tokens: 1_000_000, output_tokens: 0 }, "claude-mystery")
+    ).toBeCloseTo(5, 6);
     expect(tokensToUsd(null, "claude-opus-4-8")).toBe(0);
+  });
+
+  it("does not bill non-Claude models (e.g. a Groq model routed via lib/llm)", () => {
+    expect(
+      tokensToUsd({ input_tokens: 1_000_000, output_tokens: 1_000_000 }, "llama-3.3-70b-versatile")
+    ).toBe(0);
   });
 });
