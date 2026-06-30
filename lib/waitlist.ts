@@ -351,8 +351,15 @@ export interface PrelaunchSummary {
   createdAt: string;
 }
 
-/** A wallet's pre-launch draft for display (profile card), or null if none. Only
- *  non-sensitive fields — never email/referrer. Best-effort: cold backend ⇒ null. */
+/** A wallet's pre-launch draft for display (profile card) and for admin curation
+ *  (resolveDraftLaunch), or null if none. Only non-sensitive fields — never
+ *  email/referrer. Best-effort: cold backend ⇒ null.
+ *
+ *  Scoped to the wallet's ACTIVE row (draft/whitelisted/launching) — a wallet can
+ *  now hold past terminal rows (launched/rejected) alongside a fresh pitch (see the
+ *  active-only unique index), and an unscoped `.eq("wallet", wallet).maybeSingle()`
+ *  would throw once two rows match, or (worse, pre-fix) silently resolve the wrong
+ *  one — the MemeForge/FAME mixup this closes the other half of. */
 export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | null> {
   const sb = supabaseAdmin;
   if (!sb) return null;
@@ -361,6 +368,7 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
     .select("name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,x_handle,project_key,created_at")
     .eq("wallet", wallet)
     .not("name", "is", null)
+    .in("status", ["draft", "whitelisted", "launching"])
     .maybeSingle();
   if (!data?.name) return null;
   return {

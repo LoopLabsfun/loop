@@ -247,12 +247,14 @@ export async function setPrelaunchStatus(
 ): Promise<void> {
   const sb = supabaseAdmin;
   if (!sb) throw new Error("Supabase service role not configured.");
-  // Never override a launched draft.
+  // Scoped to the wallet's ACTIVE row only — a wallet can hold past terminal rows
+  // (launched/rejected) alongside the current one, and `.neq("status","launched")`
+  // alone would also match a stray old "rejected" row, flipping its status too.
   await sb
     .from("launch_waitlist")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("wallet", wallet)
-    .neq("status", "launched");
+    .in("status", ["draft", "whitelisted", "launching"]);
   if (status === "whitelisted") await provisionProjectWallet(wallet); // best-effort
 }
 
@@ -266,10 +268,15 @@ export async function setPrelaunchStatus(
 export async function provisionProjectWallet(draftWallet: string): Promise<string | null> {
   const sb = supabaseAdmin;
   if (!sb || !agentWalletConfigured()) return null;
+  // Scoped to the wallet's ACTIVE row — a wallet can hold past terminal rows
+  // (launched/rejected) alongside the current one; unscoped this would crash on
+  // an ambiguous multi-row match or, worse, silently provision against the wrong
+  // historical row.
   const { data } = await sb
     .from("launch_waitlist")
     .select("project_wallet")
     .eq("wallet", draftWallet)
+    .in("status", ["draft", "whitelisted", "launching"])
     .maybeSingle();
   const existing = (data as { project_wallet?: string } | null)?.project_wallet;
   if (existing) return existing;
@@ -278,7 +285,8 @@ export async function provisionProjectWallet(draftWallet: string): Promise<strin
     await sb
       .from("launch_waitlist")
       .update({ project_wallet: w.address, project_wallet_id: w.id, updated_at: new Date().toISOString() })
-      .eq("wallet", draftWallet);
+      .eq("wallet", draftWallet)
+      .in("status", ["draft", "whitelisted", "launching"]);
     return w.address;
   } catch {
     return null;
@@ -324,11 +332,13 @@ export async function updatePrelaunchDraft(wallet: string, input: DraftFieldPatc
   }
   if (!Object.keys(patch).length) throw new Error("No editable fields provided.");
   patch.updated_at = new Date().toISOString();
+  // Scoped to the wallet's ACTIVE row — `.neq("status","launched")` alone would
+  // also match a stray old "rejected" row for this wallet, editing the wrong one.
   const { data, error } = await sb
     .from("launch_waitlist")
     .update(patch)
     .eq("wallet", wallet)
-    .neq("status", "launched")
+    .in("status", ["draft", "whitelisted", "launching"])
     .select("wallet");
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) throw new Error("No editable draft for that wallet (or already launched).");
@@ -342,10 +352,13 @@ export async function updatePrelaunchDraft(wallet: string, input: DraftFieldPatc
 export async function syncPrelaunchContributions(draftWallet: string): Promise<number> {
   const sb = supabaseAdmin;
   if (!sb) return 0;
+  // Scoped to the wallet's ACTIVE row — see provisionProjectWallet for why an
+  // unscoped wallet match is ambiguous once a wallet can hold multiple rows.
   const { data } = await sb
     .from("launch_waitlist")
     .select("project_wallet")
     .eq("wallet", draftWallet)
+    .in("status", ["draft", "whitelisted", "launching"])
     .maybeSingle();
   const projectWallet = (data as { project_wallet?: string } | null)?.project_wallet;
   if (!projectWallet) return 0;
@@ -385,6 +398,7 @@ export async function getPrelaunchFunding(draftWallet: string): Promise<Prelaunc
     .from("launch_waitlist")
     .select("project_wallet")
     .eq("wallet", draftWallet)
+    .in("status", ["draft", "whitelisted", "launching"])
     .maybeSingle();
   const projectWallet = (row as { project_wallet?: string } | null)?.project_wallet ?? null;
   const { data } = await sb
@@ -432,11 +446,18 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
   if (!prelaunchRefundsArmed()) return out("refunds disarmed (set PRELAUNCH_REFUNDS=1)");
   if (!agentWalletConfigured()) return out("Privy custody not configured");
 
-  const { data: row } = await sb
+  // Never refund a launched row's wallet; a wallet can otherwise hold several
+  // non-launched rows over time (e.g. an old rejected pitch plus a fresh draft),
+  // so take the most recent rather than an unscoped `.maybeSingle()` (which throws
+  // once more than one row matches).
+  const { data: rows } = await sb
     .from("launch_waitlist")
     .select("project_wallet, project_wallet_id")
     .eq("wallet", draftWallet)
-    .maybeSingle();
+    .neq("status", "launched")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const row = rows?.[0] ?? null;
   const projectWallet = (row as { project_wallet?: string } | null)?.project_wallet;
   const walletId = (row as { project_wallet_id?: string } | null)?.project_wallet_id;
   if (!projectWallet || !walletId) return out("no project wallet provisioned for this draft");
@@ -661,10 +682,17 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       banner_url: plan.bannerUrl,
     });
 
+    // Scoped to the row this call just atomically claimed into "launching" —
+    // an unscoped `.eq("wallet", wallet)` would also flip any of the wallet's
+    // OTHER rows (a past launched/rejected pitch) to launched + this new
+    // project_key, silently rewriting that row's history. This is the other half
+    // of the MemeForge/FAME mixup: a repeat founder approving their second
+    // project must never touch their first project's already-launched record.
     await sb
       .from("launch_waitlist")
       .update({ status: "launched", project_key: key, updated_at: new Date().toISOString() })
-      .eq("wallet", wallet);
+      .eq("wallet", wallet)
+      .eq("status", "launching");
 
     // White-label home: create the project's GitHub repo + Vercel project so its
     // agent has somewhere to build/deploy. Best-effort + env-gated — the launch is
