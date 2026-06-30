@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getAgentState, resolveDueProposals, lastTickAt, recordTickAttempt, reconcileBuildingTasks } from "@/lib/agent-data";
 import { tickCadenceMinutes, cadenceBounds } from "@/lib/agent-cadence";
 import {
@@ -376,6 +377,48 @@ export async function GET(req: Request) {
       }
     } catch (e) {
       feeClaim = { ok: false, error: e instanceof Error ? e.message : "claim failed" };
+    }
+
+    // Log the claim attempt + auto-raise a typed founder request after repeated
+    // failures (the escalation queue, Lot 3). Skipped (no signer) is not a
+    // failure. Logged under "loop" (the claim is signer-wide). Best-effort.
+    if (feeClaim && !feeClaim.skipped && supabaseAdmin) {
+      const disposition = feeClaim.ok ? "executed" : "failed";
+      try {
+        await supabaseAdmin.from("agent_actions").insert({
+          project_key: "loop",
+          kind: "fee_claim",
+          disposition,
+          amount_sol: feeClaim.claimedSol ?? 0,
+          tx_sig: feeClaim.txSig ?? null,
+          body: feeClaim.ok
+            ? `Claimed ${feeClaim.claimedSol ?? 0} SOL creator fees.`
+            : `Creator-fee claim failed: ${feeClaim.error ?? "unknown"}`,
+        });
+        if (!feeClaim.ok) {
+          const { shouldEscalateClaim } = await import("@/lib/creator-fees");
+          const { countLeadingFailures, raiseEscalation } = await import("@/lib/escalations");
+          const { data: recent } = await supabaseAdmin
+            .from("agent_actions")
+            .select("disposition")
+            .eq("project_key", "loop")
+            .eq("kind", "fee_claim")
+            .order("created_at", { ascending: false })
+            .limit(10);
+          const fails = countLeadingFailures(
+            ((recent ?? []) as { disposition: string }[]).map((r) => r.disposition)
+          );
+          if (shouldEscalateClaim(fails)) {
+            await raiseEscalation(
+              "loop",
+              "action",
+              "Creator-fee claims keep failing — check the launch signer / pump.fun, then retry the claim."
+            );
+          }
+        }
+      } catch {
+        /* logging/escalation is best-effort — never affects the cron response */
+      }
     }
   }
 
