@@ -430,11 +430,19 @@ create table if not exists public.agent_escalations (
   id bigint generated always as identity primary key,
   project_key text not null references public.projects(key) on delete cascade,
   body text not null,
-  status text not null default 'open' check (status in ('open','applied','adopted','declined')),
+  -- Typed agent→founder request queue (docs/admin-cockpit.md §A):
+  --   credential — needs an API key/secret (founder input → project_secrets)
+  --   action     — needs a manual founder action (founder marks Done)
+  --   decision   — out-of-mandate decision (Adopt / Decline; the legacy default)
+  --   info       — a question; founder's free-text answer is read by the agent next tick
+  kind text not null default 'decision' check (kind in ('credential','action','decision','info')),
+  -- The founder's free-text answer (for info requests) or a resolution note.
+  response text,
+  status text not null default 'open' check (status in ('open','applied','adopted','declined','done')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz
 );
-comment on table public.agent_escalations is 'Out-of-mandate decisions the agent escalates. Written by the runtime (service_role); publicly readable.';
+comment on table public.agent_escalations is 'Typed agent→founder request queue (credential/action/decision/info). Written by the runtime (service_role); publicly readable.';
 
 create table if not exists public.agent_actions (
   id bigint generated always as identity primary key,
@@ -463,6 +471,7 @@ create index if not exists agent_emails_project_idx     on public.agent_emails  
 create index if not exists agent_posts_project_idx      on public.agent_posts      (project_key, created_at desc);
 create index if not exists discord_messages_cursor_idx   on public.discord_messages (project_key, channel_id, message_id desc);
 create index if not exists agent_escalations_project_idx on public.agent_escalations(project_key, created_at desc);
+create index if not exists agent_escalations_open_kind_idx on public.agent_escalations(project_key, status, kind);
 create index if not exists agent_actions_project_idx    on public.agent_actions    (project_key, created_at desc);
 
 alter table public.agent_tasks      enable row level security;

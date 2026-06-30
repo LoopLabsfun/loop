@@ -40,7 +40,14 @@ export interface AdminSnapshot {
   todo: AdminTaskRow[];
   shipped: AdminTaskRow[];
   blocked: AdminTaskRow[];
-  escalations: { id: number; body: string; status: string; created_at: string }[];
+  escalations: {
+    id: number;
+    kind: string;
+    body: string;
+    status: string;
+    response: string | null;
+    created_at: string;
+  }[];
   learnings: { category: string; insight: string; created_at: string }[];
 }
 
@@ -65,7 +72,7 @@ export async function getAdminSnapshot(p: Project): Promise<AdminSnapshot> {
   const sel = "id,title,detail,category,status,priority,source,created_at,updated_at";
   const [tasksR, escR, learnR] = await Promise.all([
     sb.from("agent_tasks").select(sel).eq("project_key", p.key).order("updated_at", { ascending: false }).limit(150),
-    sb.from("agent_escalations").select("id,body,status,created_at").eq("project_key", p.key).eq("status", "open").order("created_at", { ascending: false }).limit(20),
+    sb.from("agent_escalations").select("id,kind,body,status,response,created_at").eq("project_key", p.key).eq("status", "open").order("created_at", { ascending: false }).limit(20),
     sb.from("learnings").select("category,insight,created_at").order("created_at", { ascending: false }).limit(6),
   ]);
   const rows = (tasksR.data ?? []) as AdminTaskRow[];

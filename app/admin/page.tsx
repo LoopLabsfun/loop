@@ -411,33 +411,12 @@ function Console({
           fee_ledger + agent_actions). No money moves; informs claim/sweep decisions. */}
       <TreasuryPanel activeKey={activeKey} />
 
-      {/* Waiting on founder — escalations */}
+      {/* Waiting on founder — the typed agent→founder request queue */}
       {snap.escalations.length > 0 && (
         <Panel title={`Waiting on you · ${snap.escalations.length}`} accent>
           <div className="flex flex-col gap-2">
             {snap.escalations.map((e) => (
-              <div
-                key={e.id}
-                className="flex items-start justify-between gap-3 border border-line-4 rounded-[10px] px-3 py-2"
-              >
-                <span className="text-[12.5px] text-ink leading-[1.4]">{e.body}</span>
-                <div className="flex gap-1 flex-none">
-                  <button
-                    onClick={() => control({ action: "escalation", id: e.id, decision: "adopted" }, `esc-${e.id}`)}
-                    disabled={!!busy}
-                    className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => control({ action: "escalation", id: e.id, decision: "declined" }, `esc-${e.id}`)}
-                    disabled={!!busy}
-                    className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
-                  >
-                    Decline
-                  </button>
-                </div>
-              </div>
+              <EscalationItem key={e.id} esc={e} busy={busy} control={control} />
             ))}
           </div>
         </Panel>
@@ -1373,6 +1352,93 @@ function AddTask({
 // the fee_ledger (earned/claimed/claimable per role), and agent_actions totals.
 // Polls nothing — fetches on mount + when the project switches, plus a manual
 // refresh (chain reads are a touch slow, so we don't auto-poll this).
+// One typed agent→founder request. The resolution controls depend on its kind:
+//   decision   → Approve / Decline (the legacy out-of-mandate sign-off)
+//   action     → Done (the founder did the manual step)
+//   info       → free-text answer the agent reads next tick → Send
+//   credential → Mark provided (the secret goes via "Set API key", never stored here)
+function EscalationItem({
+  esc,
+  busy,
+  control,
+}: {
+  esc: AdminSnapshot["escalations"][number];
+  busy: string | null;
+  control: (body: Record<string, unknown>, tag: string) => Promise<void>;
+}) {
+  const [answer, setAnswer] = useState("");
+  const tag = `esc-${esc.id}`;
+  const resolve = (decision: string, response?: string) =>
+    control({ action: "escalation", id: esc.id, kind: esc.kind, decision, response }, tag);
+
+  const badge = (
+    <span className="font-mono text-[10px] px-1.5 py-[2px] rounded-[5px] bg-surface-2 text-muted uppercase tracking-[0.03em]">
+      {esc.kind}
+    </span>
+  );
+
+  return (
+    <div className="border border-line-4 rounded-[10px] px-3 py-2 flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          {badge}
+          <span className="text-[12.5px] text-ink leading-[1.4]">{esc.body}</span>
+        </div>
+        <div className="flex gap-1 flex-none">
+          {esc.kind === "decision" ? (
+            <>
+              <button
+                onClick={() => resolve("adopted")}
+                disabled={!!busy}
+                className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => resolve("declined")}
+                disabled={!!busy}
+                className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] border border-line-2 hover:bg-surface-2 disabled:opacity-60"
+              >
+                Decline
+              </button>
+            </>
+          ) : esc.kind === "info" ? null : (
+            <button
+              onClick={() => resolve("done")}
+              disabled={!!busy}
+              className="font-mono text-[11px] px-2 h-[28px] rounded-[7px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
+              title={
+                esc.kind === "credential"
+                  ? "Mark provided — supply the secret via Set API key, not here"
+                  : "Mark the manual step done"
+              }
+            >
+              {esc.kind === "credential" ? "Mark provided" : "Done"}
+            </button>
+          )}
+        </div>
+      </div>
+      {esc.kind === "info" && (
+        <div className="flex gap-2">
+          <input
+            value={answer}
+            onChange={(ev) => setAnswer(ev.target.value)}
+            placeholder="Answer (the agent reads this next tick)…"
+            className="flex-1 font-mono text-[12px] px-2 h-[30px] rounded-[8px] border border-line-2 bg-surface-2 outline-none focus:border-accent"
+          />
+          <button
+            onClick={() => resolve("done", answer)}
+            disabled={!!busy || !answer.trim()}
+            className="font-mono text-[12px] px-3 h-[30px] rounded-[8px] bg-accent text-white hover:opacity-90 disabled:opacity-60"
+          >
+            Send
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface MoveState {
   op: "treasury-sweep" | "treasury-claim";
   label: string;
