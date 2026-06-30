@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
-import { getAgentState, resolveDueProposals, isAgentActive } from "@/lib/agent-data";
+import { getAgentState, resolveDueProposals, isAgentActive, lastTickAt } from "@/lib/agent-data";
 import { tickCooldownMs } from "@/lib/agent-tick-throttle";
 import {
   runAgentTick,
@@ -65,7 +65,19 @@ export async function GET(req: Request) {
   // Budget hard-stop: only tick projects whose treasury can absorb a cycle.
   // Empty/dust treasury ⇒ the agent sleeps until buyers refill it.
   const asleep = all.filter((p) => !canAffordTick(p).ok).map((p) => p.key);
-  const projects = all.filter((p) => canAffordTick(p).ok).slice(0, MAX_PER_RUN);
+  // FAIR SCHEDULING: more funded projects than MAX_PER_RUN would otherwise starve
+  // whoever sits at the back of the default (official, then newest-first) order —
+  // e.g. the oldest non-official project never reaches the tick loop. Order the
+  // affordable set by least-recently-ticked (never-ticked = 0 sorts first) so every
+  // project round-robins in across cron fires. The cooldown below still prevents
+  // re-ticking one that ran recently.
+  const affordable = all.filter((p) => canAffordTick(p).ok);
+  const tickedAt = new Map(
+    await Promise.all(affordable.map(async (p) => [p.key, await lastTickAt(p.key)] as const))
+  );
+  const projects = [...affordable]
+    .sort((a, b) => (tickedAt.get(a.key) ?? 0) - (tickedAt.get(b.key) ?? 0))
+    .slice(0, MAX_PER_RUN);
 
   // Brain mode: "legacy" runs the whole tick inline (decide + repo-hands edits, all
   // inside this 300s function); "sdk" decides here but ENQUEUES the long-running
