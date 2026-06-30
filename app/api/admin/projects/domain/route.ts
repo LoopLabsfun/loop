@@ -26,7 +26,7 @@ async function authorize(req: Request, key: string) {
   const target = await getProject(key);
   if (!target) return { error: NextResponse.json({ error: "project not found" }, { status: 404 }) };
   const loop = await getProject("loop");
-  const isSuper = Boolean(loop && isFounder(req, loop));
+  const isSuper = Boolean(loop && (await isFounder(req, loop)));
   const isCreator = Boolean(target.creatorWallet && wallet === target.creatorWallet);
   if (!isSuper && !isCreator) {
     return { error: NextResponse.json({ error: "not your project" }, { status: 403 }) };

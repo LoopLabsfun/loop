@@ -69,7 +69,7 @@ export async function POST(req: Request) {
   const key = body.key || "loop";
   const project = await getProject(key);
   if (!project) return NextResponse.json({ error: "project not found" }, { status: 404 });
-  if (!isFounder(req, project)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await isFounder(req, project))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin;
   if (!sb) return NextResponse.json({ error: "supabase not configured" }, { status: 503 });
 

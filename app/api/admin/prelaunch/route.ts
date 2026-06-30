@@ -29,7 +29,7 @@ export const maxDuration = 300;
 async function gate(req: Request) {
   const loop = await getProject("loop");
   if (!loop) return { error: NextResponse.json({ error: "loop project not found" }, { status: 404 }) };
-  if (!isFounder(req, loop)) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  if (!(await isFounder(req, loop))) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   return { ok: true as const };
 }
 

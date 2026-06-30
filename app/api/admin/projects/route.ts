@@ -31,7 +31,7 @@ async function caller(req: Request) {
   const wallet = adminWallet(req);
   if (!wallet) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   const loop = await getProject("loop");
-  const isSuper = Boolean(loop && isFounder(req, loop));
+  const isSuper = Boolean(loop && (await isFounder(req, loop)));
   return { wallet, isSuper };
 }
 

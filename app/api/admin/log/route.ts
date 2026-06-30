@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (!project) {
     return NextResponse.json({ error: "project not found" }, { status: 404 });
   }
-  if (!isFounder(req, project)) {
+  if (!(await isFounder(req, project))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   // getProject already overrides the stored snapshot with the live on-chain

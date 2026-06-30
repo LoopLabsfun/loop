@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const target = await getProject(key);
   if (!target) return NextResponse.json({ error: "project not found" }, { status: 404 });
   const loop = await getProject("loop");
-  const isSuper = Boolean(loop && isFounder(req, loop));
+  const isSuper = Boolean(loop && (await isFounder(req, loop)));
   const isCreator = Boolean(target.creatorWallet && wallet === target.creatorWallet);
   if (!isSuper && !isCreator) {
     return NextResponse.json({ error: "not your project" }, { status: 403 });
