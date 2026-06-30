@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProjects } from "@/lib/queries";
-import { getAgentState, resolveDueProposals, isAgentActive, lastTickAt } from "@/lib/agent-data";
-import { tickCooldownMs } from "@/lib/agent-tick-throttle";
+import { getAgentState, resolveDueProposals, lastTickAt } from "@/lib/agent-data";
+import { tickCadenceMinutes, cadenceBounds } from "@/lib/agent-cadence";
 import {
   runAgentTick,
   agentRuntimeConfigured,
@@ -84,12 +84,12 @@ export async function GET(req: Request) {
   // SDK-in-E2B session on Trigger.dev (no 300s cap). Default legacy — unchanged.
   const mode = brainMode();
 
-  // Spend-rate guardrail: the minimum gap between expensive ticks. The cron can
-  // fire every ~5 min (GitHub Actions is the sole heartbeat and its schedule
-  // can't be changed by the agent's token), and each tick can run a brain
-  // decision + enqueue a real SDK session with no per-session cooldown — so this
-  // bounds the Claude-credit burn rate. AGENT_PAUSED stays the instant hard stop.
-  const cooldownMs = tickCooldownMs();
+  // Adaptive per-project cadence: instead of one flat cooldown for everyone, each
+  // project's interval is derived from its own live state (backlog, congestion,
+  // runway) — see lib/agent-cadence. Resolve the env bounds once per run; the
+  // per-project interval is computed inside the loop from its state. AGENT_PAUSED
+  // + the empty-treasury budget gate stay the instant hard stops.
+  const bounds = cadenceBounds();
 
   // Build-path preflight: log which path is live and whether it can actually ship
   // code. A misconfig (sdk without TRIGGER_SECRET_KEY, or legacy missing E2B/token)
@@ -116,14 +116,36 @@ export async function GET(req: Request) {
         continue;
       }
       const state = await getAgentState(p);
-      // Cooldown: skip the expensive brain work if this project already ticked
-      // within the window (the agent writes a task row on every tick + at SDK
-      // enqueue, so isAgentActive is an accurate "ticked recently" signal). The
-      // free governance pass above still runs on every fire.
-      if (cooldownMs > 0 && (await isAgentActive(p.key, cooldownMs))) {
-        const mins = Math.round(cooldownMs / 60_000);
-        results.push({ key: p.key, ok: true, summary: `cooldown · ticked <${mins}min ago, skipped` });
-        console.log(`[agent-cooldown] ${JSON.stringify({ key: p.key, cooldownMin: mins })}`);
+      // Adaptive cadence: the project paces its OWN ticks from its live state —
+      // hot backlog / unanswered inbound ⇒ sooner; idle / congested / thin runway
+      // ⇒ later (lib/agent-cadence). Skip the expensive brain work until this
+      // project's own interval has elapsed since its last tick (lastTickAt, reused
+      // from the fair-scheduling sort). The free governance pass above still runs.
+      const budget = canAffordTick(p);
+      const cadenceMin = tickCadenceMinutes(
+        {
+          treasurySol: budget.treasurySol,
+          needSol: budget.needSol,
+          openTodos: state.tasks.filter((t) => t.status === "todo").length,
+          inFlight: state.tasks.filter(
+            (t) => t.status === "building" || t.status === "blocked"
+          ).length,
+          unansweredInbound:
+            state.inbox?.filter((m) => m.direction === "in" && !m.answered).length ?? 0,
+        },
+        bounds
+      );
+      const lastTick = tickedAt.get(p.key) ?? 0;
+      const sinceMin = lastTick ? (Date.now() - lastTick) / 60_000 : Infinity;
+      if (sinceMin < cadenceMin) {
+        results.push({
+          key: p.key,
+          ok: true,
+          summary: `cadence · next in ~${Math.ceil(cadenceMin - sinceMin)}min (every ~${cadenceMin}min)`,
+        });
+        console.log(
+          `[agent-cadence] ${JSON.stringify({ key: p.key, cadenceMin, sinceMin: Math.round(sinceMin) })}`
+        );
         continue;
       }
       // Daily founder recap (once per UTC day, official projects only) — runs in
