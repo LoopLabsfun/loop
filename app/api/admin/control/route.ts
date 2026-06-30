@@ -5,9 +5,11 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getAgentState, reconcileBuildingTasks } from "@/lib/agent-data";
 import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { runAgentTick } from "@/lib/agent-runtime";
+import { canAffordTick } from "@/lib/budget";
 import { previewSweep, execSweep, previewClaim, execClaim } from "@/lib/treasury-actions";
 import { resolveEscalation, isEscalationKind } from "@/lib/escalations";
 import type { TaskCategory, TaskSource, TaskStatus } from "@/lib/agent";
+import type { Project } from "@/lib/types";
 
 // Founder admin controls — the safe interactive surface of the console. Every
 // action re-checks isFounder (session cookie bound to creator_wallet).
@@ -28,6 +30,19 @@ export const maxDuration = 300;
 const TASK_STATUSES: TaskStatus[] = ["todo", "building", "shipped", "blocked"];
 const TASK_CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
 const TASK_SOURCES: TaskSource[] = ["founder", "holder", "agent"];
+
+// Shared by force-tick and the task-add wake (below): run one tick attempt for a
+// project right now, sdk-enqueue or inline depending on brain mode.
+async function runOneTick(project: Project) {
+  const state = await getAgentState(project);
+  const input = { tasks: state.tasks, directives: state.directives, inbox: state.inbox };
+  if (brainMode() === "sdk") {
+    const r = await enqueueSdkSession(project, input);
+    return { ok: true, note: r.note };
+  }
+  const d = await runAgentTick(project, input);
+  return { ok: true, note: d.summary };
+}
 
 export async function POST(req: Request) {
   let body: {
@@ -70,14 +85,8 @@ export async function POST(req: Request) {
       if (project.agentPaused) {
         return NextResponse.json({ error: "agent is paused — resume it first" }, { status: 409 });
       }
-      const state = await getAgentState(project);
-      const input = { tasks: state.tasks, directives: state.directives, inbox: state.inbox };
-      if (brainMode() === "sdk") {
-        const r = await enqueueSdkSession(project, input);
-        return NextResponse.json({ ok: true, note: r.note });
-      }
-      const d = await runAgentTick(project, input);
-      return NextResponse.json({ ok: true, note: d.summary });
+      const r = await runOneTick(project);
+      return NextResponse.json(r);
     }
     case "escalation": {
       const id = Number(body.id);
@@ -151,7 +160,20 @@ export async function POST(req: Request) {
         source: "founder",
       });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ ok: true });
+      // Wake-on-event: a founder-queued task shouldn't sit until the next
+      // cadence-eligible cron fire (up to ~an hour on a thin-treasury project).
+      // Try one tick right now — best-effort, never fails the task-add itself;
+      // the task is queued for the next cron either way.
+      let woke = false;
+      if (!project.agentPaused && canAffordTick(project).ok) {
+        try {
+          await runOneTick(project);
+          woke = true;
+        } catch {
+          /* best-effort wake — task is already queued regardless */
+        }
+      }
+      return NextResponse.json({ ok: true, woke });
     }
     case "task-remove": {
       const id = Number(body.taskId);
