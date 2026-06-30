@@ -86,7 +86,7 @@ async function findWhitelistedBySlug(
   if (!sb) return null;
   const { data } = await sb
     .from("launch_waitlist")
-    .select("wallet,name,ticker,prompt,token_image_url,banner_url,project_wallet,fee_founder_pct,status")
+    .select("wallet,name,ticker,prompt,token_image_url,banner_url,project_wallet,fee_founder_pct,status,home_repo,home_vercel_url")
     .eq("status", "whitelisted")
     .not("name", "is", null);
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -118,7 +118,12 @@ export async function getPrelaunchProjectBySlug(slug: string): Promise<Project |
     description: prompt,
     official: false,
     launchpad: "Pump.fun" as Launchpad,
-    repo: "",
+    // Provisioned at whitelist time (lib/prelaunch.provisionDraftHome) — without
+    // these, the "Autonomous work" panel's live-site link has nothing to work
+    // with (projectSiteUrl needs `repo`/`website`) and silently renders nothing,
+    // even though the project's home is already live.
+    repo: (r.home_repo as string) ?? "",
+    website: (r.home_vercel_url as string) ?? null,
     cover: "neon",
     price: 0,
     marketCap: "—",
