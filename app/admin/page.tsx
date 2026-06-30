@@ -517,17 +517,22 @@ function PrelaunchPanel() {
     }
   }
 
-  const n = drafts?.length ?? 0;
+  // A launched draft has already become a real project (in the Projects panel) —
+  // keep it out of the actionable pre-launch list (the Buildtopia duplicate) and
+  // show it as a compact "✓ → key" footer instead.
+  const activeDrafts = (drafts ?? []).filter((d) => d.status !== "launched");
+  const launchedDrafts = (drafts ?? []).filter((d) => d.status === "launched");
+  const n = activeDrafts.length;
   return (
     <Panel title={`Pre-launch · ${n}`} accent>
       {err && <div className="text-[12px] text-neg font-mono mb-2">{err}</div>}
       {drafts == null ? (
         <Empty>Loading…</Empty>
-      ) : n === 0 ? (
+      ) : activeDrafts.length === 0 && launchedDrafts.length === 0 ? (
         <Empty>No drafts yet.</Empty>
       ) : (
         <div className="flex flex-col gap-3">
-          {drafts.map((d) => {
+          {activeDrafts.map((d) => {
             const isBusy = (a: string) => busy === `${d.wallet}:${a}`;
             const launched = d.status === "launched";
             const p = pf[d.wallet];
@@ -634,6 +639,25 @@ function PrelaunchPanel() {
               </div>
             );
           })}
+          {launchedDrafts.length > 0 && (
+            <div className="border-t border-line-3 pt-2 mt-1">
+              <div className="text-[11px] font-mono text-faint mb-1">Launched · {launchedDrafts.length}</div>
+              <div className="flex flex-col gap-1">
+                {launchedDrafts.map((d) => (
+                  <a
+                    key={d.wallet}
+                    href={`/token?p=${d.projectKey}`}
+                    className="font-mono text-[12px] flex items-center gap-2 flex-wrap hover:underline"
+                  >
+                    <span className="text-pos">✓</span>
+                    <span className="text-body">{d.name}</span>
+                    <span className="text-accent-text">{cashtag(d.ticker)}</span>
+                    <span className="text-faint">→ {d.projectKey}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Panel>
