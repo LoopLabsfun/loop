@@ -1,4 +1,4 @@
-import type { AgentTask, TaskSource } from "./agent";
+import type { AgentTask, TaskCategory, TaskSource } from "./agent";
 
 export type { TaskSource };
 
@@ -35,29 +35,72 @@ export const SOURCE_BASE_PRIORITY: Record<TaskSource, number> = {
   agent: 0,
 };
 
+// An unprioritised agent-groomed task (band 0) sits behind EVERY founder/holder
+// ask forever, no matter how long it's waited — a fresh founder ask always
+// outranks it. This grows its effective priority a little per day it's been open
+// so old, neglected agent work eventually surfaces among its peers instead of
+// starving indefinitely. Capped well under the holder band (50) so founder/holder
+// curated direction still always wins the tick — this only reorders among
+// otherwise-equal agent-groomed busywork.
+const STALENESS_BOOST_PER_DAY = 2;
+const STALENESS_BOOST_CAP = 20;
+
 /** The effective priority used for ordering: an explicit priority wins; otherwise
- *  fall back to the source's base band. */
-export function effectivePriority(t: { priority?: number | null; source?: TaskSource | null }): number {
+ *  fall back to the source's base band, plus a capped staleness boost for
+ *  unprioritised agent-groomed tasks that have aged in the open backlog. */
+export function effectivePriority(
+  t: { priority?: number | null; source?: TaskSource | null; createdAtMs?: number | null },
+  nowMs = Date.now()
+): number {
   if (typeof t.priority === "number" && Number.isFinite(t.priority)) return t.priority;
-  return SOURCE_BASE_PRIORITY[t.source ?? "agent"];
+  const base = SOURCE_BASE_PRIORITY[t.source ?? "agent"];
+  if ((t.source ?? "agent") !== "agent" || !t.createdAtMs) return base;
+  const days = Math.max(0, (nowMs - t.createdAtMs) / 86_400_000);
+  return base + Math.min(STALENESS_BOOST_CAP, Math.floor(days) * STALENESS_BOOST_PER_DAY);
 }
+
+const ALL_CATEGORIES: TaskCategory[] = ["feature", "outreach", "fix", "ops"];
+
+// Category fairness: a category with NO shipped task in the recent-shipped
+// window is "starved" relative to the others and gets a modest nudge — without
+// this, a steady stream of (higher-band) founder `feature` asks can bury
+// `fix`/`ops` work indefinitely, since priority bands alone never let category
+// mix self-correct. Capped well under the holder band (50) so it only reorders
+// among same-band work, never overrides curated founder/holder direction.
+const CATEGORY_FAIRNESS_LOOKBACK = 6;
+const CATEGORY_FAIRNESS_BOOST = 15;
 
 /**
  * Rank the actionable backlog (the `todo` items) highest-impact first:
- * effective priority desc, then a stable tiebreak that preserves the incoming
- * order (callers pass oldest-first within a band to avoid starvation). Returns
- * the ordered queue and the single `top` item the agent should work unless a
- * higher-priority steering item is open. Non-`todo` tasks are ignored here.
+ * effective priority desc (plus the category-fairness nudge above), then a
+ * stable tiebreak that preserves the incoming order (callers pass oldest-first
+ * within a band to avoid starvation). Returns the ordered queue and the single
+ * `top` item the agent should work unless a higher-priority steering item is
+ * open. `tasks` may include non-`todo` rows (e.g. recently shipped) — only used
+ * here to derive category fairness; they're excluded from the ranked output.
  */
-export function rankBacklog<T extends { status: string; priority?: number | null; source?: TaskSource | null }>(
-  tasks: T[]
-): { ranked: T[]; top: T | null } {
+export function rankBacklog<
+  T extends {
+    status: string;
+    priority?: number | null;
+    source?: TaskSource | null;
+    category?: TaskCategory | null;
+    createdAtMs?: number | null;
+  },
+>(tasks: T[]): { ranked: T[]; top: T | null } {
   const todo = tasks.filter((t) => t.status === "todo");
+
+  const recentShipped = tasks.filter((t) => t.status === "shipped").slice(0, CATEGORY_FAIRNESS_LOOKBACK);
+  const shippedCategories = new Set(recentShipped.map((t) => t.category).filter(Boolean));
+  const starved = new Set(ALL_CATEGORIES.filter((c) => !shippedCategories.has(c)));
+  const fairnessBoost = (t: T) => (t.category && starved.has(t.category) ? CATEGORY_FAIRNESS_BOOST : 0);
+
   // Decorate with the original index so the sort is stable across engines.
   const ranked = todo
     .map((t, i) => ({ t, i }))
     .sort((a, b) => {
-      const pd = effectivePriority(b.t) - effectivePriority(a.t);
+      const pd =
+        effectivePriority(b.t) + fairnessBoost(b.t) - (effectivePriority(a.t) + fairnessBoost(a.t));
       return pd !== 0 ? pd : a.i - b.i;
     })
     .map((x) => x.t);

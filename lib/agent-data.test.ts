@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSummaries, dedupeSimilarTasks } from "./agent-data";
+import { buildSummaries, dedupeSimilarTasks, dedupeNewBacklogTitles } from "./agent-data";
 
 // buildSummaries is pure (no DB) — it rolls up the real task rows into an honest
 // per-day summary. Rows use the agent_tasks shape (id, title, status, created_at).
@@ -68,5 +68,68 @@ describe("dedupeSimilarTasks", () => {
 
   it("returns an empty list unchanged", () => {
     expect(dedupeSimilarTasks([])).toEqual([]);
+  });
+});
+
+// dedupeNewBacklogTitles is the insertion-time guard for backlog grooming — it
+// stops a stalled/retried tick from re-proposing the same logical task under a
+// reworded title (the bug that produced 3 near-identical "landing hero" rows on
+// one project's backlog in one morning).
+describe("dedupeNewBacklogTitles", () => {
+  const c = (title: string) => ({ title });
+
+  it("drops an exact-title match regardless of status", () => {
+    const existing = [{ title: "Add holder count to token page", status: "shipped" }];
+    const out = dedupeNewBacklogTitles([c("Add holder count to token page")], existing, "unrelated");
+    expect(out).toHaveLength(0);
+  });
+
+  it("drops a fuzzy-similar reworded title against a still-OPEN task (the ploop bug)", () => {
+    const existing = [
+      { title: "Build Loop landing page hero with game value prop and CTA buttons", status: "blocked" },
+    ];
+    const out = dedupeNewBacklogTitles(
+      [c("Build the Loop landing page hero — game pitch and CTA buttons")],
+      existing,
+      "unrelated"
+    );
+    expect(out).toHaveLength(0);
+  });
+
+  it("allows a fuzzy-similar title through when the only match already SHIPPED", () => {
+    // Re-proposing related work after the original shipped is legitimate (e.g.
+    // extending a feature), so only OPEN tasks block a fuzzy match.
+    const existing = [
+      { title: "Build Loop landing page hero with game value prop and CTA buttons", status: "shipped" },
+    ];
+    const out = dedupeNewBacklogTitles(
+      [c("Build the Loop landing page hero — game pitch and CTA buttons")],
+      existing,
+      "unrelated"
+    );
+    expect(out).toHaveLength(1);
+  });
+
+  it("drops the task just upserted this tick, and dedupes near-duplicates within the batch", () => {
+    const out = dedupeNewBacklogTitles(
+      [
+        c("Add waitlist email capture"), // exact dup of taskTitle -> dropped
+        c("Add waitlist signup form to landing page"), // survives, establishes the cluster
+        c("Add a waitlist email signup form to the page"), // fuzzy-similar to the one above -> dropped
+        c("Add breed roster preview"), // genuinely different -> survives
+      ],
+      [],
+      "Add waitlist email capture"
+    );
+    expect(out.map((x) => x.title)).toEqual(["Add waitlist signup form to landing page", "Add breed roster preview"]);
+  });
+
+  it("keeps genuinely different candidates", () => {
+    const out = dedupeNewBacklogTitles(
+      [c("Add holder count to token page"), c("Wire Vercel Analytics into the visitors stat")],
+      [],
+      "unrelated"
+    );
+    expect(out).toHaveLength(2);
   });
 });

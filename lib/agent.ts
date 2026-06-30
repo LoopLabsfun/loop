@@ -37,6 +37,10 @@ export interface AgentTask {
   priority?: number;
   /** Provenance — drives the default priority band. */
   source?: TaskSource;
+  /** Epoch-ms the task row was created — feeds the staleness boost in
+   *  lib/agent-backlog `effectivePriority` so old, unprioritised agent-groomed
+   *  work doesn't starve forever behind newer founder asks. */
+  createdAtMs?: number;
   /**
    * Verifier outcome of the most recent tick on this task (episodic memory) —
    * e.g. "last attempt FAILED tsc — error TS2345…" or "held: no check ran".
