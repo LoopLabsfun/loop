@@ -22,6 +22,17 @@ const MUTED = "#6b6675";
 const FAINT = "#9b95a4";
 const LINE = "#e7e3ee";
 
+/** Unique to the bare GITHUB_TEMPLATE_REPO starter's placeholder page — never
+ *  appears in the branded version (which never says "Building autonomously",
+ *  only "Built autonomously"). Used to detect a repo that's STILL the generic
+ *  template (safe to brand) vs. one the agent has already started real work in
+ *  (must never be touched). */
+export const GENERIC_TEMPLATE_MARKER = "Building autonomously on Loop";
+
+export function isGenericTemplateContent(pageJsxContent: string): boolean {
+  return pageJsxContent.includes(GENERIC_TEMPLATE_MARKER);
+}
+
 export interface ProjectBrand {
   key: string;
   name: string;
