@@ -94,8 +94,10 @@ alter table public.projects
   add column if not exists discord text,
   add column if not exists website text,
   add column if not exists token_image_url text,
-  add column if not exists banner_url text;
+  add column if not exists banner_url text,
+  add column if not exists domain text;
 comment on column public.projects.twitter is 'Canonical https://x.com/<handle> for the project, or null.';
+comment on column public.projects.domain is 'External custom domain attached to the project''s Vercel project (verified), or null → default <slug>.vercel.app. Managed via /api/admin/projects/domain (lib/project-domain.ts).';
 comment on column public.projects.telegram is 'Canonical https://t.me/<name> for the project, or null.';
 comment on column public.projects.discord is 'Canonical https://discord.gg/<code> invite for the project, or null.';
 comment on column public.projects.website is 'Project website (canonical https URL), or null → falls back to the Loop token page.';
