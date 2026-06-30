@@ -96,8 +96,12 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `git config user.name ${shquote(authorName)}`,
     `git config user.email ${shquote(authorEmail)}`,
     `: > ${LOG}`,
-    // Install deps so the SESSION can run the tests itself (warm cache).
-    `npm ci --no-audit --no-fund >> ${LOG} 2>&1 || { echo "NPM_CI_FAILED"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; tail -n 20 ${LOG}; exit 0; }`,
+    // Install deps so the SESSION can run the tests itself (warm cache). `npm ci`
+    // needs a committed lockfile (right for a mature repo like LOOP); a freshly-
+    // provisioned project repo may not have one yet, so fall back to `npm install`
+    // before declaring the install a hard failure. LOOP is unaffected (its lockfile
+    // is present so `npm ci` succeeds and the fallback never runs).
+    `{ npm ci --no-audit --no-fund || npm install --no-audit --no-fund; } >> ${LOG} 2>&1 || { echo "NPM_CI_FAILED"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; tail -n 20 ${LOG}; exit 0; }`,
     `echo "PHASE=npm_ci t=$(($(date +%s)-SDK_T0))s"`,
     // ── The agentic session (maker). No GITHUB_TOKEN in its env. Bounded by the
     //    runner's maxTurns + wall-clock; its own test runs are advisory. ──
@@ -120,8 +124,14 @@ export function buildSdkHandsScript(opts: SdkHandsScriptOpts): string {
     `if printf '%s\\n' "$CHANGED" | grep -qiE ${shquote(DENY)}; then echo "DENYLIST_HIT"; echo "GATE_RESULT=fail"; echo "PUSHED=no"; printf '%s\\n' "$CHANGED" | grep -iE ${shquote(DENY)}; exit 0; fi`,
     // ── The INDEPENDENT gate (checker). A red tree never pushes. ──
     `GATE_RESULT=ok`,
-    step(`npx tsc --noEmit`),
-    step(`npx vitest run --reporter=dot`),
+    // Typecheck only when the repo is TypeScript (has a tsconfig); skip on a fresh
+    // JS-only scaffold instead of failing on "No inputs were found".
+    step(`if [ -f tsconfig.json ]; then npx tsc --noEmit; fi`),
+    // Tests only when a runner is configured (vitest in package.json or a config);
+    // --passWithNoTests so a repo with the runner but no tests yet still goes green.
+    step(
+      `if [ -f vitest.config.ts ] || [ -f vitest.config.js ] || grep -q '"vitest"' package.json 2>/dev/null; then npx vitest run --reporter=dot --passWithNoTests; fi`
+    ),
     ...(fullGate ? [step(`npx next build`)] : []),
     `if [ "$GATE_RESULT" != "ok" ]; then echo "----- gate tail -----"; tail -n 25 ${LOG}; echo "---------------------"; fi`,
     `echo "GATE_RESULT=$GATE_RESULT"`,
