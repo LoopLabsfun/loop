@@ -33,6 +33,9 @@ export interface CollectFeeResult {
   claimedSol?: number;
   /** True when no creator wallet is configured — nothing was attempted. */
   skipped?: boolean;
+  /** The creator/signer wallet the claim swept (base58). Lets the caller find the
+   *  group of projects sharing this fee source to attribute the lump across. */
+  signerPubkey?: string;
   error?: string;
 }
 
@@ -111,7 +114,7 @@ export async function collectCreatorFees(
     } catch {
       /* confirmation/read failed — still return the sig; amount stays undefined */
     }
-    return { ok: true, txSig, claimedSol };
+    return { ok: true, txSig, claimedSol, signerPubkey: signer.publicKey.toBase58() };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "claim failed" };
   }

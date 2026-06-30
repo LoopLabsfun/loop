@@ -3,12 +3,16 @@
 //
 // lib/fee-ledger.ts tracks who EARNED what (founder/agent/platform) after each
 // creator-fee sweep. This module plans the physical disbursement of the AGENT and
-// PLATFORM shares out of the custodial creator wallet (which received the swept
-// fees) into their own wallets, so the 30/65/5 split is real money movement, not
-// just a number on a page. The FOUNDER share is deliberately NOT transferred: for
-// LOOP the creator wallet IS the founder/treasury wallet, so the founder share is
-// already where it belongs; a separate founder project would claim it via a
-// withdrawal.
+// PLATFORM (and, when needed, FOUNDER) shares out of the custodial creator
+// wallet (which received the swept fees) into their own wallets, so the 30/65/5
+// split is real money movement, not just a number on a page.
+//
+// A share is only transferred when its destination differs from the SOURCE
+// wallet (the wallet the fees were claimed into). When they're the same the
+// share already sits where it belongs and is left in place — so for LOOP, where
+// the creator wallet IS the founder/treasury wallet, the founder share never
+// moves, while for a project launched from a SHARED signer (creator ≠ founder),
+// the founder share IS transferred out to that project's founder wallet.
 //
 // Pure (no I/O): given the claimable amounts + destination wallets, it returns the
 // exact transfers to make (skipping dust / missing wallets), so the execution
@@ -21,7 +25,7 @@ const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 /** Default dust floor — never build a transfer below this (gas would dominate). */
 export const MIN_TRANSFER_SOL = 0.001;
 
-export type DistributeRole = "agent" | "platform";
+export type DistributeRole = "founder" | "agent" | "platform";
 
 export interface FeeTransfer {
   role: DistributeRole;
@@ -54,10 +58,19 @@ export function planFeeDistribution(args: {
   claimableAgentSol: number;
   /** Platform share not yet disbursed. */
   claimablePlatformSol: number;
+  /** Founder share not yet disbursed. Omitted/0 ⇒ no founder leg (legacy LOOP
+   *  callers don't pass it; the founder share simply stays in the source wallet). */
+  claimableFounderSol?: number;
   /** Agent wallet (project.agent_wallet); null/invalid ⇒ skipped. */
   agentWallet: string | null | undefined;
   /** Platform wallet (PLATFORM_WALLET env); null/invalid ⇒ skipped. */
   platformWallet: string | null | undefined;
+  /** Founder wallet (project.creator_wallet); null/invalid ⇒ skipped. */
+  founderWallet?: string | null | undefined;
+  /** The wallet the fees were claimed into. A share whose destination equals it
+   *  is left in place (already where it belongs) rather than transferred. When
+   *  omitted, no share is treated as "in place" (legacy behaviour). */
+  sourceWallet?: string | null | undefined;
   /** Dust floor; defaults to MIN_TRANSFER_SOL. */
   minTransferSol?: number;
 }): DistributionPlan {
@@ -79,9 +92,15 @@ export function planFeeDistribution(args: {
       skipped.push(`${role}: no valid wallet configured (${sol} SOL held)`);
       return;
     }
+    // Destination == source ⇒ already where it belongs; never move it.
+    if (args.sourceWallet && wallet === args.sourceWallet) {
+      skipped.push(`${role}: destination is the source wallet (${sol} SOL stays in place)`);
+      return;
+    }
     transfers.push({ role, to: wallet, sol });
   };
 
+  consider("founder", args.claimableFounderSol ?? 0, args.founderWallet);
   consider("agent", args.claimableAgentSol, args.agentWallet);
   consider("platform", args.claimablePlatformSol, args.platformWallet);
 
