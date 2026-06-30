@@ -6,6 +6,7 @@ import { getAgentState, reconcileBuildingTasks } from "@/lib/agent-data";
 import { brainMode, enqueueSdkSession } from "@/lib/agent-session-enqueue";
 import { runAgentTick } from "@/lib/agent-runtime";
 import { previewSweep, execSweep, previewClaim, execClaim } from "@/lib/treasury-actions";
+import { resolveEscalation, isEscalationKind } from "@/lib/escalations";
 import type { TaskCategory, TaskSource, TaskStatus } from "@/lib/agent";
 
 // Founder admin controls — the safe interactive surface of the console. Every
@@ -42,6 +43,8 @@ export async function POST(req: Request) {
     detail?: string;
     category?: string;
     confirm?: boolean;
+    kind?: string;
+    response?: string;
   };
   try {
     body = await req.json();
@@ -78,19 +81,21 @@ export async function POST(req: Request) {
     }
     case "escalation": {
       const id = Number(body.id);
+      const kind = isEscalationKind(body.kind) ? body.kind : "decision";
       const decision =
-        body.decision === "adopted" ? "adopted" : body.decision === "declined" ? "declined" : null;
+        body.decision === "adopted"
+          ? "adopted"
+          : body.decision === "declined"
+            ? "declined"
+            : body.decision === "done"
+              ? "done"
+              : null;
       if (!Number.isFinite(id) || !decision) {
         return NextResponse.json({ error: "bad escalation args" }, { status: 400 });
       }
-      const { error } = await sb
-        .from("agent_escalations")
-        .update({ status: decision, resolved_at: new Date().toISOString() })
-        .eq("id", id)
-        .eq("project_key", key)
-        .eq("status", "open");
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ ok: true, id, decision });
+      const r = await resolveEscalation(key, id, decision, kind, body.response);
+      if (!r.ok) return NextResponse.json({ error: r.error ?? "resolve failed" }, { status: 400 });
+      return NextResponse.json({ ok: true, id, status: r.status });
     }
     case "reconcile": {
       const r = await reconcileBuildingTasks(project);
