@@ -34,7 +34,7 @@ describe("withCompute", () => {
     const out = withCompute(loopLedger(), 42.5);
     expect(out.find((x) => x.id === "claude")!.usd).toBe(42.5);
     // fixed lines untouched
-    expect(out.find((x) => x.id === "vercel")!.usd).toBe(20);
+    expect(out.find((x) => x.id === "vercel")!.usd).toBe(49);
   });
 
   it("leaves the placeholder at 0 when spend is null/NaN", () => {
@@ -66,25 +66,25 @@ describe("ledgerSummary", () => {
   it("sums one-offs + recurring×months + metered", () => {
     const entries = withCompute(loopLedger(), 100);
     const s = ledgerSummary(entries, { now });
-    expect(s.monthlyRecurringUsd).toBe(30); // 20 + 5 + 5
+    expect(s.monthlyRecurringUsd).toBe(59); // 49 + 5 + 5
     expect(s.meteredToDateUsd).toBe(100);
-    // ~1 month: 299 one-off + 30×~1 recurring + 100 metered ≈ 429
-    expect(s.spentToDateUsd).toBeGreaterThan(425);
-    expect(s.spentToDateUsd).toBeLessThan(435);
+    // ~1 month: 299 one-off + 59×~1 recurring + 100 metered ≈ 457
+    expect(s.spentToDateUsd).toBeGreaterThan(453);
+    expect(s.spentToDateUsd).toBeLessThan(461);
   });
 
   it("projects monthly burn as recurring + metered run-rate", () => {
     const entries = withCompute(loopLedger(), 100);
     const s = ledgerSummary(entries, { now });
-    // run-rate ≈ 100/month over ~1 elapsed month → ~130/mo
-    expect(s.projectedMonthlyUsd).toBeGreaterThan(125);
-    expect(s.projectedMonthlyUsd).toBeLessThan(135);
+    // run-rate ≈ 100/month over ~1 elapsed month → ~160/mo (59 recurring + ~101)
+    expect(s.projectedMonthlyUsd).toBeGreaterThan(155);
+    expect(s.projectedMonthlyUsd).toBeLessThan(165);
   });
 
   it("does not blow up the run-rate in the first hours (months≈0)", () => {
     const entries = withCompute(loopLedger(), 100);
     const s = ledgerSummary(entries, { now: new Date(LEDGER_GENESIS) });
-    expect(s.projectedMonthlyUsd).toBe(30); // metered run-rate suppressed
+    expect(s.projectedMonthlyUsd).toBe(59); // metered run-rate suppressed
   });
 });
 
