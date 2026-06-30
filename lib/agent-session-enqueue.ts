@@ -10,7 +10,7 @@ import "server-only";
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Project } from "./types";
-import type { AgentTask, InboxMessage, TaskCategory } from "./agent";
+import type { AgentTask, InboxMessage, TaskCategory, TaskSource } from "./agent";
 import type { FeedItem } from "./console";
 import {
   decideNextAction,
@@ -22,6 +22,7 @@ import {
 import { buildSdkHandsScript } from "./agent-sdk-hands";
 import { agentGitIdentity } from "./agent-git-identity";
 import { effortForTask } from "./agent-effort";
+import { effectivePriority } from "./agent-backlog";
 import { commitMessageWithThrottle } from "./deploy-throttle";
 import type { AgentSessionPayload } from "../trigger/agent-session";
 
@@ -89,6 +90,30 @@ export function sdkSessionConfig(
 const CODE_CATEGORIES: TaskCategory[] = ["feature", "fix"];
 
 /**
+ * COMPUTE SAVER (opt-in via COMPUTE_SAVER=1) — should the expensive E2B build
+ * session be DEFERRED for this code task? The cron's tick is cheap (decide +
+ * community/governance); the cost is the build session. When the chosen task's
+ * curated value is below the floor (COMPUTE_SAVER_MIN_PRIORITY, default 1) — i.e.
+ * un-prioritised agent busywork (band 0) — we skip the build and leave it queued,
+ * so spend tracks VALUE, not noise. Founder/holder asks (band 100/50) and any
+ * explicitly-prioritised task clear the floor; a retry after a prior failure is
+ * never deferred (finish what was started). OFF (always false) unless the saver
+ * is on. Pure + env-injectable so it's unit-testable. Never sleeps a project and
+ * never changes the tick cadence — it only gates the costly session.
+ */
+export function shouldDeferBuild(
+  task: { priority?: number | null; source?: TaskSource | null; lastOutcome?: string | null },
+  env: Record<string, string | undefined> = process.env
+): { defer: boolean; value: number; floor: number } {
+  const floorRaw = Number(env.COMPUTE_SAVER_MIN_PRIORITY);
+  const floor = Number.isFinite(floorRaw) ? floorRaw : 1;
+  const value = effectivePriority(task);
+  if (env.COMPUTE_SAVER !== "1") return { defer: false, value, floor };
+  const isRetry = /\bfail/i.test(task.lastOutcome ?? "");
+  return { defer: value < floor && !isRetry, value, floor };
+}
+
+/**
  * Decide → for a code task, enqueue a durable SDK session on Trigger.dev and
  * persist it as "building" (the session's finish callback flips it to shipped);
  * for a non-code task, apply inline. Pure orchestration — failure-safe at the
@@ -115,6 +140,23 @@ export async function enqueueSdkSession(
       postingPolicy: "authored-only",
     });
     return { enqueued: false, note: `non-code (${decision.task.category}) — applied inline` };
+  }
+
+  // COMPUTE SAVER: gate the costly E2B build on the task's VALUE. The decision +
+  // the cron's community/governance pass already ran (cheap), so the project stays
+  // fully awake and the tick cadence is untouched — we just don't burn a full
+  // sandbox session on un-prioritised busywork. decision.task comes from the LLM
+  // output (no curated priority/source), so recover them from the backlog row.
+  // decision.task is the LLM's output shape (no curated priority/source); recover
+  // them from the backlog row. No match = a brand-new self-proposed task ⇒ treat as
+  // the agent/0 band (defers under the saver unless the floor is lowered).
+  const backlogMatch = state.tasks.find((t) => t.title === decision.task.title);
+  const saver = shouldDeferBuild(backlogMatch ?? {});
+  if (saver.defer) {
+    return {
+      enqueued: false,
+      note: `compute-saver: deferred build (value ${saver.value} < floor ${saver.floor}) — "${decision.task.title}"`,
+    };
   }
 
   const cfg = sdkSessionConfig();
