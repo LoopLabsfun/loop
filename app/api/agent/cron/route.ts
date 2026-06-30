@@ -23,7 +23,17 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const MAX_PER_RUN = 3;
+// How many projects to tick per cron fire. In LEGACY brain mode each tick runs a
+// real E2B build INLINE, and one build (esp. the big LOOP repo) can eat most of
+// the 300s function budget — so ticking 3/fire made every invocation TIME OUT at
+// maxDuration and ship NOTHING. Default 1: one project ships reliably per fire,
+// and fair-scheduling rotates all funded projects across consecutive fires (at the
+// */10 Vercel cron that's every project ~every 40min). Raise via AGENT_MAX_PER_RUN
+// once the build path is durable (SDK/Trigger.dev offloads builds off the 300s cap).
+const MAX_PER_RUN = (() => {
+  const n = Number(process.env.AGENT_MAX_PER_RUN);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+})();
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
