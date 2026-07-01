@@ -31,6 +31,7 @@ interface ProjectRow {
   network: string;
   creator_wallet: string | null;
   fee_creator_wallet: string | null;
+  fee_sharing_configured_at: string | null;
   agent_paused: boolean | null;
   fee_founder_pct: number | null;
   agent_wallet: string | null;
@@ -71,6 +72,7 @@ function rowToProject(r: ProjectRow): Project {
     network: r.network === "devnet" ? "devnet" : "mainnet",
     creatorWallet: r.creator_wallet,
     feeCreatorWallet: r.fee_creator_wallet,
+    feeSharingConfiguredAt: r.fee_sharing_configured_at,
     agentPaused: r.agent_paused ?? false,
     feeFounderPct: r.fee_founder_pct ?? undefined,
     agentWallet: r.agent_wallet,

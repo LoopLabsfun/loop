@@ -229,6 +229,45 @@ export async function POST(req: Request) {
       });
       return NextResponse.json({ ok: r.repoOk || r.vercelOk, ...r });
     }
+    // Native fee-sharing retry — for a project whose pump.fun fee-sharing setup
+    // (lib/pump-fee-sharing.ts) didn't complete at mint time. Only supports the
+    // shared-signer creator path (the common case); a privy-creator project's
+    // on-chain creator isn't this signer, so this refuses rather than silently
+    // no-op against the wrong wallet. Irrevocable once it succeeds (pump.fun's
+    // update_fee_shares_v2 can only be set once) — this is a genuine retry, not
+    // a "redo".
+    case "configure-fee-sharing": {
+      if (project.feeSharingConfiguredAt) {
+        return NextResponse.json({ error: `already configured at ${project.feeSharingConfiguredAt}` }, { status: 409 });
+      }
+      if (!project.mint) return NextResponse.json({ error: "project has no mint yet" }, { status: 400 });
+      const { buildShareholders, setupFeeSharing, loadLaunchSignerSecret } = await import("@/lib/pump-fee-sharing");
+      const { parseCluster } = await import("@/lib/launchpad");
+      const secretKey = loadLaunchSignerSecret(process.env.LAUNCH_SIGNER_SECRET);
+      if (!secretKey) return NextResponse.json({ error: "LAUNCH_SIGNER_SECRET not configured" }, { status: 503 });
+      const { Keypair } = await import("@solana/web3.js");
+      const signerPubkey = Keypair.fromSecretKey(secretKey).publicKey.toBase58();
+      if (project.feeCreatorWallet && project.feeCreatorWallet !== signerPubkey) {
+        return NextResponse.json(
+          { error: "this project's on-chain creator is not the shared signer (privy-creator mode) — not supported by this retry yet" },
+          { status: 400 },
+        );
+      }
+      const built = buildShareholders(
+        { founderWallet: project.creatorWallet, agentWallet: project.agentWallet, platformWallet: process.env.PLATFORM_WALLET },
+        project.feeFounderPct,
+      );
+      if (!built.ok) return NextResponse.json({ error: built.error }, { status: 400 });
+      const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
+      const r = await setupFeeSharing({ mint: project.mint, creator: { secretKey }, shareholders: built.shareholders, cluster });
+      if (r.ok) {
+        await sb
+          .from("projects")
+          .update({ fee_sharing_configured_at: new Date().toISOString(), fee_sharing_note: r.note })
+          .eq("key", key);
+      }
+      return NextResponse.json(r);
+    }
     // Per-project operator config (Lot 5) — set/clear a whitelisted runtime knob.
     case "config-set": {
       const { setProjectConfig } = await import("@/lib/project-config");

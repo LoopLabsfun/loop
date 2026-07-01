@@ -20,7 +20,7 @@ export interface Brick {
   status: BrickStatus;
   detail: string;
   /** A retry the founder can trigger from the cockpit (infra create, no funds). */
-  action?: "provision-home" | "provision-wallet";
+  action?: "provision-home" | "provision-wallet" | "configure-fee-sharing";
 }
 
 export interface ProvisioningChecklist {
@@ -171,6 +171,26 @@ export async function getProvisioningChecklist(p: Project): Promise<Provisioning
     label: "Social warm-up plan",
     status: socialPlan ? "ok" : "missing",
     detail: socialPlan ? "authored" : "not authored — agent stays silent until it writes one",
+  });
+
+  // 9. Native fee-sharing (pump.fun's own on-chain 30/65/5 split, see
+  // lib/pump-fee-sharing.ts) — opt-in, only actionable once the project has a
+  // mint. "unarmed" when PUMP_FEE_SHARING isn't set, since there's nothing to
+  // check or retry yet.
+  const { pumpFeeSharingEnabled } = await import("./pump-fee-sharing");
+  const feeSharingArmed = pumpFeeSharingEnabled();
+  bricks.push({
+    key: "fee-sharing",
+    label: "Native fee-sharing",
+    status: !feeSharingArmed ? "unarmed" : p.feeSharingConfiguredAt ? "ok" : "missing",
+    detail: !feeSharingArmed
+      ? "PUMP_FEE_SHARING unset — off-chain attribution path used instead"
+      : p.feeSharingConfiguredAt
+        ? `configured ${p.feeSharingConfiguredAt}`
+        : p.mint
+          ? "not configured — retry below (fails cleanly if this project is privy-creator mode)"
+          : "not minted yet",
+    action: feeSharingArmed && !p.feeSharingConfiguredAt && p.mint ? "configure-fee-sharing" : undefined,
   });
 
   const ready = checklistReady(bricks);

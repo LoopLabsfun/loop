@@ -51,6 +51,11 @@ export interface Project {
    *  attributed across them off-chain (lib/fee-attribution.ts). Null ⇒ fall back
    *  to `treasuryWallet`/`creatorWallet`. */
   feeCreatorWallet?: string | null;
+  /** Set once pump.fun's native on-chain fee-sharing (lib/pump-fee-sharing.ts)
+   *  is configured for this mint — irrevocable on pump.fun's side. When set,
+   *  the cron pays fees via the on-chain split instead of the shared-signer
+   *  attribution/distribution path. */
+  feeSharingConfiguredAt?: string | null;
   /** DB-backed kill switch the founder toggles from the admin console — the cron
    *  no-ops the brain when true (a runtime-mutable counterpart to AGENT_PAUSED). */
   agentPaused?: boolean;

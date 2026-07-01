@@ -372,8 +372,13 @@ export async function GET(req: Request) {
         const { attributeClaim, volumeWeight } = await import("@/lib/fee-attribution");
 
         // The group = projects whose on-chain fee-source IS this signer. Fall back
-        // to LOOP alone if no row carries fee_creator_wallet yet (legacy).
-        const group = all.filter((p) => p.feeCreatorWallet === feeClaim!.signerPubkey);
+        // to LOOP alone if no row carries fee_creator_wallet yet (legacy). Excludes
+        // any project already migrated to pump.fun's native per-mint fee-sharing
+        // (lib/pump-fee-sharing.ts) — belt-and-suspenders against double-processing
+        // alongside the dedicated pass below (a migrated mint's bonding-curve
+        // creator is its own sharing_config PDA, not this signer, so it shouldn't
+        // match anyway, but this guards against that assumption ever being wrong).
+        const group = all.filter((p) => p.feeCreatorWallet === feeClaim!.signerPubkey && !p.feeSharingConfiguredAt);
         const effective = group.length ? group : all.filter((p) => p.key === "loop");
         feeGroupKeys = effective.map((p) => p.key);
 
@@ -482,6 +487,43 @@ export async function GET(req: Request) {
     feeDistribution = { sent, total, note: `distributed across ${distributeKeys.length} project(s)` };
   }
 
+  // Native fee-sharing payout (pump.fun's own on-chain split, lib/pump-fee-sharing.ts):
+  // every project that opted in at mint gets its accrued creator-vault fees paid
+  // out EXACTLY to founder/agent/platform by the pump program itself — no shared-
+  // wallet commingling, no volume estimation, no manual transfer. Permissionless
+  // on pump.fun's side; we just pay the tx fee. Separate from (and independent
+  // of) the AGENT_CLAIM_FEES/FEE_DISTRIBUTE pipeline above, which only ever
+  // applies to non-migrated projects.
+  let feeSharingDistribution: { attempted: number; sent: number; note: string } | undefined;
+  {
+    const { pumpFeeSharingEnabled, distributeFeeSharing, loadLaunchSignerSecret } = await import(
+      "@/lib/pump-fee-sharing"
+    );
+    if (pumpFeeSharingEnabled()) {
+      const payerSecretKey = loadLaunchSignerSecret(process.env.LAUNCH_SIGNER_SECRET);
+      const migrated = all.filter((p) => p.feeSharingConfiguredAt && p.mint);
+      if (payerSecretKey && migrated.length) {
+        const { parseCluster } = await import("@/lib/launchpad");
+        const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
+        let sent = 0;
+        for (const p of migrated) {
+          try {
+            const r = await distributeFeeSharing({ mint: p.mint as string, payerSecretKey, cluster });
+            if (r.ok && r.txSig) sent += 1;
+            if (r.txSig || !r.ok) {
+              console.log(`[fee-sharing-distribute] ${JSON.stringify({ key: p.key, ok: r.ok, note: r.note })}`);
+            }
+          } catch (e) {
+            console.error(
+              `[fee-sharing-distribute] ${JSON.stringify({ key: p.key, error: e instanceof Error ? e.message : "distribute failed" })}`
+            );
+          }
+        }
+        feeSharingDistribution = { attempted: migrated.length, sent, note: `paid ${sent}/${migrated.length} migrated project(s)` };
+      }
+    }
+  }
+
   return NextResponse.json(
     {
       ticked: results.length,
@@ -493,6 +535,7 @@ export async function GET(req: Request) {
       results,
       ...(feeClaim ? { feeClaim } : {}),
       ...(feeDistribution ? { feeDistribution } : {}),
+      ...(feeSharingDistribution ? { feeSharingDistribution } : {}),
     },
     { headers: { "Cache-Control": "no-store" } }
   );
