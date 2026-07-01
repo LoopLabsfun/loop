@@ -652,6 +652,8 @@ export interface ApproveResult {
   simulated: boolean;
   /** White-label home provisioning note (repo + Vercel), when armed. */
   provisioning?: string;
+  /** pump.fun native fee-sharing setup note, when armed (PUMP_FEE_SHARING=1). */
+  feeSharing?: string;
 }
 
 /**
@@ -746,6 +748,11 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
 
     let token: CreateTokenResult;
     let agentAddress: string;
+    // Whoever ends up as the on-chain creator — captured here (default path
+    // reuses LAUNCH_SIGNER_SECRET; privy-creator path reuses the project's own
+    // Privy wallet) so the fee-sharing setup below can sign as the creator
+    // without re-deriving which mode was used.
+    let creatorSigner: { secretKey: Uint8Array } | { privyWalletId: string; address: string } | null = null;
 
     if (privyCreatorEnabled()) {
       // CUSTODY: the project's own Privy wallet (provisioned at whitelist, pre-funded
@@ -777,10 +784,14 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       );
       token = { launchpad: "Pump.fun", cluster, mint: res.mint, treasuryWallet: res.treasuryWallet, txSig: res.txSig, simulated: false };
       agentAddress = projectWallet; // creator = treasury = agent
+      creatorSigner = { privyWalletId: projectWalletId, address: projectWallet };
     } else {
       // Default path: mint from the shared platform signer + a fresh per-project agent wallet.
       const agent = await provisionAgentWallet(key);
       agentAddress = agent.address;
+      const { loadLaunchSignerSecret } = await import("./pump-fee-sharing");
+      const signerSecret = loadLaunchSignerSecret(process.env.LAUNCH_SIGNER_SECRET);
+      if (signerSecret) creatorSigner = { secretKey: signerSecret };
       token = await createToken({
         name: plan.name,
         ticker: plan.ticker,
@@ -873,7 +884,43 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       provisioning = e instanceof Error ? e.message : "provisioning error";
     }
 
-    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated, provisioning };
+    // Native fee-sharing (pump.fun's own on-chain split, see lib/pump-fee-sharing.ts):
+    // opt the mint in and permanently fix the founder/agent/platform shares, so
+    // fees route exactly per-mint instead of through the shared-signer
+    // attribute-by-volume pipeline. Best-effort + env-gated (PUMP_FEE_SHARING) —
+    // a failure here never blocks the mint; the admin "Configure fee-sharing"
+    // retry (mirrors "Provision home") covers it.
+    let feeSharing: string | undefined;
+    if (!token.simulated && token.mint && creatorSigner) {
+      try {
+        const { buildShareholders, setupFeeSharing } = await import("./pump-fee-sharing");
+        const built = buildShareholders(
+          { founderWallet: wallet, agentWallet: agentAddress, platformWallet: process.env.PLATFORM_WALLET },
+          plan.feeFounderPct,
+        );
+        if (built.ok) {
+          const setup = await setupFeeSharing({
+            mint: token.mint,
+            creator: creatorSigner,
+            shareholders: built.shareholders,
+            cluster,
+          });
+          feeSharing = setup.note;
+          if (setup.ok) {
+            await sb
+              .from("projects")
+              .update({ fee_sharing_configured_at: new Date().toISOString(), fee_sharing_note: setup.note })
+              .eq("key", key);
+          }
+        } else {
+          feeSharing = built.error;
+        }
+      } catch (e) {
+        feeSharing = e instanceof Error ? e.message : "fee-sharing setup error";
+      }
+    }
+
+    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated, provisioning, feeSharing };
   } catch (e) {
     // Roll the claim back so a fixed config can retry (mint failures are pre-mint
     // for the common cases — bad config, vanity empty, RPC). createOnPumpPortal
