@@ -39,12 +39,6 @@ export function privyCreatorEnabled(env: Record<string, string | undefined> = pr
   return env.PRELAUNCH_PRIVY_CREATOR === "1";
 }
 
-/** Max SOL of pre-funding spent on the opening candle (the rest stays as runway). */
-function maxCandleSol(): number {
-  const n = Number(process.env.PRELAUNCH_MAX_CANDLE_SOL);
-  return Number.isFinite(n) && n > 0 ? n : 1;
-}
-
 /** Seed SOL from the platform launch signer → a project wallet, so it can pay its
  *  own create + candle when community pre-funding is short. Confirmed. */
 async function topUpFromSigner(to: string, sol: number, cluster: ReturnType<typeof parseCluster>): Promise<void> {
@@ -194,7 +188,7 @@ export async function prelaunchPreflight(plan: LaunchPlan): Promise<{ ready: boo
     label: "Mint creator / treasury",
     ok: true, // informational — both paths are valid
     detail: privyCreatorEnabled()
-      ? "project Privy wallet (candle from pre-funding)"
+      ? "project Privy wallet (platform-funded seed candle)"
       : "shared platform signer (seed candle)",
   });
 
@@ -203,6 +197,41 @@ export async function prelaunchPreflight(plan: LaunchPlan): Promise<{ ready: boo
     ok: true, // not fatal — approve provisions it as a fallback if whitelist didn't
     detail: plan.homeVercelUrl ? `${plan.homeRepo} · ${plan.homeVercelUrl}` : "not provisioned yet → provisioned at approve",
   });
+
+  // Backer buy-in preview: EVERY confirmed pre-launch backer, their wallet, and
+  // the exact % of the buy-in tokens they'll receive at approve (their share of
+  // the pool — the pump.fun bonding-curve price at execution time decides the
+  // absolute token count, but the SPLIT is fixed now and worth checking before
+  // spending real SOL). Not fatal — a project can launch with zero backers.
+  {
+    const sb2 = supabaseAdmin;
+    let backerLines: string[] = [];
+    let totalBackerSol = 0;
+    if (sb2) {
+      const { data } = await sb2
+        .from("prelaunch_contributions")
+        .select("contributor_wallet, amount_sol, status")
+        .eq("draft_wallet", plan.wallet)
+        .eq("status", "confirmed");
+      const { groupContributionsByWallet } = await import("./prefunding-distribute");
+      const grouped = groupContributionsByWallet(
+        ((data ?? []) as { contributor_wallet: string; amount_sol: number; status: string }[]).map((r) => ({
+          contributorWallet: r.contributor_wallet,
+          amountSol: Number(r.amount_sol),
+          status: r.status,
+        })),
+      );
+      totalBackerSol = grouped.reduce((s, g) => s + g.sol, 0);
+      backerLines = grouped.map(
+        (g) => `${g.wallet.slice(0, 4)}…${g.wallet.slice(-4)} ${g.sol} SOL (${totalBackerSol > 0 ? ((g.sol / totalBackerSol) * 100).toFixed(1) : "0"}%)`,
+      );
+    }
+    checks.push({
+      label: `Backer buy-in preview (${backerLines.length} backer${backerLines.length === 1 ? "" : "s"}, ${totalBackerSol} SOL pooled)`,
+      ok: true, // informational — zero backers is a valid launch, not a blocker
+      detail: backerLines.length ? backerLines.join(" · ") : "no confirmed backers yet",
+    });
+  }
 
   return { ready: checks.every((c) => c.ok), checks };
 }
@@ -654,6 +683,8 @@ export interface ApproveResult {
   provisioning?: string;
   /** pump.fun native fee-sharing setup note, when armed (PUMP_FEE_SHARING=1). */
   feeSharing?: string;
+  /** Backer buy-in + token distribution note (lib/prefunding-distribute.ts). */
+  backers?: string;
 }
 
 /**
@@ -746,6 +777,18 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
     const links: { website: string; twitter?: string } = { website: plan.homeVercelUrl || projectUrl };
     if (plan.xHandle) links.twitter = `https://x.com/${plan.xHandle}`;
 
+    // The project's own Loop-custodial wallet (provisioned at whitelist time,
+    // regardless of creator mode) — the backer buy-in/distribution step below
+    // needs it either way, so it's fetched once up front rather than only
+    // inside the privy-creator branch.
+    const { data: pwRow } = await sb
+      .from("launch_waitlist")
+      .select("project_wallet, project_wallet_id")
+      .eq("wallet", wallet)
+      .maybeSingle();
+    const projectWallet = (pwRow as { project_wallet?: string } | null)?.project_wallet ?? null;
+    const projectWalletId = (pwRow as { project_wallet_id?: string } | null)?.project_wallet_id ?? null;
+
     let token: CreateTokenResult;
     let agentAddress: string;
     // Whoever ends up as the on-chain creator — captured here (default path
@@ -755,30 +798,24 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
     let creatorSigner: { secretKey: Uint8Array } | { privyWalletId: string; address: string } | null = null;
 
     if (privyCreatorEnabled()) {
-      // CUSTODY: the project's own Privy wallet (provisioned at whitelist, pre-funded
-      // by backers) IS the on-chain creator + treasury + agent — one wallet. The
-      // candle is funded from its pre-funding, topped up from the platform if short.
-      const { data: pw } = await sb
-        .from("launch_waitlist")
-        .select("project_wallet, project_wallet_id")
-        .eq("wallet", wallet)
-        .maybeSingle();
-      const projectWallet = (pw as { project_wallet?: string } | null)?.project_wallet;
-      const projectWalletId = (pw as { project_wallet_id?: string } | null)?.project_wallet_id;
+      // CUSTODY: the project's own Privy wallet IS the on-chain creator +
+      // treasury + agent — one wallet. The seed candle is ALWAYS platform money
+      // (topped up here if the wallet's balance is short), never backer
+      // pre-funding — backer SOL is deliberately left untouched so the buy-in/
+      // distribution step below can attribute 100% of its OWN, separate buy to
+      // backers unambiguously (mixing the two into one buy would make it
+      // impossible to say which tokens came from whose money).
       if (!projectWallet || !projectWalletId) {
         throw new Error("Privy-creator mode is on but this draft has no project wallet — whitelist it first.");
       }
       const reserve = 0.03; // rent + fees kept in the wallet
       const seed = prelaunchDevBuySol();
       const bal = (await getSolBalance(projectWallet, cluster)) ?? 0;
-      let candle = Math.min(Math.max(0, bal - reserve), maxCandleSol());
-      if (candle < seed) {
-        const topUp = seed + reserve - bal;
-        if (topUp > 0) await topUpFromSigner(projectWallet, topUp, cluster);
-        candle = seed;
+      if (bal < seed + reserve) {
+        await topUpFromSigner(projectWallet, seed + reserve - bal, cluster);
       }
       const res = await createOnPumpPortalWithPrivy(
-        { name: plan.name, symbol: plan.ticker, description, logo, links, devBuySol: candle },
+        { name: plan.name, symbol: plan.ticker, description, logo, links, devBuySol: seed },
         cluster,
         { walletId: projectWalletId, address: projectWallet },
       );
@@ -920,7 +957,31 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
       }
     }
 
-    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated, provisioning, feeSharing };
+    // Backer token distribution (lib/prefunding-distribute.ts): backers voted
+    // with SOL pre-launch — that money must come back to them as tokens, not
+    // sit in the project's wallet as if the project itself had bought it. Runs
+    // regardless of creator mode (both always have a project_wallet from
+    // whitelist time). Best-effort: a failure here leaves the SOL + the
+    // "confirmed" contribution rows untouched for manual follow-up rather than
+    // losing track of whose money it was.
+    let backers: string | undefined;
+    if (!token.simulated && token.mint && projectWallet && projectWalletId) {
+      try {
+        const { distributeBackerTokens } = await import("./prefunding-distribute");
+        const dist = await distributeBackerTokens({
+          draftWallet: wallet,
+          projectWallet,
+          projectWalletId,
+          mint: token.mint,
+          cluster,
+        });
+        backers = dist.note;
+      } catch (e) {
+        backers = e instanceof Error ? e.message : "backer distribution error";
+      }
+    }
+
+    return { key, mint: token.mint, txSig: token.txSig, agentWallet: agentAddress, simulated: token.simulated, provisioning, feeSharing, backers };
   } catch (e) {
     // Roll the claim back so a fixed config can retry (mint failures are pre-mint
     // for the common cases — bad config, vanity empty, RPC). createOnPumpPortal
