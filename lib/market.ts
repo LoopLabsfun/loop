@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Candle, MarketStats, Trade } from "./types";
+import { getSolUsd } from "./price";
 
 // Live on-chain MARKET data for a launched token, behind the same data seam as
 // solana.ts (treasury) and price.ts (SOL/USD). Two free, no-key sources:
@@ -12,10 +13,21 @@ import type { Candle, MarketStats, Trade } from "./types";
 // the static snapshot (home) or shows an honest empty state (chart/trades). USD
 // is the unit throughout, matching the USD market-cap the UI already shows.
 // Server-only so these run during SSR (force-dynamic routes) and never ship keys.
+//
+// DexScreener only indexes a pair once it sees enough activity — a thin/quiet
+// pump.fun bonding-curve token (every Loop project so far) can silently fall
+// OUT of its index after a while with no trading. Confirmed live: PLOOP's
+// DexScreener lookup returns `pairs: null` right now, so fetchMarketStats used
+// to return null and the caller kept the mint-time placeholder snapshot
+// ("$30K" market cap) forever — displaying it as if it were real, off by ~12x
+// from pump.fun's own reported $2.4K. fetchPumpFunFallback below is the second
+// source: pump.fun's own coin API, authoritative for any bonding-curve token
+// regardless of DexScreener's indexing state.
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const DEXSCREENER = "https://api.dexscreener.com/latest/dex/tokens";
 const GECKO = "https://api.geckoterminal.com/api/v2/networks/solana";
+const PUMPFUN_COINS = "https://frontend-api-v3.pump.fun/coins";
 
 export type { MarketStats } from "./types";
 
@@ -50,6 +62,11 @@ export function getMarketStats(mint: string): Promise<MarketStats | null> {
 }
 
 async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
+  const fromDexScreener = await fetchDexScreenerStats(mint);
+  return fromDexScreener ?? fetchPumpFunStats(mint);
+}
+
+async function fetchDexScreenerStats(mint: string): Promise<MarketStats | null> {
   try {
     const res = await fetch(`${DEXSCREENER}/${mint}`, { cache: "no-store" });
     if (!res.ok) return null;
@@ -78,6 +95,47 @@ async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
       priceChange24h: num(pair.priceChange?.h24),
       pairAddress: pair.pairAddress,
       graduated,
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface PumpFunCoin {
+  usd_market_cap?: number;
+  total_supply?: number | string;
+  base_decimals?: number;
+  real_sol_reserves?: number;
+  bonding_curve?: string;
+  complete?: boolean;
+}
+
+/** Fallback when DexScreener hasn't (or no longer) indexed this pair — reads
+ *  pump.fun's own coin API directly, so a thin/quiet bonding-curve token never
+ *  falls back to the mint-time placeholder snapshot as if it were live data. */
+async function fetchPumpFunStats(mint: string): Promise<MarketStats | null> {
+  try {
+    const res = await fetch(`${PUMPFUN_COINS}/${mint}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const j = (await res.json()) as PumpFunCoin;
+    if (typeof j.usd_market_cap !== "number" || !Number.isFinite(j.usd_market_cap)) return null;
+    const decimals = j.base_decimals ?? 6;
+    const supply = Number(j.total_supply ?? 0) / 10 ** decimals;
+    const priceUsd = supply > 0 ? j.usd_market_cap / supply : 0;
+    const solUsd = await getSolUsd();
+    return {
+      priceUsd,
+      priceNative: solUsd > 0 ? priceUsd / solUsd : 0,
+      marketCap: j.usd_market_cap,
+      // The bonding curve's real SOL side — the honest liquidity figure pump.fun
+      // itself reports for an unmigrated coin (there's no separate AMM pool yet).
+      liquidityUsd: ((j.real_sol_reserves ?? 0) / 1e9) * solUsd,
+      // pump.fun's coin object doesn't report 24h volume — 0 is an honest
+      // "unknown", unlike the placeholder's invented "0 SOL" that reads as real.
+      volume24hUsd: 0,
+      priceChange24h: 0,
+      pairAddress: j.bonding_curve ?? "",
+      graduated: Boolean(j.complete),
     };
   } catch {
     return null;
