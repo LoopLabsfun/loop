@@ -5,6 +5,8 @@ import {
   totalRaised,
   backerCount,
   planRefunds,
+  refundSendableLamports,
+  REFUND_FEE_RESERVE_LAMPORTS,
   type Contribution,
 } from "./prefunding";
 
@@ -69,5 +71,27 @@ describe("planRefunds", () => {
   });
   it("is empty for an empty ledger", () => {
     expect(planRefunds([])).toEqual([]);
+  });
+});
+
+describe("refundSendableLamports", () => {
+  const R = REFUND_FEE_RESERVE_LAMPORTS;
+  it("sends the full amount when the wallet has fee headroom", () => {
+    expect(refundSendableLamports(6_000_000, 6_000_000 + R + 1)).toBe(6_000_000);
+  });
+  it("caps to (balance - fee) when the wallet holds exactly the owed amount (the real bug)", () => {
+    // memeforge: wallet = 0.006 SOL, owed = 0.006 SOL → send 0.006 - fee, never fail
+    expect(refundSendableLamports(6_000_000, 6_000_000)).toBe(6_000_000 - R);
+  });
+  it("returns 0 (skip) when the balance can't even cover the fee", () => {
+    expect(refundSendableLamports(6_000_000, R)).toBe(0);
+    expect(refundSendableLamports(6_000_000, 0)).toBe(0);
+  });
+  it("falls back to the full owed amount when the balance is unknown (null)", () => {
+    expect(refundSendableLamports(6_000_000, null)).toBe(6_000_000);
+  });
+  it("rounds owed and floors the balance to whole lamports", () => {
+    expect(refundSendableLamports(1_000.6, null)).toBe(1_001);
+    expect(refundSendableLamports(1_000_000, 5_000_000.9, 0)).toBe(1_000_000);
   });
 });

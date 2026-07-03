@@ -15,6 +15,8 @@ import {
   totalRaised,
   backerCount,
   planRefunds,
+  refundSendableLamports,
+  REFUND_FEE_RESERVE_LAMPORTS,
   type Contribution,
 } from "./prefunding";
 
@@ -634,10 +636,30 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
   const endpoint = `https://${cluster === "devnet" ? "devnet" : "mainnet"}.helius-rpc.com/?api-key=${heliusKey}`;
   const conn = new Connection(endpoint, "confirmed");
 
+  // The project wallet pays the network fee out of its OWN balance and usually holds
+  // EXACTLY the contribution sum, so refunding the full amount leaves nothing for the
+  // fee and the transfer fails. Read the balance once and cap each refund via
+  // refundSendableLamports (reserves the fee, decrements as we go). A failed read →
+  // null → the helper falls back to the full owed amount (previous behaviour).
+  let available: number | null;
+  try {
+    available = await conn.getBalance(new PublicKey(projectWallet), "confirmed");
+  } catch {
+    available = null;
+  }
+
   const refunded: RefundOutcome["refunded"] = [];
   const skipped: string[] = [];
   for (const r of plan) {
     try {
+      const owed = Math.round(r.sol * LAMPORTS_PER_SOL);
+      const lamports = refundSendableLamports(owed, available);
+      if (lamports <= 0) {
+        skipped.push(
+          `${r.to.slice(0, 4)}…: wallet can't cover the network fee (balance ${((available ?? 0) / LAMPORTS_PER_SOL).toFixed(6)} SOL — top it up)`,
+        );
+        continue;
+      }
       const { blockhash } = await conn.getLatestBlockhash("confirmed");
       const tx = new Transaction();
       tx.feePayer = new PublicKey(projectWallet);
@@ -646,7 +668,7 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
         SystemProgram.transfer({
           fromPubkey: new PublicKey(projectWallet),
           toPubkey: new PublicKey(r.to),
-          lamports: Math.round(r.sol * LAMPORTS_PER_SOL),
+          lamports,
         }),
       );
       // Privy holds the key: hand it the unsigned tx (base64) to sign + broadcast.
@@ -660,7 +682,8 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
         .eq("draft_wallet", draftWallet)
         .eq("contributor_wallet", r.to)
         .eq("status", "confirmed");
-      refunded.push({ to: r.to, sol: r.sol, sig });
+      if (available != null) available -= lamports + REFUND_FEE_RESERVE_LAMPORTS;
+      refunded.push({ to: r.to, sol: lamports / LAMPORTS_PER_SOL, sig });
     } catch (e) {
       skipped.push(`${r.to.slice(0, 4)}…: ${e instanceof Error ? e.message : "failed"}`);
     }

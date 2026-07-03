@@ -66,3 +66,28 @@ export function planRefunds(cs: Contribution[]): Refund[] {
     .map(([to, sol]) => ({ to, sol: round9(sol) }))
     .filter((r) => r.sol >= MIN_CONTRIBUTION_SOL);
 }
+
+/** Lamports reserved so the fee-paying project wallet keeps enough to actually
+ *  broadcast a refund (base fee is 5000 lamports/signature; buffer to 10k). */
+export const REFUND_FEE_RESERVE_LAMPORTS = 10_000;
+
+/**
+ * Cap a single refund to what the project wallet can actually send. The wallet pays
+ * the network fee out of its OWN balance and typically holds EXACTLY the sum of
+ * contributions (nothing seeds it for fees), so sending the full amount leaves
+ * nothing for the ~5000-lamport fee and the transfer fails with insufficient funds.
+ * Returns the lamports to send after reserving the fee — 0 means skip (can't even
+ * cover the fee). A null balance (RPC read failed) falls back to the full owed
+ * amount so a transient read never blocks a refund. Pure + unit-tested.
+ */
+export function refundSendableLamports(
+  owedLamports: number,
+  availableLamports: number | null,
+  feeReserve: number = REFUND_FEE_RESERVE_LAMPORTS,
+): number {
+  const owed = Math.max(0, Math.round(owedLamports));
+  if (availableLamports == null) return owed;
+  const sendable = Math.floor(availableLamports) - feeReserve;
+  if (sendable <= 0) return 0;
+  return Math.min(owed, sendable);
+}
