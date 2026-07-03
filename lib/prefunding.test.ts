@@ -6,7 +6,8 @@ import {
   backerCount,
   planRefunds,
   refundSendableLamports,
-  REFUND_FEE_RESERVE_LAMPORTS,
+  REFUND_FEE_LAMPORTS,
+  RENT_EXEMPT_MIN_LAMPORTS,
   type Contribution,
 } from "./prefunding";
 
@@ -75,16 +76,24 @@ describe("planRefunds", () => {
 });
 
 describe("refundSendableLamports", () => {
-  const R = REFUND_FEE_RESERVE_LAMPORTS;
-  it("sends the full amount when the wallet has fee headroom", () => {
-    expect(refundSendableLamports(6_000_000, 6_000_000 + R + 1)).toBe(6_000_000);
+  const FEE = REFUND_FEE_LAMPORTS; // 5000
+  const RENT = RENT_EXEMPT_MIN_LAMPORTS; // 890880
+
+  it("sends the full owed amount when a healthy (≥ rent-exempt) balance remains", () => {
+    // leftover = avail − owed − fee = RENT (≥ rent-exempt) → send owed in full
+    expect(refundSendableLamports(6_000_000, 6_000_000 + FEE + RENT)).toBe(6_000_000);
   });
-  it("caps to (balance - fee) when the wallet holds exactly the owed amount (the real bug)", () => {
-    // memeforge: wallet = 0.006 SOL, owed = 0.006 SOL → send 0.006 - fee, never fail
-    expect(refundSendableLamports(6_000_000, 6_000_000)).toBe(6_000_000 - R);
+  it("drains to exactly zero when the wallet holds exactly the owed amount (memeforge)", () => {
+    // wallet = 0.006 SOL, owed = 0.006 SOL → send balance − fee, leftover 0 (not sub-rent dust)
+    expect(refundSendableLamports(6_000_000, 6_000_000)).toBe(6_000_000 - FEE);
+  });
+  it("drains fully rather than stranding a sub-rent leftover", () => {
+    const avail = 6_000_000;
+    const owed = avail - FEE - 100; // paying owed would leave 100 lamports (< rent-exempt)
+    expect(refundSendableLamports(owed, avail)).toBe(avail - FEE);
   });
   it("returns 0 (skip) when the balance can't even cover the fee", () => {
-    expect(refundSendableLamports(6_000_000, R)).toBe(0);
+    expect(refundSendableLamports(6_000_000, FEE)).toBe(0);
     expect(refundSendableLamports(6_000_000, 0)).toBe(0);
   });
   it("falls back to the full owed amount when the balance is unknown (null)", () => {

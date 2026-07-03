@@ -1,4 +1,5 @@
 import "server-only";
+import type { Connection as Web3Connection } from "@solana/web3.js";
 import { supabaseAdmin } from "./supabase";
 import { getPrelaunch, normalizeTicker, NAME_MAX, PROMPT_MAX, REPO_MAX } from "./waitlist";
 import { makeSplit } from "./fees";
@@ -16,7 +17,7 @@ import {
   backerCount,
   planRefunds,
   refundSendableLamports,
-  REFUND_FEE_RESERVE_LAMPORTS,
+  REFUND_FEE_LAMPORTS,
   type Contribution,
 } from "./prefunding";
 
@@ -629,12 +630,30 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
   const plan = planRefunds(ledger);
   if (!plan.length) return { ok: true, refunded: [], skipped: [], note: "nothing to refund" };
 
-  const heliusKey = process.env.HELIUS_API_KEY;
-  if (!heliusKey) return out("HELIUS_API_KEY missing");
   const cluster = parseCluster(process.env.LAUNCH_CLUSTER);
   const { Connection, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
-  const endpoint = `https://${cluster === "devnet" ? "devnet" : "mainnet"}.helius-rpc.com/?api-key=${heliusKey}`;
-  const conn = new Connection(endpoint, "confirmed");
+  // Reads (balance + blockhash) try Helius first, then a public RPC — so an exhausted
+  // Helius plan (429 "max usage reached") can't block a refund. The broadcast itself
+  // goes through Privy (signAndSendTransaction), not this connection, so a public RPC
+  // is fine for the reads.
+  const heliusKey = process.env.HELIUS_API_KEY;
+  const net = cluster === "devnet" ? "devnet" : "mainnet";
+  const endpoints = [
+    heliusKey ? `https://${net}.helius-rpc.com/?api-key=${heliusKey}` : null,
+    `https://api.${net === "devnet" ? "devnet" : "mainnet-beta"}.solana.com`,
+  ].filter((e): e is string => Boolean(e));
+  const conns = endpoints.map((e) => new Connection(e, "confirmed"));
+  const anyRpc = async <T>(fn: (c: Web3Connection) => Promise<T>): Promise<T> => {
+    let lastErr: unknown = new Error("no RPC endpoint");
+    for (const c of conns) {
+      try {
+        return await fn(c);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
+  };
 
   // The project wallet pays the network fee out of its OWN balance and usually holds
   // EXACTLY the contribution sum, so refunding the full amount leaves nothing for the
@@ -643,7 +662,7 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
   // null → the helper falls back to the full owed amount (previous behaviour).
   let available: number | null;
   try {
-    available = await conn.getBalance(new PublicKey(projectWallet), "confirmed");
+    available = await anyRpc((c) => c.getBalance(new PublicKey(projectWallet), "confirmed"));
   } catch {
     available = null;
   }
@@ -660,7 +679,7 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
         );
         continue;
       }
-      const { blockhash } = await conn.getLatestBlockhash("confirmed");
+      const { blockhash } = await anyRpc((c) => c.getLatestBlockhash("confirmed"));
       const tx = new Transaction();
       tx.feePayer = new PublicKey(projectWallet);
       tx.recentBlockhash = blockhash;
@@ -682,7 +701,7 @@ export async function refundPrelaunch(draftWallet: string): Promise<RefundOutcom
         .eq("draft_wallet", draftWallet)
         .eq("contributor_wallet", r.to)
         .eq("status", "confirmed");
-      if (available != null) available -= lamports + REFUND_FEE_RESERVE_LAMPORTS;
+      if (available != null) available -= lamports + REFUND_FEE_LAMPORTS;
       refunded.push({ to: r.to, sol: lamports / LAMPORTS_PER_SOL, sig });
     } catch (e) {
       skipped.push(`${r.to.slice(0, 4)}…: ${e instanceof Error ? e.message : "failed"}`);
