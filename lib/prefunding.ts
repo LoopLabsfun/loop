@@ -67,27 +67,41 @@ export function planRefunds(cs: Contribution[]): Refund[] {
     .filter((r) => r.sol >= MIN_CONTRIBUTION_SOL);
 }
 
-/** Lamports reserved so the fee-paying project wallet keeps enough to actually
- *  broadcast a refund (base fee is 5000 lamports/signature; buffer to 10k). */
-export const REFUND_FEE_RESERVE_LAMPORTS = 10_000;
+/** Base network fee the fee-paying project wallet must keep to broadcast a refund
+ *  (one signature, no priority fee → exactly 5000 lamports). */
+export const REFUND_FEE_LAMPORTS = 5_000;
+
+/** Rent-exempt minimum for a system account with no data (~0.00089 SOL). Solana
+ *  REJECTS a transfer that would leave the source with a NON-ZERO balance below
+ *  this (`InsufficientFundsForRent`) — the leftover must be exactly 0 or ≥ this. */
+export const RENT_EXEMPT_MIN_LAMPORTS = 890_880;
 
 /**
- * Cap a single refund to what the project wallet can actually send. The wallet pays
- * the network fee out of its OWN balance and typically holds EXACTLY the sum of
- * contributions (nothing seeds it for fees), so sending the full amount leaves
- * nothing for the ~5000-lamport fee and the transfer fails with insufficient funds.
- * Returns the lamports to send after reserving the fee — 0 means skip (can't even
- * cover the fee). A null balance (RPC read failed) falls back to the full owed
- * amount so a transient read never blocks a refund. Pure + unit-tested.
+ * How many lamports to actually send for one refund. The project wallet pays the
+ * network fee out of its OWN balance and typically holds EXACTLY the sum of
+ * contributions (nothing seeds it for fees), so two rules bite:
+ *   1. it must keep the ~5000-lamport fee, else the transfer has insufficient funds;
+ *   2. it can't be left with a non-zero balance BELOW the rent-exempt minimum — the
+ *      leftover has to be exactly 0 or ≥ rent-exempt, or the tx fails on rent.
+ * So a full drain sends `balance − fee` (leftover 0); a partial refund that would
+ * strand sub-rent dust is bumped up to a full drain instead. Returns 0 when the
+ * balance can't even cover the fee (skip). A null balance (RPC read failed) falls
+ * back to the full owed amount so a transient read never blocks a refund. Pure.
  */
 export function refundSendableLamports(
   owedLamports: number,
   availableLamports: number | null,
-  feeReserve: number = REFUND_FEE_RESERVE_LAMPORTS,
+  fee: number = REFUND_FEE_LAMPORTS,
+  rentExemptMin: number = RENT_EXEMPT_MIN_LAMPORTS,
 ): number {
   const owed = Math.max(0, Math.round(owedLamports));
   if (availableLamports == null) return owed;
-  const sendable = Math.floor(availableLamports) - feeReserve;
-  if (sendable <= 0) return 0;
-  return Math.min(owed, sendable);
+  const avail = Math.floor(availableLamports);
+  const maxSend = avail - fee; // sending this drains the wallet to exactly 0
+  if (maxSend <= 0) return 0; // can't even cover the fee
+  if (owed >= maxSend) return maxSend; // full drain → leftover 0
+  // owed < maxSend: sending owed would leave (avail − owed − fee). If that's a
+  // non-zero sub-rent amount, drain fully instead to avoid the rent rejection.
+  const leftover = avail - owed - fee;
+  return leftover >= rentExemptMin ? owed : maxSend;
 }
