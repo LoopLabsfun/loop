@@ -121,12 +121,38 @@ export async function GET(req: Request) {
   // applies and the (extra per-project) ledger reads are skipped entirely.
   let computeAsleep: string[] = [];
   if (process.env.COMPUTE_BUDGET_GATE === "1") {
+    const { creditLowWater } = await import("@/lib/compute-rail");
     const withCredit = await Promise.all(
-      affordable.map(async (p) => ({
-        p,
-        ok: creditBalanceUsd(await getComputeLedger(p.key)) > 0,
-      }))
+      affordable.map(async (p) => {
+        const ledger = await getComputeLedger(p.key);
+        return {
+          p,
+          ok: creditBalanceUsd(ledger) > 0,
+          low: creditLowWater(ledger),
+        };
+      })
     );
+    // Low-water warning (~80% of the funded credit consumed): surface it to the
+    // founder BEFORE the hard stop below silences the project, and auto-clear it
+    // once a top-up brings the balance back above the threshold. Same de-duped
+    // escalation contract as the treasury-empty raise above; best-effort.
+    if (supabaseAdmin) {
+      const { raiseEscalation, resolveOpenByBody, COMPUTE_LOW_BODY } = await import(
+        "@/lib/escalations"
+      );
+      await Promise.all(
+        withCredit.map(async ({ p, ok, low }) => {
+          try {
+            if (low) await raiseEscalation(p.key, "action", COMPUTE_LOW_BODY);
+            else if (ok) await resolveOpenByBody(p.key, "action", COMPUTE_LOW_BODY);
+            // Exhausted (ok=false): leave the warning open — it explains WHY the
+            // project sleeps until the founder tops the credit up.
+          } catch {
+            /* per-project best-effort — never affects the run */
+          }
+        })
+      );
+    }
     computeAsleep = withCredit.filter((x) => !x.ok).map((x) => x.p.key);
     affordable = withCredit.filter((x) => x.ok).map((x) => x.p);
   }

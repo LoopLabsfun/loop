@@ -19,6 +19,13 @@ export const ESCALATION_KINDS: EscalationKind[] = ["credential", "action", "deci
 export const TREASURY_EMPTY_BODY =
   "Treasury is empty — fund the agent wallet to wake the agent.";
 
+// Stable body for the auto-raised "compute credit low" warning (same de-dupe /
+// auto-clear contract as TREASURY_EMPTY_BODY). Raised by the cron when a
+// project's metered Claude credit falls under ~20% of what was funded, so the
+// founder can top up BEFORE the compute-budget gate puts the agent to sleep.
+export const COMPUTE_LOW_BODY =
+  "Compute credit is nearly consumed — under 20% of the funded Claude budget remains. Top up (scripts/credit-compute.ts) or the agent sleeps at zero.";
+
 export function isEscalationKind(x: unknown): x is EscalationKind {
   return typeof x === "string" && (ESCALATION_KINDS as string[]).includes(x);
 }
