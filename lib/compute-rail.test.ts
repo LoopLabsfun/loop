@@ -3,6 +3,7 @@ import {
   ZERO_LEDGER,
   DEFAULT_SWAP_FEE_BPS,
   creditBalanceUsd,
+  creditLowWater,
   recordTopUp,
   recordSpend,
   convertSolToCredits,
@@ -30,6 +31,29 @@ describe("compute ledger (credited − consumed)", () => {
   it("can go negative when over-drawn (runtime reads this as 'top up or sleep')", () => {
     const l = recordSpend(recordTopUp(ZERO_LEDGER, 10), 14);
     expect(creditBalanceUsd(l)).toBe(-4);
+  });
+});
+
+describe("creditLowWater (the pre-sleep warning threshold)", () => {
+  it("is quiet for an unfunded ledger (nothing to warn about)", () => {
+    expect(creditLowWater(ZERO_LEDGER)).toBe(false);
+  });
+  it("is quiet while the balance is comfortably above the threshold", () => {
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 50))).toBe(false);
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 79))).toBe(false);
+  });
+  it("warns once ≤20% of the funded credit remains (but not yet exhausted)", () => {
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 80))).toBe(true);
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 99.99))).toBe(true);
+  });
+  it("goes quiet at/below zero — the hard gate owns that state", () => {
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 100))).toBe(false);
+    expect(creditLowWater(recordSpend(recordTopUp(ZERO_LEDGER, 100), 120))).toBe(false);
+  });
+  it("honors a custom fraction", () => {
+    const l = recordSpend(recordTopUp(ZERO_LEDGER, 100), 60);
+    expect(creditLowWater(l, 0.5)).toBe(true);
+    expect(creditLowWater(l, 0.2)).toBe(false);
   });
 });
 

@@ -71,6 +71,10 @@ export function AgentFeed({
   // One composer, two actions — no mode tabs. `pending` is whichever action is
   // mid-signature ("ask" = a question, "steer" = a directive/proposal), or null.
   const [pending, setPending] = useState<null | "ask" | "steer">(null);
+  // The optimistic message the agent is answering RIGHT NOW (the submit action
+  // carries the inline reply back), so its row shows "answering…" instead of
+  // "queued" while the round-trip is in flight.
+  const [typingId, setTypingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Stake-to-participate: the connected wallet's active stake (null until loaded /
   // disconnected), the stake-amount draft, and whether a stake is mid-signature.
@@ -206,8 +210,9 @@ export function AgentFeed({
           setPending(null);
           return;
         }
+        const localId = `local-${Date.now()}`;
         const optimistic: ChatMsg = {
-          id: `local-${Date.now()}`,
+          id: localId,
           wallet: wallet.address,
           question: text,
           answer: null,
@@ -220,13 +225,25 @@ export function AgentFeed({
         };
         setMessages((m) => [optimistic, ...m].slice(0, 30));
         setDraft("");
+        setTypingId(localId);
         const res = await submitChatAction({
           projectKey: p.key,
           wallet: wallet.address,
           question: text,
           proof,
         });
+        setTypingId(null);
         if (!res.ok) setNotice(res.error ?? "Couldn't record your message.");
+        else if (res.answer) {
+          // Instant reply: the agent answered within the submit round-trip —
+          // flip the optimistic row so the answer is readable immediately.
+          const answer = res.answer;
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === localId ? { ...msg, answer, status: "answered" as const } : msg
+            )
+          );
+        }
       } else {
         // A console submission is never authoritative: it's queued as an open
         // suggestion (the agent treats console text as untrusted), even though the
@@ -508,6 +525,7 @@ export function AgentFeed({
                 key={e.msg.id}
                 msg={e.msg}
                 you={e.msg.wallet === wallet.address}
+                typing={e.msg.id === typingId}
               />
             ) : (
               <FeedRow
@@ -656,7 +674,16 @@ export function AgentFeed({
 // A paid chat question in the merged feed — compact by design: the question +
 // its state, click to read the full answer in the side panel (the founder's
 // "ask in the feed, read in the panel" split).
-function ChatFeedRow({ msg: m, you }: { msg: ChatMsg; you: boolean }) {
+function ChatFeedRow({
+  msg: m,
+  you,
+  typing = false,
+}: {
+  msg: ChatMsg;
+  you: boolean;
+  /** True while the agent is answering this message in the submit round-trip. */
+  typing?: boolean;
+}) {
   const { inspect } = useInspector();
   const answered = m.status === "answered" && !!m.answer;
   return (
@@ -679,6 +706,8 @@ function ChatFeedRow({ msg: m, you }: { msg: ChatMsg; you: boolean }) {
       <div className="mt-[5px] font-mono text-[10.5px]">
         {answered ? (
           <span className="text-pos">✓ answered · read in panel →</span>
+        ) : typing ? (
+          <span className="text-accent-text animate-pulse">● agent is answering…</span>
         ) : (
           <span className="text-faint">⏳ queued — answers on the next run</span>
         )}

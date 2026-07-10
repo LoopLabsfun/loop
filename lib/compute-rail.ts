@@ -55,6 +55,18 @@ export function creditBalanceUsd(l: ComputeLedger): number {
   return usd(l.creditedUsd - l.consumedUsd);
 }
 
+/**
+ * Low-water warning: true when the remaining credit has fallen to `frac` (or
+ * less) of what was funded but ISN'T exhausted yet — the "warn the founder
+ * BEFORE the budget gate puts the agent to sleep" threshold. False for an
+ * unfunded ledger (nothing to warn about) and false at/below zero (the hard
+ * gate has taken over; the raised warning stays open until a top-up).
+ */
+export function creditLowWater(l: ComputeLedger, frac = 0.2): boolean {
+  const balance = creditBalanceUsd(l);
+  return l.creditedUsd > 0 && balance > 0 && balance <= usd(l.creditedUsd * frac);
+}
+
 /** Record a top-up — post-fee USD credited to the provider account. */
 export function recordTopUp(l: ComputeLedger, usdCredited: number): ComputeLedger {
   return { ...l, creditedUsd: usd(l.creditedUsd + Math.max(0, usdCredited)) };

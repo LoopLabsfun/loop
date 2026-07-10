@@ -2,6 +2,7 @@
 
 import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
+import type { Project } from "./types";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
@@ -678,7 +679,37 @@ export interface ChatResult {
   ok: boolean;
   /** False when persistence is unavailable (the UI keeps its optimistic message). */
   persisted: boolean;
+  /**
+   * The agent's instant reply when the inline path answered within the submit
+   * round-trip (lib/agent-runtime answerChatInline). null/undefined when it was
+   * skipped or timed out — the question stays "open" and the cron answers it on
+   * the next fire, so the UI falls back to its "queued" state.
+   */
+  answer?: string | null;
   error?: string;
+}
+
+/**
+ * Try to answer a just-recorded chat question inside the submit round-trip.
+ * Time-boxed so a slow model call can NEVER hang the submit: past the deadline
+ * the action returns without an answer and the row stays open for the cron
+ * (answerChatRow only flips rows still "open", so a late completion and the
+ * cron can race harmlessly). Failure-safe: any error just yields null.
+ */
+async function tryInlineChatAnswer(
+  project: Project,
+  chatId: number,
+  timeoutMs = 8_000
+): Promise<string | null> {
+  try {
+    const { answerChatInline } = await import("./agent-runtime");
+    return await Promise.race([
+      answerChatInline(project, chatId),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -736,17 +767,23 @@ export async function submitChatAction(input: ChatInput): Promise<ChatResult> {
     if (dup) {
       return { ok: false, persisted: false, error: "This message was already submitted." };
     }
-    const { error } = await supabaseAdmin.from("agent_chat").insert({
-      project_key: input.projectKey,
-      wallet: input.wallet.slice(0, 64),
-      question,
-      loop_paid: 0,
-      boost: 0,
-      tx_sig: sigKey,
-      status: "open",
-    });
+    const { data: inserted, error } = await supabaseAdmin
+      .from("agent_chat")
+      .insert({
+        project_key: input.projectKey,
+        wallet: input.wallet.slice(0, 64),
+        question,
+        loop_paid: 0,
+        boost: 0,
+        tx_sig: sigKey,
+        status: "open",
+      })
+      .select("id")
+      .maybeSingle();
     if (error) return { ok: false, persisted: false, error: error.message };
-    return { ok: true, persisted: true };
+    const chatId = (inserted as { id: number } | null)?.id;
+    const answer = chatId ? await tryInlineChatAnswer(project, chatId) : null;
+    return { ok: true, persisted: true, answer };
   }
 
   const sig = (input.txSig ?? "").trim();
@@ -796,17 +833,23 @@ export async function submitChatAction(input: ChatInput): Promise<ChatResult> {
     return { ok: false, persisted: false, error: "This payment was already used for a message." };
   }
 
-  const { error } = await supabaseAdmin.from("agent_chat").insert({
-    project_key: input.projectKey,
-    wallet: input.wallet.slice(0, 64),
-    question,
-    loop_paid: loopPaid,
-    boost,
-    tx_sig: sig,
-    status: "open",
-  });
+  const { data: inserted, error } = await supabaseAdmin
+    .from("agent_chat")
+    .insert({
+      project_key: input.projectKey,
+      wallet: input.wallet.slice(0, 64),
+      question,
+      loop_paid: loopPaid,
+      boost,
+      tx_sig: sig,
+      status: "open",
+    })
+    .select("id")
+    .maybeSingle();
   if (error) return { ok: false, persisted: false, error: error.message };
-  return { ok: true, persisted: true };
+  const chatId = (inserted as { id: number } | null)?.id;
+  const answer = chatId ? await tryInlineChatAnswer(project, chatId) : null;
+  return { ok: true, persisted: true, answer };
 }
 
 // ── stake-to-participate ─────────────────────────────────────────────────────
