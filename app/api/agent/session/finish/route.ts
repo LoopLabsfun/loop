@@ -162,6 +162,28 @@ export async function POST(req: Request) {
     }
   }
 
+  // MAKER ≠ CHECKER (opt-in AGENT_REVIEWER=1): an independent, cheap model pass
+  // over the diff that actually landed. Advisory v1 — the push already happened,
+  // so a REVISE never blocks; it feeds the loop instead (task outcome line, a
+  // "gate" learning, an escalation when severe). Best-effort.
+  if (hands.pushed) {
+    try {
+      const { reviewShippedWork } = await import("@/lib/agent-review");
+      const review = await reviewShippedWork(
+        project,
+        { title: decision.task.title, detail: decision.task.detail ?? "" },
+        hands.commitSha ?? undefined
+      );
+      if (review.ran) {
+        console.log(
+          `[agent-review] ${JSON.stringify({ key, verdict: review.verdict, severity: review.severity, note: review.note })}`
+        );
+      }
+    } catch {
+      /* review is advisory — never affects the persist */
+    }
+  }
+
   return NextResponse.json(
     { key, pushed: hands.pushed, gatePassed: hands.gatePassed, note: hands.note, commitSha: hands.commitSha },
     { headers: { "Cache-Control": "no-store" } }
