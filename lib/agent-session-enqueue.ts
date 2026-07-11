@@ -198,13 +198,30 @@ export async function enqueueSdkSession(
     dryRun: opts.dryRun,
   });
 
+  // PRIOR ART for the in-sandbox builder: retrieval over this project's own
+  // history (lib/agent-recall) so the session builds on past work instead of
+  // redoing or contradicting it. DB-only, bounded, best-effort.
+  let recall = "";
+  try {
+    const { recallEnabled, recallForTask, formatRecallForPrompt } = await import(
+      "./agent-recall"
+    );
+    if (recallEnabled()) {
+      recall = formatRecallForPrompt(
+        await recallForTask(p.key, `${decision.task.title} ${decision.task.detail}`)
+      );
+    }
+  } catch {
+    /* additive context — never blocks the enqueue */
+  }
+
   const payload: AgentSessionPayload = {
     key: p.key,
     title: decision.task.title,
     detail: decision.task.detail,
     category: decision.task.category,
     script,
-    taskBrief: buildTaskBrief(decision.task),
+    taskBrief: buildTaskBrief(decision.task, recall),
     // Multi-tenant compute: carry ONLY this project's own BYO key (undefined for
     // LOOP/default) so the global platform key is never persisted in the Trigger
     // payload; the worker falls back to its own env key when this is absent.
