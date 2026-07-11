@@ -4,6 +4,8 @@ import {
   rankLearnings,
   formatLearningsForPrompt,
   isDuplicateLearning,
+  decayedScore,
+  LEARNING_HALF_LIFE_DAYS,
   type Learning,
 } from "./learnings";
 
@@ -44,6 +46,49 @@ describe("rankLearnings", () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].upvotes).toBe(7);
+  });
+
+  describe("time decay", () => {
+    const NOW = Date.parse("2026-07-11T00:00:00Z");
+    const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
+
+    it("halves the effective score every half-life", () => {
+      const fresh = decayedScore(mk({ upvotes: 9, at: daysAgo(0) }), NOW);
+      const aged = decayedScore(
+        mk({ upvotes: 9, at: daysAgo(LEARNING_HALF_LIFE_DAYS) }),
+        NOW
+      );
+      expect(aged).toBeCloseTo(fresh / 2, 6);
+    });
+
+    it("a fresh still-earning insight outranks a stale once-popular one", () => {
+      const out = rankLearnings(
+        [
+          mk({ insight: "stale hit", upvotes: 9, at: daysAgo(180) }),
+          mk({ insight: "fresh signal", upvotes: 1, at: daysAgo(2) }),
+        ],
+        6,
+        NOW
+      );
+      expect(out.map((l) => l.insight)).toEqual(["fresh signal", "stale hit"]);
+    });
+
+    it("an unparsable timestamp counts as fresh (no decay, no crash)", () => {
+      expect(decayedScore(mk({ upvotes: 3, at: "now" }), NOW)).toBe(4);
+    });
+
+    it("dedupe keeps the entry with the higher effective (decayed) score", () => {
+      const out = rankLearnings(
+        [
+          mk({ insight: "same lesson", upvotes: 9, at: daysAgo(300) }),
+          mk({ insight: "Same lesson!", upvotes: 2, at: daysAgo(1) }),
+        ],
+        6,
+        NOW
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0].upvotes).toBe(2);
+    });
   });
 
   it("drops empty insights", () => {

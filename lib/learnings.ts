@@ -55,21 +55,47 @@ export function isDuplicateLearning(
 }
 
 /**
- * Rank for distribution to agents: drop empties, dedupe by insight (keeping the
- * most-upvoted), then sort by upvotes desc (ties → keep input order, which the
- * caller orders by recency). Returns at most `limit`.
+ * Upvote half-life, days. A learning's effective score halves every 45 days so
+ * the network's context window follows what is working NOW: an insight that
+ * stopped earning upvotes ages out of the top-6 instead of squatting on it
+ * forever, while one that keeps proving itself keeps getting re-upvoted and
+ * stays. Fresh entries get +1 so a brand-new insight isn't invisible at 0.
  */
-export function rankLearnings(list: Learning[], limit = 6): Learning[] {
+export const LEARNING_HALF_LIFE_DAYS = 45;
+
+/** Time-decayed effective score for ranking (pure; `at` is an ISO timestamp). */
+export function decayedScore(
+  l: Pick<Learning, "upvotes" | "at">,
+  now: number = Date.now()
+): number {
+  const t = new Date(l.at).getTime();
+  const ageDays = Number.isFinite(t) ? Math.max(0, (now - t) / 86_400_000) : 0;
+  return (Math.max(0, l.upvotes) + 1) * Math.pow(0.5, ageDays / LEARNING_HALF_LIFE_DAYS);
+}
+
+/**
+ * Rank for distribution to agents: drop empties, dedupe by insight (keeping the
+ * highest effective score), then sort by TIME-DECAYED score desc — recent,
+ * still-earning insights outrank stale once-popular ones. Returns at most
+ * `limit`. `now` is injectable for tests.
+ */
+export function rankLearnings(
+  list: Learning[],
+  limit = 6,
+  now: number = Date.now()
+): Learning[] {
   const best = new Map<string, Learning>();
   for (const l of list) {
     const insight = sanitizeLearning(l.insight);
     if (!insight) continue;
     const key = dedupeKey(insight);
     const prev = best.get(key);
-    if (!prev || l.upvotes > prev.upvotes) best.set(key, { ...l, insight });
+    if (!prev || decayedScore(l, now) > decayedScore(prev, now)) {
+      best.set(key, { ...l, insight });
+    }
   }
   return Array.from(best.values())
-    .sort((a, b) => b.upvotes - a.upvotes)
+    .sort((a, b) => decayedScore(b, now) - decayedScore(a, now))
     .slice(0, Math.max(0, limit));
 }
 
