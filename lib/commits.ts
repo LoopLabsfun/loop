@@ -95,6 +95,45 @@ export async function getRepoTree(
 }
 
 /**
+ * One commit's unified patch (GitHub API `files[].patch`), joined per file and
+ * hard-capped for prompt use (the reviewer reads it, lib/agent-review). Returns
+ * null when the repo/sha is unreadable or the commit carries no textual patch —
+ * callers skip quietly. Never cached: a review must see the real diff.
+ */
+export async function getCommitDiff(
+  repo: string,
+  sha: string,
+  maxChars = 12_000
+): Promise<string | null> {
+  const parsed = parseGitHubRepo(repo);
+  if (!parsed || !/^[0-9a-f]{7,40}$/i.test(sha)) return null;
+  const token = process.env.GITHUB_TOKEN;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${parsed.owner}/${parsed.name}/commits/${sha}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      files?: Array<{ filename?: string; patch?: string }>;
+    };
+    const parts = (json.files ?? [])
+      .filter((f) => typeof f.filename === "string")
+      .map((f) => `--- ${f.filename}\n${f.patch ?? "(no textual patch — binary or oversized)"}`);
+    const joined = parts.join("\n\n").trim();
+    return joined ? joined.slice(0, maxChars) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Pure: clean + harden a list of requested read paths — strip leading "./",
  * reject absolute paths and "../" traversal, dedupe, cap. Exported for testing.
  */
