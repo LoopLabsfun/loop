@@ -105,6 +105,23 @@ export async function GET(req: Request) {
       })
     );
   }
+  // ROI per tick (J+7): reconcile shipped tasks' aged ship-snapshots against
+  // each project's CURRENT vitals into an impact score (lib/agent-impact) and
+  // fold it into their outcome line (episodic memory). DB-only, bounded (≤5
+  // rows/project/fire), best-effort — runs for every project, awake or asleep.
+  if (supabaseAdmin) {
+    try {
+      const { reconcileImpactScores } = await import("@/lib/agent-impact");
+      const counts = await Promise.all(
+        all.map((p) => reconcileImpactScores(p).catch(() => 0))
+      );
+      const reconciled = counts.reduce((s, n) => s + n, 0);
+      if (reconciled) console.log(`[agent-impact] ${JSON.stringify({ reconciled })}`);
+    } catch {
+      /* impact reconciliation is additive — never affects the run */
+    }
+  }
+
   // FAIR SCHEDULING: more funded projects than MAX_PER_RUN would otherwise starve
   // whoever sits at the back of the default (official, then newest-first) order —
   // e.g. the oldest non-official project never reaches the tick loop. Order the
