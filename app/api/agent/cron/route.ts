@@ -105,6 +105,21 @@ export async function GET(req: Request) {
       })
     );
   }
+  // EPIC COMPLETION: a "planned" parent whose subtasks ALL shipped flips to
+  // shipped (lib/agent-epics). Cheap no-op while no planned rows exist.
+  if (supabaseAdmin) {
+    try {
+      const { reconcileEpics } = await import("@/lib/agent-epics");
+      const counts = await Promise.all(
+        all.map((p) => reconcileEpics(p.key).catch(() => 0))
+      );
+      const completed = counts.reduce((s, n) => s + n, 0);
+      if (completed) console.log(`[agent-epics] ${JSON.stringify({ completed })}`);
+    } catch {
+      /* epic completion is additive — never affects the run */
+    }
+  }
+
   // ROI per tick (J+7): reconcile shipped tasks' aged ship-snapshots against
   // each project's CURRENT vitals into an impact score (lib/agent-impact) and
   // fold it into their outcome line (episodic memory). DB-only, bounded (≤5

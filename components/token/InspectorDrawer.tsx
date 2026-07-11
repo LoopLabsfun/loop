@@ -78,6 +78,7 @@ const STATUS_DOT: Record<AgentTask["status"], string> = {
   building: "text-accent-text",
   todo: "text-muted",
   blocked: "text-neg",
+  planned: "text-faint",
 };
 
 const DISP_LABEL: Record<WalletAction["disposition"], string> = {

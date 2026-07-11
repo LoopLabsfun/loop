@@ -35,6 +35,7 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   building: "text-accent-text bg-accent-tint border-accent-tint-border",
   todo: "text-muted bg-surface-2 border-line-4",
   blocked: "text-neg bg-surface-2 border-neg",
+  planned: "text-faint bg-surface-2 border-line-4",
 };
 
 const EMPTY: Record<Tab, string> = {
