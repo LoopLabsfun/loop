@@ -132,6 +132,22 @@ export async function enqueueSdkSession(
   const env = await effectiveEnv(p.key);
   const { decision } = await decideNextAction(p, state, env);
 
+  // EPIC PLANNING (opt-in AGENT_EPICS=1): the brain judged the item too big for
+  // one cycle and returned a plan instead of building. Persist it — the parent
+  // flips to "planned", the subtasks land as ordered one-cycle todos — and skip
+  // the sandbox entirely this tick (planning is the tick's work). Falls through
+  // to a normal build when the plan doesn't match an open backlog row.
+  if (decision.epic && env.AGENT_EPICS === "1") {
+    const { planEpic } = await import("./agent-epics");
+    const planned = await planEpic(p, decision.epic);
+    if (planned > 0) {
+      return {
+        enqueued: false,
+        note: `epic planned: "${decision.epic.title}" → ${planned} one-cycle subtasks`,
+      };
+    }
+  }
+
   if (!CODE_CATEGORIES.includes(decision.task.category)) {
     // outreach/ops: no sandbox needed. Pass the reply allow-list so an
     // `emailReply` is mailed only to a real unanswered-inbound sender.

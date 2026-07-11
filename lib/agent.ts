@@ -16,7 +16,9 @@ import type { Project } from "./types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type TaskCategory = "feature" | "outreach" | "fix" | "ops";
-export type TaskStatus = "todo" | "building" | "shipped" | "blocked";
+/** "planned" = an epic parent whose subtasks carry the actual work — it is
+ *  never picked directly and flips to "shipped" when all its children ship. */
+export type TaskStatus = "todo" | "building" | "shipped" | "blocked" | "planned";
 /** Who put a task on the backlog — founder/holder asks are curated and ranked
  *  above whatever the agent grooms for itself (see lib/agent-backlog). */
 export type TaskSource = "founder" | "holder" | "agent";
@@ -141,4 +143,5 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   building: "Building",
   shipped: "Shipped",
   blocked: "Needs founder",
+  planned: "Epic · planned",
 };

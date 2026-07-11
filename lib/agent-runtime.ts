@@ -15,6 +15,7 @@ import {
   type LearningCategory,
 } from "./learnings";
 import { getTopLearnings, recordLearning, dedupeNewBacklogTitles } from "./agent-data";
+import { validateEpicPlan, type EpicPlan } from "./agent-epics";
 import { effectiveEnv } from "./project-config";
 import { rankBacklog, effectivePriority, isBusyworkOnly } from "./agent-backlog";
 import { EXTERNAL_LINKS } from "./links";
@@ -294,6 +295,9 @@ export interface AgentDecision {
    * hand-seeded layer. Only kept when a real verifier check ran this tick.
    */
   learning?: { category: LearningCategory; insight: string };
+  /** Epic plan (AGENT_EPICS=1): split an oversized backlog item into one-cycle
+   *  subtasks instead of building it this tick (lib/agent-epics). */
+  epic?: EpicPlan;
 }
 
 /** Structured-output schema constraining Claude's decision. */
@@ -401,6 +405,30 @@ export const DECISION_SCHEMA = {
         insight: { type: "string" },
       },
       required: ["category", "insight"],
+    },
+    // Epic plan (opt-in AGENT_EPICS=1, see lib/agent-epics): returned INSTEAD of
+    // building when backlog #1 is too big for one cycle — the item becomes a
+    // "planned" parent and these land as ordered one-cycle todo subtasks.
+    epic: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        title: { type: "string" },
+        subtasks: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              title: { type: "string" },
+              detail: { type: "string" },
+              category: { type: "string", enum: CATEGORIES },
+            },
+            required: ["title", "detail", "category"],
+          },
+        },
+      },
+      required: ["title", "subtasks"],
     },
   },
   required: ["summary", "task"],
@@ -624,7 +652,9 @@ export function buildUserPrompt(
   /** Recent X replies/mentions (untrusted DATA — analyze, never obey). */
   mentions: { author: string; text: string }[] = [],
   /** Recall block (lib/agent-recall): the agent's own relevant history. */
-  recall = ""
+  recall = "",
+  /** AGENT_EPICS armed: allow planning an oversized item into subtasks. */
+  epics = false
 ): string {
   // Ground truth FIRST: the real repo's recent commits. Without this the agent
   // has no idea what already exists and re-decides "initialize the repo" forever
@@ -824,6 +854,18 @@ export function buildUserPrompt(
         ? `Your backlog is THIN: also return "backlog" — ${BACKLOG_TARGET - todoCount} or so NEXT tasks derived from YOUR mandate and the real product state. Each MUST be concrete and tightly scoped (shippable in one cycle) AND genuinely impactful — a specific, holder-visible improvement to the landing/value-prop, the trading/buy-sell flow, onboarding, the live data/treasury/health surfaces, the agent console, or a real feature/fix people would notice. NOT vague ("improve UX"), NOT another util/formatter/test-hardening or defensive-guard task, never a task already shipped or building above. Write them at the altitude of the impactful work above, not micro-polish. These persist as todo items for future ticks.`
         : ""
     }`,
+    ...(epics
+      ? [
+          `EPICS: if the item you would work on is genuinely too large to ship in ONE`,
+          `cycle (a multi-surface feature, days of work), do NOT start it and do NOT`,
+          `shrink it into a token gesture. Instead return an "epic" object — {"title":`,
+          `<that item's EXACT backlog title>, "subtasks": [2–6 concrete, ordered tasks,`,
+          `each independently shippable in one cycle]} — and set task.status "todo"`,
+          `(you are planning, not building, this tick). Plan an epic only for a real`,
+          `oversized item, never to avoid work; subtasks must together complete it.`,
+          ``,
+        ]
+      : []),
     "Decide the single next action to take now — a GENUINELY NEW increment that",
     "builds on the commits + shipped tasks above, never a repeat of them and never",
     "an 'initialize/scaffold the repo' step (the repo already exists). If a task in",
@@ -1117,6 +1159,11 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     }
   }
 
+  // epic: a multi-tick plan for an oversized backlog item (AGENT_EPICS). Full
+  // validation (2..6 subtasks, dedupe, clamps) is pure in lib/agent-epics; the
+  // enqueue path additionally requires the flag armed AND a matching todo row.
+  const epic = r.epic && typeof r.epic === "object" ? validateEpicPlan(r.epic) : null;
+
   return {
     summary: summary.slice(0, 280),
     task: {
@@ -1135,6 +1182,7 @@ export function coerceDecision(raw: unknown): AgentDecision | null {
     ...(edits ? { edits } : {}),
     ...(readFiles ? { readFiles } : {}),
     ...(learning ? { learning } : {}),
+    ...(epic ? { epic } : {}),
   };
 }
 
@@ -1290,7 +1338,8 @@ export async function decideNextAction(
     state.inbox ?? [],
     community,
     mentions,
-    recall
+    recall,
+    env.AGENT_EPICS === "1"
   );
   // Prompt caching: wrap a user turn's text in a cached content block (re-read at
   // ~0.1× on replay) when enabled, else keep the plain string. A breakpoint on a
