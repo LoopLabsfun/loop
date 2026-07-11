@@ -150,6 +150,18 @@ export async function POST(req: Request) {
     );
   }
 
+  // ROI per tick: snapshot the project's vitals onto the row that just shipped
+  // (treasury/market cap/volume at ship time) — the baseline the cron's J+7
+  // reconciliation scores against (lib/agent-impact). Best-effort, never blocks.
+  if (hands.pushed) {
+    try {
+      const { recordShipSnapshot } = await import("@/lib/agent-impact");
+      await recordShipSnapshot(project, decision.task.title);
+    } catch {
+      /* impact tracking is additive — never affects the persist */
+    }
+  }
+
   return NextResponse.json(
     { key, pushed: hands.pushed, gatePassed: hands.gatePassed, note: hands.note, commitSha: hands.commitSha },
     { headers: { "Cache-Control": "no-store" } }

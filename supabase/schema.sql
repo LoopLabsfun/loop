@@ -351,16 +351,26 @@ create table if not exists public.agent_tasks (
   title text not null,
   detail text not null default '',
   category text not null default 'feature' check (category in ('feature','outreach','fix','ops')),
-  status text not null default 'todo' check (status in ('todo','building','shipped','blocked')),
+  -- 'planned' = an epic parent whose subtasks (parent_id) flow through the
+  -- normal todo/building/shipped loop; the scheduler never picks it directly.
+  status text not null default 'todo' check (status in ('todo','building','shipped','blocked','planned')),
   -- Backlog ranking: curated impact rank (higher works first) + provenance, so
   -- founder/holder asks outrank agent self-groomed work (lib/agent-backlog).
   priority smallint not null default 0,
   source text not null default 'agent' check (source in ('founder','holder','agent')),
+  -- ROI per tick (lib/agent-impact): vitals captured at ship time (treasury SOL,
+  -- volume, market cap), reconciled at J+7 into a 0..100 impact score.
+  ship_snapshot jsonb,
+  impact_score smallint,
+  impact_at timestamptz,
+  -- Epic linkage: subtasks point at their parent epic (null for standalone).
+  parent_id bigint references public.agent_tasks(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 comment on table public.agent_tasks is 'Tasks the project agent plans and works. Written by the runtime (service_role); publicly readable.';
 create index if not exists agent_tasks_backlog_idx on public.agent_tasks (project_key, status, priority desc, created_at);
+create index if not exists agent_tasks_parent_idx on public.agent_tasks (parent_id) where parent_id is not null;
 
 create table if not exists public.agent_emails (
   id bigint generated always as identity primary key,
