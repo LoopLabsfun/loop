@@ -746,9 +746,12 @@ interface LearningRow {
 }
 
 /**
- * Top cross-project learnings (A5), highest-upvoted first. Read by every agent
- * tick and surfaced in the UI. Returns [] if unconfigured or on failure — the
- * caller treats an empty layer as "no shared learnings yet".
+ * Top cross-project learnings (A5), ranked by TIME-DECAYED upvotes (lib/learnings
+ * rankLearnings) so the layer follows what is working now instead of letting a
+ * once-popular insight squat on the top-6 forever. Over-fetches (4×) because the
+ * DB can only order by raw upvotes — the decayed re-rank happens here. Read by
+ * every agent tick and surfaced in the UI. Returns [] if unconfigured or on
+ * failure — the caller treats an empty layer as "no shared learnings yet".
  */
 export async function getTopLearnings(limit = 6): Promise<Learning[]> {
   if (!supabase) return [];
@@ -758,9 +761,10 @@ export async function getTopLearnings(limit = 6): Promise<Learning[]> {
       .select("*")
       .order("upvotes", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(limit);
+      .limit(Math.max(24, limit * 4));
     if (error || !data) return [];
-    return (data as LearningRow[]).map((r) => ({
+    const { rankLearnings } = await import("./learnings");
+    const all = (data as LearningRow[]).map((r) => ({
       id: r.id,
       category: r.category as LearningCategory,
       insight: r.insight,
@@ -768,6 +772,7 @@ export async function getTopLearnings(limit = 6): Promise<Learning[]> {
       upvotes: r.upvotes,
       at: r.created_at,
     }));
+    return rankLearnings(all, limit);
   } catch {
     return [];
   }
