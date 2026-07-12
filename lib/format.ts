@@ -1,3 +1,6 @@
+import { chainInfo } from "./chains/registry";
+import type { Chain } from "./chains/types";
+
 // Fallback SOL/USD snapshot. Live spot price comes from getSolUsd() in
 // price.ts (server-only); this value is used when that call fails and inside
 // the simulated trade feed (lib/api.ts), which is not yet wired to live data.
@@ -101,20 +104,25 @@ export function shortAddr(addr: string): string {
   return addr.length <= 9 ? addr : `${addr.slice(0, 4)}…${addr.slice(-4)}`;
 }
 
-/** Solana Explorer URL for an address, cluster-aware (mainnet omits ?cluster). */
+/** Explorer URL for an address. Solana Explorer, cluster-aware (mainnet omits
+ *  ?cluster); pass chain "hood" for Robinhood Chain's Blockscout instead. */
 export function explorerUrl(
   address: string,
-  network: "mainnet" | "devnet" = "mainnet"
+  network: "mainnet" | "devnet" = "mainnet",
+  chain: Chain = "solana"
 ): string {
+  if (chain === "hood") return chainInfo("hood").explorerAddress(address);
   const base = `https://explorer.solana.com/address/${address}`;
   return network === "devnet" ? `${base}?cluster=devnet` : base;
 }
 
-/** Solana Explorer URL for a transaction signature, cluster-aware. */
+/** Explorer URL for a transaction, cluster-aware; chain "hood" → Blockscout. */
 export function explorerTx(
   signature: string,
-  network: "mainnet" | "devnet" = "mainnet"
+  network: "mainnet" | "devnet" = "mainnet",
+  chain: Chain = "solana"
 ): string {
+  if (chain === "hood") return chainInfo("hood").explorerTx(signature);
   const base = `https://explorer.solana.com/tx/${signature}`;
   return network === "devnet" ? `${base}?cluster=devnet` : base;
 }

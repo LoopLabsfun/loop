@@ -3,6 +3,8 @@
 // so the simulation in `lib/api.ts` can be swapped for live data without
 // touching the UI components.
 
+import type { Chain } from "./chains/types";
+
 export type Launchpad = "Pump.fun" | "Bags.fun";
 
 /** Solana cluster a project / the session targets. */
@@ -41,6 +43,9 @@ export interface Project {
   // is replaced with the live balance read from Helius.
   treasuryWallet?: string | null;
   mint?: string | null;
+  /** Which chain the token/treasury live on. Missing ⇒ "solana" (rows predate
+   *  the chain column). "hood" = Robinhood Chain — see docs/multichain-hood.md. */
+  chain?: Chain;
   network?: Network;
   /** Verified launcher pubkey (Founder); enables founder-mode in the console.
    *  Also the destination for the founder share of creator fees. */

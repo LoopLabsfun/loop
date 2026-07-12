@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { LoopMark } from "../LoopMark";
 import { NavUserActions } from "../NavUserActions";
+import { ChainSwitch } from "../ChainSwitch";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -437,6 +438,7 @@ function TokenNav({
         <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
       </div>
       <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
+        <ChainSwitch className="hidden md:flex" />
         <ShareButton />
         <Link
           href="/"
@@ -527,7 +529,7 @@ function MergedHero({
           {/* Contract address — copyable, vanity suffix highlighted, explorer link.
               A trust + anti-impersonation cue, and it shows off the "…Loop" vanity. */}
           {p.mint && (
-            <CopyableCA mint={p.mint} network={p.network === "devnet" ? "devnet" : "mainnet"} />
+            <CopyableCA mint={p.mint} network={p.network === "devnet" ? "devnet" : "mainnet"} chain={p.chain ?? "solana"} />
           )}
 
           <p className="text-[13px] text-muted mt-2 mb-0 max-w-[460px] leading-[1.5]">{p.description}</p>
@@ -688,7 +690,15 @@ function LoopProof({
 
 // Copyable contract address with the vanity suffix (last 4 chars) highlighted and
 // an explorer link. Client-only clipboard with a brief "copied" confirmation.
-function CopyableCA({ mint, network }: { mint: string; network: "mainnet" | "devnet" }) {
+function CopyableCA({
+  mint,
+  network,
+  chain = "solana",
+}: {
+  mint: string;
+  network: "mainnet" | "devnet";
+  chain?: "solana" | "hood";
+}) {
   const [copied, setCopied] = useState(false);
   const head = mint.slice(0, 4);
   const tail = mint.slice(-4);
@@ -714,7 +724,7 @@ function CopyableCA({ mint, network }: { mint: string; network: "mainnet" | "dev
         <span className="text-faint group-hover:text-accent-text">{copied ? "✓ copied" : "⧉"}</span>
       </button>
       <a
-        href={explorerUrl(mint, network)}
+        href={explorerUrl(mint, network, chain)}
         target="_blank"
         rel="noreferrer"
         className="text-[11px] text-faint hover:text-accent-text transition-colors"
@@ -856,6 +866,28 @@ function SwapCard({
     const max = buy ? Math.max(0, bal - SOL_FEE_BUFFER) : bal;
     setAmt(buy ? max.toFixed(3) : String(Math.floor(max)));
   };
+
+  // Hood projects: on-curve trading arrives with the Hood launcher wiring
+  // (docs/multichain-hood.md Phase 3) — until then, an honest disabled state.
+  if (p.chain === "hood") {
+    return (
+      <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+        <div className="font-display font-semibold text-[15px] mb-1">
+          Trade {p.ticker}
+        </div>
+        <div className="text-[12.5px] text-muted leading-[1.5] mb-3">
+          {p.ticker} lives on Hood (Robinhood Chain). Trading from this page
+          opens when the Hood launcher goes live.
+        </div>
+        <button
+          disabled
+          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] bg-surface-3 text-faint cursor-not-allowed"
+        >
+          Hood trading opens soon
+        </button>
+      </div>
+    );
+  }
 
   // Pre-launch: no token to trade yet. Show an honest disabled state instead of
   // a simulated swap. To donate to the treasury, the Fund card is used instead.
@@ -1395,7 +1427,7 @@ function FeesCustodyCard({
           <span className="text-muted">Agent wallet</span>
           {p.agentWallet ? (
             <a
-              href={explorerUrl(p.agentWallet, net)}
+              href={explorerUrl(p.agentWallet, net, p.chain)}
               target="_blank"
               rel="noopener noreferrer"
               className="font-mono text-accent-text hover:text-accent-d transition-colors"
@@ -1630,7 +1662,7 @@ function TreasuryStats({
               <div className="flex justify-between">
                 <span className="text-muted">Mint</span>
                 <a
-                  href={explorerUrl(p.mint, p.network)}
+                  href={explorerUrl(p.mint, p.network, p.chain)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-accent-text hover:text-accent-d transition-colors"
@@ -1643,7 +1675,7 @@ function TreasuryStats({
               <div className="flex justify-between">
                 <span className="text-muted">Treasury</span>
                 <a
-                  href={explorerUrl(p.treasuryWallet, p.network)}
+                  href={explorerUrl(p.treasuryWallet, p.network, p.chain)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-accent-text hover:text-accent-d transition-colors"

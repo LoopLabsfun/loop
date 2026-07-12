@@ -52,6 +52,14 @@ comment on column public.projects.treasury_wallet is 'Solana pubkey of the proje
 comment on column public.projects.mint is 'SPL token mint address for this project.';
 comment on column public.projects.network is 'mainnet | devnet — which cluster to read on-chain state from.';
 
+-- multichain: which chain the project's token/treasury live on (docs/multichain-hood.md).
+-- Address columns are reused as-is (base58 on solana, 0x… on hood); treasury_sol /
+-- earned_sol hold NATIVE units (SOL or ETH). `network` only applies to solana rows.
+alter table public.projects
+  add column if not exists chain text not null default 'solana'
+    check (chain in ('solana', 'hood'));
+comment on column public.projects.chain is 'solana | hood — which chain the token/treasury live on. hood = Robinhood Chain (EVM, id 4663).';
+
 -- creator wallet (signature proof)
 alter table public.projects add column if not exists creator_wallet text;
 comment on column public.projects.creator_wallet is 'Base58 pubkey of the wallet that signed the launch proof; null if unproven. Also the destination of the founder fee share.';

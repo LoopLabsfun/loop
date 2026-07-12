@@ -1,5 +1,8 @@
 import { supabase, supabaseAdmin } from "./supabase";
 import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./solana";
+import { getEthBalanceCached, getErc20BalanceCached } from "./chains/hood";
+import { chainOfAddress } from "./chains/registry";
+import type { Chain } from "./chains/types";
 import { withLiveMarket } from "./token-market";
 import { getPrelaunchProjectBySlug } from "./prelaunch-public";
 import { PROJECT_LIST, PROJECTS } from "./projects";
@@ -28,6 +31,9 @@ interface ProjectRow {
   runway: string;
   treasury_wallet: string | null;
   mint: string | null;
+  /** Optional until the `chain` column migration is applied — rows without it
+   *  fall back to address-shape inference (0x… ⇒ hood), else "solana". */
+  chain?: string | null;
   network: string;
   creator_wallet: string | null;
   fee_creator_wallet: string | null;
@@ -44,6 +50,14 @@ interface ProjectRow {
   token_image_url: string | null;
   banner_url: string | null;
   domain: string | null;
+}
+
+/** The row's chain: explicit column first, then address-shape inference for
+ *  rows that predate the column (an 0x… treasury/mint can only be Hood). */
+function rowChain(r: ProjectRow): Chain {
+  if (r.chain === "hood" || r.chain === "solana") return r.chain;
+  const addr = r.treasury_wallet ?? r.mint;
+  return addr && chainOfAddress(addr) === "hood" ? "hood" : "solana";
 }
 
 function rowToProject(r: ProjectRow): Project {
@@ -69,6 +83,7 @@ function rowToProject(r: ProjectRow): Project {
     runway: r.runway,
     treasuryWallet: r.treasury_wallet,
     mint: r.mint,
+    chain: rowChain(r),
     network: r.network === "devnet" ? "devnet" : "mainnet",
     creatorWallet: r.creator_wallet,
     feeCreatorWallet: r.fee_creator_wallet,
@@ -98,6 +113,18 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
   return Promise.all(
     projects.map(async (p) => {
       if (!p.treasuryWallet) return p;
+      // Hood (EVM) projects: native ETH + the project's own ERC-20, read from
+      // the Hood RPC. No balance-history reconstruction yet (needs an indexer
+      // pass over Blockscout — Phase 1 tail in docs/multichain-hood.md).
+      if (p.chain === "hood") {
+        const [live, tokenUi] = await Promise.all([
+          getEthBalanceCached(p.treasuryWallet),
+          p.mint
+            ? getErc20BalanceCached(p.treasuryWallet, p.mint)
+            : Promise.resolve(null),
+        ]);
+        return applyLiveBalance(p, live, tokenUi, null);
+      }
       // Spendable SOL first, so the token holding and the balance trajectory can
       // reuse it (the history then ends on exactly the SOL the card headlines, and
       // we avoid a duplicate balance read). Any read failing leaves that piece off.
@@ -108,34 +135,45 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
           knownLamports: live === null ? undefined : Math.round(live * 1e9),
         }),
       ]);
-      const next: Project = { ...p };
-      if (live !== null) {
-        next.treasurySol = live;
-        next.treasuryLive = true;
-        // Keep the stored snapshot in step with the live balance. The budget gate
-        // (lib/budget.canAffordTick) runs off treasury_sol, and a later read that
-        // fails (RPC blip / Helius rate-limit on the cron's concurrent fan-out)
-        // falls back to that stored value. If the snapshot is stale-0, one failed
-        // read wrongly SLEEPS a funded project — the bug that left build/ploop/fame
-        // dormant. Persist the last-known balance so the fallback is real, not 0.
-        // Service-role write (RLS forbids anon updates); best-effort + throttled to
-        // material moves so it never churns the hot read path or breaks a render.
-        if (supabaseAdmin && Math.abs(live - (p.treasurySol ?? 0)) > 0.0005) {
-          try {
-            await supabaseAdmin
-              .from("projects")
-              .update({ treasury_sol: live })
-              .eq("key", p.key);
-          } catch {
-            /* best-effort — a failed snapshot write must never break the read */
-          }
-        }
-      }
-      if (tokenUi !== null) next.treasuryTokenUi = tokenUi;
-      if (history && history.length) next.treasuryHistory = history;
-      return next;
+      return applyLiveBalance(p, live, tokenUi, history);
     })
   );
+}
+
+/** Overlay a live native-balance read (SOL or ETH — `treasurySol` holds native
+ *  units per the project's chain) + token holding + history onto a project. */
+async function applyLiveBalance(
+  p: Project,
+  live: number | null,
+  tokenUi: number | null,
+  history: { t: number; sol: number }[] | null
+): Promise<Project> {
+  const next: Project = { ...p };
+  if (live !== null) {
+    next.treasurySol = live;
+    next.treasuryLive = true;
+    // Keep the stored snapshot in step with the live balance. The budget gate
+    // (lib/budget.canAffordTick) runs off treasury_sol, and a later read that
+    // fails (RPC blip / Helius rate-limit on the cron's concurrent fan-out)
+    // falls back to that stored value. If the snapshot is stale-0, one failed
+    // read wrongly SLEEPS a funded project — the bug that left build/ploop/fame
+    // dormant. Persist the last-known balance so the fallback is real, not 0.
+    // Service-role write (RLS forbids anon updates); best-effort + throttled to
+    // material moves so it never churns the hot read path or breaks a render.
+    if (supabaseAdmin && Math.abs(live - (p.treasurySol ?? 0)) > 0.0005) {
+      try {
+        await supabaseAdmin
+          .from("projects")
+          .update({ treasury_sol: live })
+          .eq("key", p.key);
+      } catch {
+        /* best-effort — a failed snapshot write must never break the read */
+      }
+    }
+  }
+  if (tokenUi !== null) next.treasuryTokenUi = tokenUi;
+  if (history && history.length) next.treasuryHistory = history;
+  return next;
 }
 
 /**
