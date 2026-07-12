@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
+import { useChain } from "@/lib/chains/chain-context";
 import { launchProjectAction } from "@/lib/actions";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "@/lib/launch-config";
 import { WaitlistForm } from "../WaitlistForm";
@@ -47,6 +48,7 @@ export function LaunchModal({
 }) {
   const wallet = useWallet();
   const { network } = useNetwork();
+  const { chain } = useChain();
   const [step, setStep] = useState<Step>("form");
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -172,7 +174,24 @@ export function LaunchModal({
         </div>
 
         <div className="overflow-y-auto px-[24px] sm:px-[30px] pb-[26px]">
-        {step === "form" && !launchesOpen() && (
+        {/* Hood launches wait on the Hood launcher contract going live
+            (docs/multichain-hood.md Phase 4) — until then, an honest gate. */}
+        {step === "form" && chain === "hood" && (
+          <div className="flex flex-col gap-4 py-1">
+            <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
+              <div className="font-display font-semibold text-[15px] text-ink mb-1">
+                Hood launches open soon
+              </div>
+              <p className="text-[13.5px] text-muted leading-[1.55] m-0">
+                Launching on Hood (Robinhood Chain) opens when the Hood launcher
+                contract is live. Switch the chain to Solana in the nav to launch
+                today, or draft your project below to be first in line.
+              </p>
+            </div>
+            <WaitlistForm compact />
+          </div>
+        )}
+        {step === "form" && chain !== "hood" && !launchesOpen() && (
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
@@ -198,7 +217,7 @@ export function LaunchModal({
           </div>
         )}
 
-        {step === "form" && launchesOpen() && (
+        {step === "form" && chain !== "hood" && launchesOpen() && (
           <div className="flex flex-col gap-[14px]">
             <Field label="Project name">
               <input

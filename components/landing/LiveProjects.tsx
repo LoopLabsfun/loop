@@ -2,11 +2,16 @@ import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
 import { COVERS } from "@/lib/projects";
 import { useNetwork } from "@/lib/network";
+import { useChain } from "@/lib/chains/chain-context";
+import { chainInfo } from "@/lib/chains/registry";
+import type { Chain } from "@/lib/chains/types";
 import { compactUsd } from "@/lib/format";
 import type { Network, Project } from "@/lib/types";
 
 // Projects with no stored network predate the devnet/mainnet split → mainnet.
 const projectNetwork = (p: Project): Network => p.network ?? "mainnet";
+// Projects with no stored chain predate the Solana/Hood split → solana.
+const projectChain = (p: Project): Chain => p.chain ?? "solana";
 
 export function LiveProjects({
   projects,
@@ -21,11 +26,18 @@ export function LiveProjects({
 }) {
   const router = useRouter();
   const { network } = useNetwork();
+  const { chain } = useChain();
 
-  // Show only the projects living on the active cluster. The first client
-  // render uses the same env default the server rendered with, so this stays
-  // hydration-safe; it re-filters once the persisted choice is reconciled.
-  const visible = projects.filter((p) => projectNetwork(p) === network);
+  // Show only the projects living on the active chain (and, on Solana, the
+  // active cluster — Hood is mainnet-only). The first client render uses the
+  // same env default the server rendered with, so this stays hydration-safe;
+  // it re-filters once the persisted choice is reconciled.
+  const visible = projects.filter(
+    (p) =>
+      projectChain(p) === chain &&
+      (chain === "hood" || projectNetwork(p) === network)
+  );
+  const placeLabel = chain === "hood" ? chainInfo("hood").label : network;
 
   return (
     <section id="loop-projects" className="max-w-[1160px] mx-auto px-10 pt-10 pb-7">
@@ -35,16 +47,18 @@ export function LiveProjects({
         </h2>
         <span className="text-[14px] text-faint">
           {visible.length} {visible.length === 1 ? "project" : "projects"} on{" "}
-          {network} · funded by markets
+          {placeLabel} · funded by markets
         </span>
       </div>
       {visible.length === 0 ? (
         <div className="border border-dashed border-line-3 rounded-[16px] py-12 px-6 text-center">
           <p className="font-display font-semibold text-[16px] m-0 mb-1">
-            No projects on {network} yet
+            No projects on {placeLabel} yet
           </p>
           <p className="text-[13.5px] text-muted m-0">
-            Switch the network in the nav to see {network === "devnet" ? "mainnet" : "devnet"} projects, or launch one here.
+            {chain === "hood"
+              ? "The first Hood launches are coming — $LOOP relaunches on Robinhood Chain soon. Switch back to Solana to see live projects."
+              : `Switch the network in the nav to see ${network === "devnet" ? "mainnet" : "devnet"} projects, or launch one here.`}
           </p>
         </div>
       ) : (
@@ -76,10 +90,14 @@ function ProjectCard({
   onClick: () => void;
 }) {
   const launched = !!p.mint;
+  const chain = projectChain(p);
   // Treasury in $ = spendable SOL + the project's OWN token the treasury holds
   // (for LOOP that's tens of millions of $LOOP) — both live from getProjects().
+  // Hood treasuries hold ETH; until an ETH/USD feed lands (Phase 3 in
+  // docs/multichain-hood.md) show the native amount instead of a wrong $.
   const treasuryUsd =
     p.treasurySol * solUsd + (p.treasuryTokenUi ?? 0) * (p.price || 0);
+  const treasuryNative = `${p.treasurySol.toFixed(2)} ${chainInfo(chain).nativeSymbol}`;
   return (
     <button
       onClick={onClick}
@@ -94,9 +112,14 @@ function ProjectCard({
           OFFICIAL
         </span>
       )}
-      {p.network === "devnet" && (
+      {p.network === "devnet" && projectChain(p) === "solana" && (
         <span className="absolute top-3 right-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-warn text-warn bg-canvas/80">
           devnet
+        </span>
+      )}
+      {projectChain(p) === "hood" && (
+        <span className="absolute top-3 right-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-accent-300 text-accent-text bg-canvas/80">
+          Hood
         </span>
       )}
       {p.official ? (
@@ -144,7 +167,7 @@ function ProjectCard({
           <div>
             Treasury
             <div className="font-mono text-[12px] text-ink mt-[2px]">
-              {launched ? compactUsd(treasuryUsd) : `${p.treasurySol.toFixed(2)} SOL`}
+              {launched && chain === "solana" ? compactUsd(treasuryUsd) : treasuryNative}
             </div>
           </div>
           <div>

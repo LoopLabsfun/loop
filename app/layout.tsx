@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { WalletProvider } from "@/lib/wallet";
 import { NetworkProvider } from "@/lib/network";
+import { ChainProvider } from "@/lib/chains/chain-context";
 import { PrivyAuthProvider } from "@/lib/privy";
 import { SessionSync } from "@/components/SessionSync";
 import { SITE_URL } from "@/lib/site";
@@ -93,14 +94,16 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${mono.variable}`}>
       <body className="font-sans text-ink bg-canvas min-h-screen">
-        <NetworkProvider>
-          <PrivyAuthProvider>
-            <WalletProvider>
-              <SessionSync />
-              {children}
-            </WalletProvider>
-          </PrivyAuthProvider>
-        </NetworkProvider>
+        <ChainProvider>
+          <NetworkProvider>
+            <PrivyAuthProvider>
+              <WalletProvider>
+                <SessionSync />
+                {children}
+              </WalletProvider>
+            </PrivyAuthProvider>
+          </NetworkProvider>
+        </ChainProvider>
         <Analytics />
         <SpeedInsights />
       </body>

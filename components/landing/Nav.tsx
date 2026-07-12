@@ -6,6 +6,7 @@ import { LoopMark } from "../LoopMark";
 import { LoopContract } from "../LoopContract";
 import { WalletIcon, GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../AuthIcons";
 import { NavUserActions } from "../NavUserActions";
+import { ChainSwitch } from "../ChainSwitch";
 import { useWallet } from "@/lib/wallet";
 import { EXTERNAL_LINKS } from "@/lib/links";
 import type { Network } from "@/lib/types";
@@ -87,6 +88,7 @@ export function Nav({
           network={loopNetwork}
           className="hidden lg:inline-flex"
         />
+        <ChainSwitch className="hidden md:flex" />
         <button
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Toggle navigation menu"
@@ -202,6 +204,10 @@ export function Nav({
           <div className="flex items-center justify-between py-[11px]">
             <span className="text-[15px] text-body">$LOOP contract</span>
             <LoopContract mint={loopMint} network={loopNetwork} />
+          </div>
+          <div className="flex items-center justify-between py-[11px] border-t border-line-2">
+            <span className="text-[15px] text-body">Chain</span>
+            <ChainSwitch className="flex" />
           </div>
           <div className="flex items-center gap-5 py-[11px] border-t border-line-2">
             {EXTERNAL_LINKS.map((link) => {
