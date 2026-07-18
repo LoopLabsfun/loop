@@ -52,7 +52,9 @@ export async function POST(req: Request) {
 
   if (error) {
     // Migration not applied yet → optimistic mode, everyone is granted.
-    if (/function .*claim_device_task.* does not exist/i.test(error.message)) {
+    // PostgREST phrases it as "Could not find the function … in the schema
+    // cache"; raw Postgres as "function … does not exist".
+    if (/claim_device_task.*(does not exist|in the schema cache)/i.test(error.message)) {
       return NextResponse.json({ granted: true, mode: "optimistic" });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
