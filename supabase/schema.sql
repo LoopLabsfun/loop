@@ -190,6 +190,11 @@ alter table public.launch_waitlist add column if not exists project_wallet_id te
 alter table public.launch_waitlist add column if not exists gate_fee_sig text;
 alter table public.launch_waitlist add column if not exists gate_loop_sig text;
 alter table public.launch_waitlist add column if not exists updated_at timestamptz;
+-- multichain (docs/multichain-hood.md): the chain the draft will LAUNCH on. The
+-- proposer's identity/signing wallet stays a Solana pubkey either way.
+alter table public.launch_waitlist add column if not exists chain text not null default 'solana'
+  check (chain in ('solana', 'hood'));
+comment on column public.launch_waitlist.chain is 'solana | hood — target chain for the eventual token. hood drafts skip SOL wallet provisioning and cannot launch until the Hood launcher is live.';
 -- Active-only uniqueness (2026-06-30): a wallet may hold at most one ACTIVE
 -- (draft/whitelisted) row at a time, but past terminal rows (launched/rejected)
 -- never block a later, distinct pitch — a wallet that already launched one
@@ -776,6 +781,30 @@ create table if not exists public.compute_ledger (
 comment on table public.compute_ledger is 'Per-project compute funding: cumulative provider credit funded (from converted agent-share SOL) minus consumed. balance = credited_usd - consumed_usd (lib/compute-rail.ts). Service-role writes; public reads.';
 alter table public.compute_ledger enable row level security;
 create policy "compute_ledger public read" on public.compute_ledger for select to anon, authenticated using (true);
+
+-- ── device_assists (Loop Compute v1) ─────────────────────────────────────────
+create table if not exists public.device_assists (
+  id bigint generated always as identity primary key,
+  project_key text not null references public.projects(key) on delete cascade,
+  task_id bigint references public.agent_tasks(id) on delete set null,
+  job_id text not null,
+  title text not null,
+  device_id text not null default '',
+  device_name text,
+  complexity text,
+  keywords text[] not null default '{}',
+  prep_brief text not null,
+  result_hash text not null default '',
+  source text not null default 'loop-compute',
+  consumed_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (project_key, job_id)
+);
+comment on table public.device_assists is 'Device-pool prep briefs for agent backlog (Loop Compute). Service-role write; public read.';
+create index if not exists device_assists_project_unread_idx
+  on public.device_assists (project_key, created_at desc) where consumed_at is null;
+alter table public.device_assists enable row level security;
+create policy "device_assists public read" on public.device_assists for select to anon, authenticated using (true);
 
 -- Per-project LAST TICK ATTEMPT (written by the cron BEFORE the heavy E2B build).
 -- lastTickAt() (lib/agent-data) takes the later of this and the newest agent_tasks

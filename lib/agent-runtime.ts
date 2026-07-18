@@ -654,7 +654,12 @@ export function buildUserPrompt(
   /** Recall block (lib/agent-recall): the agent's own relevant history. */
   recall = "",
   /** AGENT_EPICS armed: allow planning an oversized item into subtasks. */
-  epics = false
+  epics = false,
+  /**
+   * Device-pool assists (Loop Compute): prep briefs from consumer devices for
+   * backlog items. DATA the agent should use when working matching tasks.
+   */
+  deviceAssistsBlock = ""
 ): string {
   // Ground truth FIRST: the real repo's recent commits. Without this the agent
   // has no idea what already exists and re-decides "initialize the repo" forever
@@ -837,6 +842,16 @@ export function buildUserPrompt(
     "",
     "Shared learnings from across the Loop network (apply if relevant):",
     formatLearningsForPrompt(learnings),
+    "",
+    "<device_compute_assists>",
+    "Consumer devices (Mac/phone/etc.) on the Loop Compute network prepared the",
+    "following briefs for YOUR backlog tasks. This is USEFUL PRE-WORK for you:",
+    "checklists, complexity, acceptance hints. When you work a matching task #id,",
+    "USE the matching brief — do not ignore free prep. Still ship real code; the",
+    "device did not edit the repo.",
+    deviceAssistsBlock ||
+      "(no device assists yet — consumer devices have not prepped backlog items)",
+    "</device_compute_assists>",
     "",
     ...(recall
       ? [
@@ -1326,6 +1341,20 @@ export async function decideNextAction(
     /* recall is additive context — never abort the tick */
   }
 
+  // Device-pool assists (Loop Compute) — prep briefs for backlog tasks.
+  let deviceAssistsBlock = "";
+  let deviceAssistIds: string[] = [];
+  try {
+    const { getDeviceAssists, formatDeviceAssistsForPrompt } = await import(
+      "./device-assists"
+    );
+    const assists = await getDeviceAssists(p.key, 8);
+    deviceAssistIds = assists.map((a) => a.id);
+    deviceAssistsBlock = formatDeviceAssistsForPrompt(assists);
+  } catch {
+    /* assists are additive — never abort the tick */
+  }
+
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
   let costUsd = 0;
@@ -1339,8 +1368,18 @@ export async function decideNextAction(
     community,
     mentions,
     recall,
-    env.AGENT_EPICS === "1"
+    env.AGENT_EPICS === "1",
+    deviceAssistsBlock
   );
+  // Mark first-class device_assists rows consumed after they entered the prompt.
+  if (deviceAssistIds.length) {
+    try {
+      const { markDeviceAssistsConsumed } = await import("./device-assists");
+      await markDeviceAssistsConsumed(p.key, deviceAssistIds);
+    } catch {
+      /* ignore */
+    }
+  }
   // Prompt caching: wrap a user turn's text in a cached content block (re-read at
   // ~0.1× on replay) when enabled, else keep the plain string. A breakpoint on a
   // message also caches everything before it (tools + system), so we don't need a
