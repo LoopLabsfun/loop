@@ -90,12 +90,17 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
             <div className="flex flex-col gap-[10px]">
               {stats.topContributors.map((c, i) => (
                 <div key={c.device + i} className="flex items-center justify-between font-mono text-[12.5px]">
-                  <span className="text-ink truncate max-w-[60%]">
+                  <span className="text-ink truncate max-w-[55%]">
                     <span className="text-faint mr-2">{i + 1}.</span>
                     {c.device}
                   </span>
                   <span className="text-muted">
                     {fmt(c.assists)} assists
+                    {c.trust != null && c.trust < 1 ? (
+                      <span className="text-[var(--neg)] ml-2">⚠ {Math.round(c.trust * 100)}% trust</span>
+                    ) : c.trust === 1 ? (
+                      <span className="text-[var(--pos)] ml-2">✓ verified</span>
+                    ) : null}
                     {c.hasPayout ? <span className="text-[var(--pos)] ml-2">◆ payout</span> : null}
                   </span>
                 </div>

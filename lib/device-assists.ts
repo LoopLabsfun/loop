@@ -230,7 +230,9 @@ export interface ComputePoolStats {
   contributors: number;
   contributorsWithPayout: number;
   byProject: { projectKey: string; assists: number; devices: number }[];
-  topContributors: { device: string; assists: number; hasPayout: boolean }[];
+  topContributors: { device: string; assists: number; hasPayout: boolean; trust: number | null }[];
+  /** Devices consensus has flagged (trust < 1) — cheat suspects. */
+  flaggedDevices: number;
   lastAssistAt: string | null;
 }
 
@@ -247,6 +249,7 @@ export async function getComputePoolStats(limit = 500): Promise<ComputePoolStats
     contributorsWithPayout: 0,
     byProject: [],
     topContributors: [],
+    flaggedDevices: 0,
     lastAssistAt: null,
   };
   if (!supabase) return empty;
@@ -256,6 +259,15 @@ export async function getComputePoolStats(limit = 500): Promise<ComputePoolStats
     .select("project_key, device_id, device_name, payout_address, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  // Per-device consensus trust (best-effort; table may not exist yet).
+  const trustByLabel = new Map<string, number>();
+  const { data: trustRows } = await supabase
+    .from("device_trust")
+    .select("device_id, device_name, trust");
+  for (const t of (trustRows ?? []) as { device_id: string; device_name: string | null; trust: number }[]) {
+    trustByLabel.set(t.device_name || t.device_id, t.trust);
+  }
 
   if (!error && data && data.length) {
     const rows = data as {
@@ -284,9 +296,10 @@ export async function getComputePoolStats(limit = 500): Promise<ComputePoolStats
         .map(([projectKey, assists]) => ({ projectKey, assists, devices: proj.get(projectKey)?.size ?? 0 }))
         .sort((a, b) => b.assists - a.assists),
       topContributors: Array.from(dev.entries())
-        .map(([device, v]) => ({ device, assists: v.assists, hasPayout: v.payout }))
+        .map(([device, v]) => ({ device, assists: v.assists, hasPayout: v.payout, trust: trustByLabel.get(device) ?? null }))
         .sort((a, b) => b.assists - a.assists)
         .slice(0, 10),
+      flaggedDevices: Array.from(trustByLabel.values()).filter((t) => t < 1).length,
       lastAssistAt: rows[0]?.created_at ?? null,
     };
   }
