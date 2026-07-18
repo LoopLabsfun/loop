@@ -1,30 +1,21 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { authorizeCompute } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
  * Loop Compute pool scheduling: a device claims a backlog task before working
- * so the pool doesn't duplicate effort. Authorized like the assist ingest
- * (COMPUTE_INGEST_SECRET or CRON_SECRET). Atomic via the claim_device_task
- * SQL function; degrades to `granted: true` when the migration isn't applied
- * yet (optimistic mode — the node's already-prepped check still dedupes).
+ * so the pool doesn't duplicate effort. Authorized by the shared ingest secret
+ * OR a per-device token (x-device-token), which pins the claim to its own
+ * deviceId. Atomic via the claim_device_task SQL function; degrades to
+ * `granted: true` when the migration isn't applied yet (optimistic mode).
  */
 
-function authorized(req: Request): boolean {
-  const secret =
-    process.env.COMPUTE_INGEST_SECRET?.trim() || process.env.CRON_SECRET?.trim() || "";
-  if (!secret) return false;
-  const header =
-    req.headers.get("x-compute-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    "";
-  return header === secret;
-}
-
 export async function POST(req: Request) {
-  if (!authorized(req)) {
+  const auth = authorizeCompute(req);
+  if (!auth.ok) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   if (!supabaseAdmin) {
@@ -38,7 +29,7 @@ export async function POST(req: Request) {
   }
   const projectKey = (body.projectKey || "").trim().slice(0, 64);
   const taskId = Number(body.taskId);
-  const deviceId = (body.deviceId || "").trim().slice(0, 128);
+  const deviceId = auth.deviceId ?? (body.deviceId || "").trim().slice(0, 128);
   if (!projectKey || !deviceId || !Number.isFinite(taskId) || taskId <= 0) {
     return NextResponse.json({ error: "projectKey, taskId, deviceId required" }, { status: 400 });
   }

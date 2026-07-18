@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { publishDeviceAssist, getDeviceAssists } from "@/lib/device-assists";
+import { authorizeCompute } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -7,22 +8,11 @@ export const runtime = "nodejs";
 /**
  * Loop Compute ingest + public read of device assists.
  *
- * POST — authorized by COMPUTE_INGEST_SECRET or CRON_SECRET (Bearer or x-compute-secret).
+ * POST — authorized by the shared ingest secret (founder devices / cron) OR a
+ *        per-device token in x-device-token. Token auth pins the write to its
+ *        own deviceId so a public device can't spoof another's identity.
  * GET  — public list for a project (?project=loop&limit=10).
  */
-
-function authorized(req: Request): boolean {
-  const secret =
-    process.env.COMPUTE_INGEST_SECRET?.trim() ||
-    process.env.CRON_SECRET?.trim() ||
-    "";
-  if (!secret) return false;
-  const header =
-    req.headers.get("x-compute-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    "";
-  return header === secret;
-}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -36,7 +26,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!authorized(req)) {
+  const auth = authorizeCompute(req);
+  if (!auth.ok) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   let body: {
@@ -71,12 +62,16 @@ export async function POST(req: Request) {
     );
   }
 
+  // A device token binds the write to its own id; the shared secret trusts the
+  // body. Prevents a public device from publishing under another's identity.
+  const deviceId = auth.deviceId ?? (body.deviceId || "unknown").slice(0, 128);
+
   const result = await publishDeviceAssist({
     projectKey,
     taskId,
     jobId,
     title,
-    deviceId: (body.deviceId || "unknown").slice(0, 128),
+    deviceId,
     deviceName: body.deviceName?.slice(0, 128),
     complexity: body.complexity?.slice(0, 16),
     payoutAddress: body.payoutAddress?.trim().slice(0, 64) || undefined,
