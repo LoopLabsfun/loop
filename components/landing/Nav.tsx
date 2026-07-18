@@ -69,6 +69,9 @@ export function Nav({
           <Link href="/activity" className="hover:text-ink transition-colors">
             Activity
           </Link>
+          <Link href="/compute" className="hover:text-ink transition-colors">
+            Compute
+          </Link>
           <Link href="/docs" className="hover:text-ink transition-colors">
             Docs
           </Link>
@@ -168,6 +171,13 @@ export function Nav({
             className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
           >
             Activity
+          </Link>
+          <Link
+            href="/compute"
+            onClick={() => setMenuOpen(false)}
+            className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
+          >
+            Compute
           </Link>
           <Link
             href="/docs"
