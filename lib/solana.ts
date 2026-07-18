@@ -43,23 +43,36 @@ export function heliusRpcUrl(net: Network): string | null {
   return KEY ? endpoint(net) : null;
 }
 
-// Minimal JSON-RPC helper (same fetch path as getSolBalance). Returns the
-// `result` field, or null on any failure. Server-only — never ships the key.
+// Public cluster RPC — fallback when Helius is unconfigured or out of credits
+// (free-tier "max usage reached" 429s). Reads must degrade to the slower public
+// endpoint, not to null balances that wrongly sleep funded agents.
+function publicEndpoint(net: Network): string {
+  const host = net === "devnet" ? "api.devnet" : "api.mainnet-beta";
+  return `https://${host}.solana.com`;
+}
+
+// Minimal JSON-RPC helper (same fetch path as getSolBalance). Tries Helius
+// first, then the public RPC. Returns the `result` field, or null when every
+// endpoint fails. Server-only — never ships the key.
 async function rpc<T>(net: Network, method: string, params: unknown): Promise<T | null> {
-  if (!KEY) return null;
-  try {
-    const res = await fetch(endpoint(net), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return (json?.result ?? null) as T | null;
-  } catch {
-    return null;
+  const urls = KEY ? [endpoint(net), publicEndpoint(net)] : [publicEndpoint(net)];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (json?.error) continue;
+      return (json?.result ?? null) as T | null;
+    } catch {
+      /* try the next endpoint */
+    }
   }
+  return null;
 }
 
 /**
@@ -399,32 +412,16 @@ export async function getRecentContributions(
   return out;
 }
 
-/** SOL balance for an address, or null if unconfigured / invalid / failed. */
+/** SOL balance for an address, or null if invalid / every RPC failed. */
 export async function getSolBalance(
   address: string,
   net: Network = DEFAULT_NETWORK
 ): Promise<number | null> {
-  if (!KEY || !BASE58.test(address)) return null;
-  try {
-    const res = await fetch(endpoint(net), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getBalance",
-        params: [address],
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const lamports = json?.result?.value;
-    if (typeof lamports !== "number") return null;
-    return lamports / LAMPORTS_PER_SOL;
-  } catch {
-    return null;
-  }
+  if (!BASE58.test(address)) return null;
+  const result = await rpc<{ value?: number }>(net, "getBalance", [address]);
+  const lamports = result?.value;
+  if (typeof lamports !== "number") return null;
+  return lamports / LAMPORTS_PER_SOL;
 }
 
 /**
