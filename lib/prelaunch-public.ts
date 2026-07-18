@@ -2,7 +2,13 @@ import "server-only";
 import { supabaseAdmin } from "./supabase";
 import { totalRaised, backerCount, type Contribution } from "./prefunding";
 import { slugify } from "./launch";
+import type { Chain } from "./chains/types";
 import type { Launchpad, Project, ProjectKey } from "./types";
+
+/** The draft's target chain; tolerate a pre-migration table (no column ⇒ solana). */
+function draftChain(r: Record<string, unknown>): Chain {
+  return r.chain === "hood" ? "hood" : "solana";
+}
 
 // PUBLIC pre-launch board data — the curated (whitelisted) projects opening soon,
 // with their real pre-funding (the "vote with SOL" social proof). Service-role read
@@ -18,12 +24,16 @@ export interface PublicPrelaunch {
   pitch: string | null;
   tokenImageUrl: string | null;
   bannerUrl: string | null;
-  /** Public deposit address — back this launch by sending SOL here (refundable). */
+  /** Public deposit address — back this launch by sending SOL here (refundable).
+   *  Always null for hood drafts (SOL backing doesn't apply; ETH backing arrives
+   *  with the EVM custody phase — docs/multichain-hood.md). */
   projectWallet: string | null;
   /** SOL currently backing it (confirmed contributions). */
   totalSol: number;
   /** Distinct backers. */
   backers: number;
+  /** Target chain the draft launches on. */
+  chain: Chain;
 }
 
 /** Curated pre-launches for the home board (newest-curated first). Best-effort: a
@@ -31,9 +41,12 @@ export interface PublicPrelaunch {
 export async function getPublicPrelaunches(limit = 12): Promise<PublicPrelaunch[]> {
   const sb = supabaseAdmin;
   if (!sb) return [];
+  // select("*") rather than an explicit column list: the service-role read maps
+  // to safe public fields below anyway, and an explicit list would 42703 the
+  // whole query on a table that predates a newer column (e.g. `chain`).
   const { data } = await sb
     .from("launch_waitlist")
-    .select("wallet,name,ticker,prompt,token_image_url,banner_url,project_wallet,status,updated_at")
+    .select("*")
     .eq("status", "whitelisted")
     .not("name", "is", null)
     .order("updated_at", { ascending: false })
@@ -64,6 +77,7 @@ export async function getPublicPrelaunches(limit = 12): Promise<PublicPrelaunch[
     const ledger = byDraft.get(r.wallet as string) ?? [];
     const name = r.name as string;
     const ticker = (r.ticker as string) ?? "";
+    const chain = draftChain(r);
     return {
       name,
       ticker,
@@ -71,9 +85,12 @@ export async function getPublicPrelaunches(limit = 12): Promise<PublicPrelaunch[
       pitch: (r.prompt as string) ?? null,
       tokenImageUrl: (r.token_image_url as string) ?? null,
       bannerUrl: (r.banner_url as string) ?? null,
-      projectWallet: (r.project_wallet as string) ?? null,
+      // Hood drafts never expose a SOL deposit wallet — backing is gated until
+      // EVM custody lands, so the board renders its "backing opens" state.
+      projectWallet: chain === "hood" ? null : ((r.project_wallet as string) ?? null),
       totalSol: totalRaised(ledger),
       backers: backerCount(ledger),
+      chain,
     };
   });
 }
@@ -84,9 +101,11 @@ async function findWhitelistedBySlug(
 ): Promise<Record<string, unknown> | null> {
   const sb = supabaseAdmin;
   if (!sb) return null;
+  // select("*") — same rationale as getPublicPrelaunches (newer columns like
+  // `chain` may not exist yet on an unmigrated table).
   const { data } = await sb
     .from("launch_waitlist")
-    .select("wallet,name,ticker,prompt,token_image_url,banner_url,project_wallet,fee_founder_pct,status,home_repo,home_vercel_url")
+    .select("*")
     .eq("status", "whitelisted")
     .not("name", "is", null);
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -110,7 +129,10 @@ export async function getPrelaunchProjectBySlug(slug: string): Promise<Project |
   const name = r.name as string;
   const ticker = (r.ticker as string) ?? "";
   const prompt = (r.prompt as string) ?? name;
-  const projectWallet = (r.project_wallet as string) ?? null;
+  const chain = draftChain(r);
+  // Hood drafts hide the SOL deposit wallet — the token page then renders its
+  // pre-launch mode WITHOUT the SOL backing card (backing opens with EVM custody).
+  const projectWallet = chain === "hood" ? null : ((r.project_wallet as string) ?? null);
   return {
     key: slug as ProjectKey,
     name,
@@ -138,6 +160,7 @@ export async function getPrelaunchProjectBySlug(slug: string): Promise<Project |
     runway: "pre-launch",
     treasuryWallet: projectWallet,
     mint: null,
+    chain,
     network: "mainnet",
     creatorWallet: null,
     feeFounderPct: (r.fee_founder_pct as number) ?? undefined,

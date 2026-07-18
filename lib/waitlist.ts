@@ -24,6 +24,7 @@ import {
 
 export { IDEA_MAX, NAME_MAX, TICKER_MAX, PROMPT_MAX, REPO_MAX } from "./waitlist-client";
 import { IDEA_MAX, NAME_MAX, PROMPT_MAX, REPO_MAX } from "./waitlist-client";
+import type { Chain } from "./chains/types";
 
 export const URL_MAX = 400;
 
@@ -44,6 +45,10 @@ export interface WaitlistInput {
   feeFounderPct?: number | null;
   prompt?: string | null;
   repo?: string | null;
+  /** Target chain for the eventual token ("solana" | "hood"); anything else ⇒ solana.
+   *  The identity/signing wallet stays Solana either way — this is where the
+   *  project will LAUNCH, not where the proposer signs from. */
+  chain?: string | null;
 }
 
 export interface CleanDraft {
@@ -58,6 +63,7 @@ export interface CleanDraft {
   feeFounderPct: number;
   prompt: string | null;
   repo: string | null;
+  chain: Chain;
 }
 
 export function normalizeEmail(s: unknown): string | null {
@@ -135,6 +141,7 @@ export function validateWaitlist(input: WaitlistInput): { clean?: CleanDraft; er
       feeFounderPct: founder,
       prompt: cap(input.prompt, PROMPT_MAX),
       repo: cap(input.repo, REPO_MAX),
+      chain: input.chain === "hood" ? "hood" : "solana",
     },
   };
 }
@@ -178,6 +185,7 @@ export function adminRecapBody(wallet: string, d: CleanDraft): string {
   return [
     `🚀 Pre-launch request: ${d.name} ($${d.ticker})`,
     "",
+    `Chain: ${d.chain === "hood" ? "Hood (Robinhood Chain)" : "Solana"}`,
     `Build: ${d.prompt ?? "—"}`,
     `Repo: ${d.repo ?? "—"}`,
     `Fee split (founder/agent/platform): ${split.founderPct}/${split.agentPct}/${split.platformPct}`,
@@ -232,6 +240,9 @@ export async function joinWaitlist(
     repo: clean.repo,
     updated_at: new Date().toISOString(),
   };
+  // Target chain rides separately so a pre-`chain`-migration table degrades to
+  // the full draft (minus chain) rather than all the way down to the legacy shape.
+  const chainCol = { chain: clean.chain };
 
   // Update-or-insert keyed by the wallet's ACTIVE row only (draft/whitelisted) —
   // a partial unique index enforces at most one active row per wallet, so
@@ -295,10 +306,17 @@ export async function joinWaitlist(
       ? sb.from("launch_waitlist").update(r).eq("id", activeId)
       : sb.from("launch_waitlist").insert(r);
 
-  let { error: dbErr } = await write({ ...draftRow, ...gateSigs });
-  // 42703 = undefined column → the draft columns aren't migrated yet; degrade to
-  // the legacy shape so the lead is still captured (full data lights up post-migration).
-  if (dbErr && (dbErr.code === "42703" || /column .* does not exist/i.test(dbErr.message))) {
+  const missingColumn = (e: { code?: string; message: string } | null) =>
+    Boolean(e && (e.code === "42703" || /column .* does not exist/i.test(e.message)));
+
+  let { error: dbErr } = await write({ ...draftRow, ...chainCol, ...gateSigs });
+  // 42703 = undefined column → degrade in steps: first drop `chain` (its
+  // migration may not be applied yet), then all the way to the legacy shape so
+  // the lead is still captured (full data lights up post-migration).
+  if (missingColumn(dbErr)) {
+    ({ error: dbErr } = await write({ ...draftRow, ...gateSigs }));
+  }
+  if (missingColumn(dbErr)) {
     ({ error: dbErr } = await write(legacyRow));
   }
   if (dbErr) {
@@ -340,6 +358,8 @@ export interface PrelaunchSummary {
   ticker: string;
   /** draft | whitelisted | launched | rejected */
   status: string;
+  /** Target chain the draft launches on ("solana" | "hood"). */
+  chain: Chain;
   bannerUrl: string | null;
   tokenImageUrl: string | null;
   prompt: string | null;
@@ -369,11 +389,12 @@ export interface PrelaunchSummary {
 export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | null> {
   const sb = supabaseAdmin;
   if (!sb) return null;
+  // select("*") rather than an explicit list — a newer column (e.g. `chain`)
+  // missing from an unmigrated table would otherwise 42703 the whole read and
+  // silently hide the draft.
   const { data } = await sb
     .from("launch_waitlist")
-    .select(
-      "name,ticker,status,banner_url,token_image_url,prompt,fee_founder_pct,x_handle,project_key,home_key,home_repo,home_vercel_url,created_at",
-    )
+    .select("*")
     .eq("wallet", wallet)
     .not("name", "is", null)
     .in("status", ["draft", "whitelisted", "launching"])
@@ -383,6 +404,7 @@ export async function getPrelaunch(wallet: string): Promise<PrelaunchSummary | n
     name: data.name,
     ticker: data.ticker ?? "",
     status: data.status ?? "draft",
+    chain: data.chain === "hood" ? "hood" : "solana",
     bannerUrl: data.banner_url ?? null,
     tokenImageUrl: data.token_image_url ?? null,
     prompt: data.prompt ?? null,

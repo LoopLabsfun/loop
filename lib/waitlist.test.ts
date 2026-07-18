@@ -149,3 +149,19 @@ describe("adminRecapBody", () => {
     expect(b).toContain("Repo: —");
   });
 });
+
+describe("target chain", () => {
+  it("normalizes the chain (anything but hood ⇒ solana)", () => {
+    expect(validateWaitlist({ name: "P", ticker: "P" }).clean?.chain).toBe("solana");
+    expect(validateWaitlist({ name: "P", ticker: "P", chain: "hood" }).clean?.chain).toBe("hood");
+    expect(validateWaitlist({ name: "P", ticker: "P", chain: "devnet" }).clean?.chain).toBe("solana");
+    expect(validateWaitlist({ name: "P", ticker: "P", chain: null }).clean?.chain).toBe("solana");
+  });
+
+  it("threads the chain into the admin recap", () => {
+    const hood = validateWaitlist({ name: "P", ticker: "P", chain: "hood" }).clean!;
+    expect(adminRecapBody(WALLET, hood)).toContain("Chain: Hood (Robinhood Chain)");
+    const sol = validateWaitlist({ name: "P", ticker: "P" }).clean!;
+    expect(adminRecapBody(WALLET, sol)).toContain("Chain: Solana");
+  });
+});

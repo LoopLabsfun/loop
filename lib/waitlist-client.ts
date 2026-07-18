@@ -25,6 +25,8 @@ export interface WaitlistDraft {
   feeFounderPct?: number | null;
   banner?: File | null;
   tokenImage?: File | null;
+  /** Target chain for the eventual token ("solana" | "hood"); omitted ⇒ solana. */
+  chain?: "solana" | "hood" | null;
 }
 
 export interface WaitlistResult {
@@ -64,6 +66,7 @@ export async function apiJoinWaitlist(
     ["xHandle", draft.xHandle],
     ["idea", draft.idea],
     ["referrer", draft.referrer],
+    ["chain", draft.chain],
     ["gateFeeSig", gate?.feeSig],
     ["gateLoopSig", gate?.loopSig],
   ] as const) {

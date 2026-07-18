@@ -13,6 +13,9 @@ import {
   REPO_MAX,
 } from "@/lib/waitlist-client";
 import { clientGate, GATE_LOOP_DECIMALS } from "@/lib/prelaunch-gate-client";
+import { useChain } from "@/lib/chains/chain-context";
+import { chainInfo } from "@/lib/chains/registry";
+import { CHAINS, type Chain } from "@/lib/chains/types";
 
 // Pre-launch a project while public launches are closed. Mirrors the real launch
 // form (name, ticker, prompt, repo, fee split, banner + token image) but saves a
@@ -34,6 +37,14 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
   const [banner, setBanner] = useState<File | null>(null);
   const [tokenImage, setTokenImage] = useState<File | null>(null);
   const [referrer, setReferrer] = useState<string | null>(null);
+  // Target chain for the draft — follows the header's Solana/Hood switch until
+  // the user picks one explicitly here.
+  const { chain: activeChain } = useChain();
+  const [chain, setChain] = useState<Chain>("solana");
+  const [chainTouched, setChainTouched] = useState(false);
+  useEffect(() => {
+    if (!chainTouched) setChain(activeChain);
+  }, [activeChain, chainTouched]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +97,7 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
         feeFounderPct,
         banner,
         tokenImage,
+        chain,
       };
       // First submit (no toll). If the gate is armed and this is a NEW request, the
       // server replies paymentRequired → pay the toll on-chain, then re-submit with
@@ -187,6 +199,33 @@ export function WaitlistForm({ compact = false, onDone }: { compact?: boolean; o
           className="loop-input font-mono uppercase"
           aria-label="Token ticker"
         />
+      </Field>
+
+      <Field label="Launch chain">
+        <div className="flex items-center p-[3px] rounded-[10px] border border-line-3 bg-surface w-fit">
+          {CHAINS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setChain(c);
+                setChainTouched(true);
+              }}
+              aria-pressed={c === chain}
+              className={`font-mono text-[11.5px] px-[10px] py-[5px] rounded-[8px] transition-colors whitespace-nowrap ${
+                c === chain ? "bg-accent text-white" : "text-muted hover:text-ink"
+              }`}
+            >
+              {chainInfo(c).label}
+            </button>
+          ))}
+        </div>
+        {chain === "hood" && (
+          <div className="text-[11px] text-faint mt-[4px]">
+            Hood (Robinhood Chain) launches open soon — your draft holds your spot
+            for the first batch.
+          </div>
+        )}
       </Field>
 
       <div className="grid grid-cols-2 gap-[10px]">

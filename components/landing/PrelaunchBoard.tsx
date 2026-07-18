@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useWallet } from "@/lib/wallet";
+import { useChain } from "@/lib/chains/chain-context";
+import { chainInfo } from "@/lib/chains/registry";
 import type { PublicPrelaunch } from "@/lib/prelaunch-public";
 
 // PRE-LAUNCH BOARD — the social FOMO layer. Curated projects opening soon, with
@@ -16,6 +18,10 @@ export function PrelaunchBoard({
   prelaunches: PublicPrelaunch[];
   onLaunch: () => void;
 }) {
+  // Curated drafts follow the header's Solana/Hood switch, like Live Projects.
+  // Rows synthesized before the chain column exists default to solana.
+  const { chain } = useChain();
+  const visible = prelaunches.filter((p) => (p.chain ?? "solana") === chain);
   return (
     <section id="prelaunch" className="max-w-[1160px] mx-auto px-10 pt-10 pb-7">
       <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
@@ -39,10 +45,12 @@ export function PrelaunchBoard({
         </button>
       </div>
 
-      {prelaunches.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="rounded-[14px] border border-dashed border-line-3 bg-surface-2 px-6 py-10 text-center">
           <div className="font-display font-semibold text-[16px] mb-1">
-            The first batch is being curated
+            {chain === "hood"
+              ? "The first Hood batch is being curated"
+              : "The first batch is being curated"}
           </div>
           <p className="text-[13px] text-muted max-w-[440px] mx-auto mb-4">
             Draft your project — name it, set its token, tell the agent what to build.
@@ -57,7 +65,7 @@ export function PrelaunchBoard({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {prelaunches.map((p) => (
+          {visible.map((p) => (
             <PrelaunchCard key={`${p.name}-${p.ticker}`} p={p} />
           ))}
         </div>
@@ -146,14 +154,23 @@ function PrelaunchCard({ p }: { p: PublicPrelaunch }) {
             {p.name}
           </span>
           <span className="font-mono text-[12px] text-accent-text">${p.ticker}</span>
-          <span className="font-mono text-[9.5px] px-2 py-[2px] rounded-full bg-accent-tint text-accent-text ml-auto">
-            opening soon
+          <span className="ml-auto flex items-center gap-[6px]">
+            {(p.chain ?? "solana") === "hood" && (
+              <span className="font-mono text-[9.5px] px-2 py-[2px] rounded-full border border-accent-300 text-accent-text">
+                Hood
+              </span>
+            )}
+            <span className="font-mono text-[9.5px] px-2 py-[2px] rounded-full bg-accent-tint text-accent-text">
+              opening soon
+            </span>
           </span>
         </Link>
         {p.pitch && <p className="text-[12.5px] text-muted leading-[1.5] line-clamp-2 m-0">{p.pitch}</p>}
 
         <div className="flex items-center gap-3 font-mono text-[12px] mt-1">
-          <span className="text-pos font-semibold tabular-nums">{totalSol} SOL</span>
+          <span className="text-pos font-semibold tabular-nums">
+            {totalSol} {chainInfo(p.chain ?? "solana").nativeSymbol}
+          </span>
           <span className="text-faint">backed</span>
           <span className="text-faint">·</span>
           <span className="text-body tabular-nums">{backers}</span>

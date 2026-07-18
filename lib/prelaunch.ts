@@ -86,6 +86,10 @@ export interface LaunchPlan {
   homeKey: string | null;
   homeRepo: string | null;
   homeVercelUrl: string | null;
+  /** Target chain the draft launches on. The launch path in this module is
+   *  Solana/pump.fun only — approvePrelaunch hard-refuses hood drafts until the
+   *  Hood launcher is wired (docs/multichain-hood.md Phase 4). */
+  chain: "solana" | "hood";
 }
 
 /** Build the launch plan from a wallet's draft, or null if it has none. */
@@ -107,6 +111,7 @@ export async function resolveDraftLaunch(wallet: string): Promise<LaunchPlan | n
     homeKey: d.homeKey,
     homeRepo: d.homeRepo,
     homeVercelUrl: d.homeVercelUrl,
+    chain: d.chain,
   };
 }
 
@@ -309,7 +314,11 @@ export async function setPrelaunchStatus(
     .eq("wallet", wallet)
     .in("status", ["draft", "whitelisted", "launching"]);
   if (status === "whitelisted") {
-    await provisionProjectWallet(wallet); // best-effort
+    // The Privy project wallet is a SOLANA deposit/creator wallet — pointless
+    // (and misleading: it would invite SOL backing) for a draft targeting Hood.
+    // Hood drafts get their EVM wallet with the EVM-custody phase.
+    const draft = await getPrelaunch(wallet);
+    if (draft?.chain !== "hood") await provisionProjectWallet(wallet); // best-effort
     // best-effort — repo + Vercel home, ready before mint. provisionDraftHome
     // shouldn't throw, but whitelisting must never fail because a GitHub/Vercel
     // call (or a future change to that function) did something unexpected.
@@ -746,6 +755,13 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
   if (!plan) throw new Error("No pre-launch draft for that wallet.");
   if (plan.status === "launched" || plan.projectKey) {
     throw new Error(`Already launched → ${plan.projectKey ?? "?"}.`);
+  }
+  // Everything below is Solana-specific (vanity mint, pump.fun create, Helius
+  // confirms). A hood draft must wait for the HoodLauncher launch path.
+  if (plan.chain === "hood") {
+    throw new Error(
+      "This draft targets Hood (Robinhood Chain) — the Hood launch path isn't wired yet (docs/multichain-hood.md Phase 4).",
+    );
   }
   const { ready, checks } = await prelaunchPreflight(plan);
   if (!ready) {

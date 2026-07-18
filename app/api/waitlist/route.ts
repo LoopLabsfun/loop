@@ -76,6 +76,7 @@ export async function POST(req: Request) {
     feeFounderPct: feeRaw == null ? null : Number(feeRaw),
     bannerUrl,
     tokenImageUrl,
+    chain: str(form, "chain"),
   }, {
     // Entry-gate payment sigs (the first submit pays SOL fee + 1M $LOOP). Verified
     // on-chain in joinWaitlist; ignored unless the gate is armed.
