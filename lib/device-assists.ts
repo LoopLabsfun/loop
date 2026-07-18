@@ -224,6 +224,95 @@ export async function publishDeviceAssist(
   return { table, action, taskTouch, error };
 }
 
+export interface ComputePoolStats {
+  source: "device_assists" | "agent_actions" | "none";
+  totalAssists: number;
+  contributors: number;
+  contributorsWithPayout: number;
+  byProject: { projectKey: string; assists: number; devices: number }[];
+  topContributors: { device: string; assists: number; hasPayout: boolean }[];
+  lastAssistAt: string | null;
+}
+
+/**
+ * Public pool stats — makes the device network visible (recruiting surface).
+ * Prefers the first-class table (has device + payout), falls back to the
+ * agent_actions stream (counts only). Read-only, no secrets.
+ */
+export async function getComputePoolStats(limit = 500): Promise<ComputePoolStats> {
+  const empty: ComputePoolStats = {
+    source: "none",
+    totalAssists: 0,
+    contributors: 0,
+    contributorsWithPayout: 0,
+    byProject: [],
+    topContributors: [],
+    lastAssistAt: null,
+  };
+  if (!supabase) return empty;
+
+  const { data, error } = await supabase
+    .from("device_assists")
+    .select("project_key, device_id, device_name, payout_address, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!error && data && data.length) {
+    const rows = data as {
+      project_key: string; device_id: string; device_name: string | null;
+      payout_address: string | null; created_at: string;
+    }[];
+    const proj = new Map<string, Set<string>>();
+    const projCount = new Map<string, number>();
+    const dev = new Map<string, { assists: number; payout: boolean }>();
+    const payoutSet = new Set<string>();
+    for (const r of rows) {
+      const label = r.device_name || r.device_id || "unknown";
+      projCount.set(r.project_key, (projCount.get(r.project_key) ?? 0) + 1);
+      (proj.get(r.project_key) ?? proj.set(r.project_key, new Set()).get(r.project_key)!).add(label);
+      const d = dev.get(label) ?? { assists: 0, payout: false };
+      d.assists++;
+      if (r.payout_address) { d.payout = true; payoutSet.add(label); }
+      dev.set(label, d);
+    }
+    return {
+      source: "device_assists",
+      totalAssists: rows.length,
+      contributors: dev.size,
+      contributorsWithPayout: payoutSet.size,
+      byProject: Array.from(projCount.entries())
+        .map(([projectKey, assists]) => ({ projectKey, assists, devices: proj.get(projectKey)?.size ?? 0 }))
+        .sort((a, b) => b.assists - a.assists),
+      topContributors: Array.from(dev.entries())
+        .map(([device, v]) => ({ device, assists: v.assists, hasPayout: v.payout }))
+        .sort((a, b) => b.assists - a.assists)
+        .slice(0, 10),
+      lastAssistAt: rows[0]?.created_at ?? null,
+    };
+  }
+
+  // Fallback: agent_actions counts only (no device/payout dimension there).
+  const { data: acts } = await supabase
+    .from("agent_actions")
+    .select("project_key, created_at")
+    .like("body", `${ACTION_PREFIX}%`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (!acts || !acts.length) return empty;
+  const rows = acts as { project_key: string; created_at: string }[];
+  const projCount = new Map<string, number>();
+  for (const r of rows) projCount.set(r.project_key, (projCount.get(r.project_key) ?? 0) + 1);
+  return {
+    ...empty,
+    source: "agent_actions",
+    totalAssists: rows.length,
+    byProject: Array.from(projCount.entries())
+      .map(([projectKey, assists]) => ({ projectKey, assists, devices: 0 }))
+      .sort((a, b) => b.assists - a.assists),
+    lastAssistAt: rows[0]?.created_at ?? null,
+  };
+}
+
 /** Mark assists consumed after a tick that used them (best-effort). */
 export async function markDeviceAssistsConsumed(
   projectKey: string,
