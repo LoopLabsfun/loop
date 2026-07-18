@@ -42,7 +42,7 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   const stats = await getMarketStats(mint);
   const [candles, trades, holders, holderCount, supply, agentSol] = await Promise.all([
     stats ? getCandles(stats.pairAddress, tf) : Promise.resolve<Candle[]>([]),
-    stats ? getRecentTrades(stats.pairAddress) : Promise.resolve<Trade[]>([]),
+    stats ? getRecentTrades(stats.pairAddress, 10, mint) : Promise.resolve<Trade[]>([]),
     getTopHoldersCached(mint, net),
     getHolderCountCached(mint, net),
     getTokenSupplyUiCached(mint, net),

@@ -195,18 +195,101 @@ async function fetchOhlcvUncached(
     };
     const list = json.data?.attributes?.ohlcv_list ?? [];
     // GeckoTerminal returns newest-first; the chart wants chronological order.
-    return list
-      .slice()
-      .reverse()
-      .map(([, o, h, l, c]) => ({ o, h, l, c }));
+    return densify(list.slice().reverse(), bucketSeconds(resolution, aggregate), limit);
   } catch {
     return [];
   }
 }
 
-/** Recent trades for a pool, newest-first, mapped to the chart's Trade shape. Memoized. */
-export function getRecentTrades(pair: string, n = 10): Promise<Trade[]> {
-  return memoized(`trades:${pair}:${n}`, (v) => v.length > 0, () => fetchRecentTrades(pair, n));
+function bucketSeconds(resolution: "minute" | "hour" | "day", aggregate: number): number {
+  const unit = resolution === "minute" ? 60 : resolution === "hour" ? 3600 : 86400;
+  return unit * aggregate;
+}
+
+/**
+ * A thin market only produces candles for buckets that actually traded, so a
+ * quiet token renders as 2–3 fat bars — it reads as a bug. Fill the gaps (and
+ * the stretch up to now) with flat candles at the previous close, like every
+ * real charting product, capped at `limit` most-recent buckets.
+ */
+export function densify(rows: number[][], bucketS: number, limit: number): Candle[] {
+  if (rows.length === 0 || bucketS <= 0) return [];
+  const out: { t: number; o: number; h: number; l: number; c: number }[] = [];
+  for (const [t, o, h, l, c] of rows) {
+    const prev = out[out.length - 1];
+    if (prev) {
+      for (let ts = prev.t + bucketS; ts < t && out.length < 5_000; ts += bucketS) {
+        out.push({ t: ts, o: prev.c, h: prev.c, l: prev.c, c: prev.c });
+      }
+    }
+    out.push({ t, o, h, l, c });
+  }
+  // Extend flat to the current bucket so a month-old last trade doesn't render
+  // as the rightmost candle (which reads as "traded just now").
+  const last = out[out.length - 1]!;
+  const nowBucket = Math.floor(Date.now() / 1000 / bucketS) * bucketS;
+  for (let ts = last.t + bucketS; ts <= nowBucket && out.length < 10_000; ts += bucketS) {
+    out.push({ t: ts, o: last.c, h: last.c, l: last.c, c: last.c });
+  }
+  return out.slice(-limit).map(({ o, h, l, c }) => ({ o, h, l, c }));
+}
+
+/**
+ * Recent trades for a pool, newest-first. GeckoTerminal only surfaces *recent*
+ * activity, so a quiet token gets [] — which the UI renders as "No recent
+ * trades" and reads as broken. Fall back to Helius transaction history for the
+ * pool (last swaps whatever their age; the UI shows "30d ago" honestly).
+ */
+export function getRecentTrades(pair: string, n = 10, mint?: string): Promise<Trade[]> {
+  return memoized(`trades:${pair}:${n}:${mint ?? ""}`, (v) => v.length > 0, async () => {
+    const gecko = await fetchRecentTrades(pair, n);
+    if (gecko.length > 0 || !mint) return gecko;
+    return fetchTradesHelius(pair, mint, n);
+  });
+}
+
+/** Last swaps on the pool from Helius enhanced transactions (any age). */
+async function fetchTradesHelius(pair: string, mint: string, n: number): Promise<Trade[]> {
+  const key = process.env.HELIUS_API_KEY;
+  if (!key) return [];
+  try {
+    const res = await fetch(
+      `https://api.helius.xyz/v0/addresses/${pair}/transactions?api-key=${key}&limit=50`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const txs = (await res.json()) as {
+      type?: string;
+      timestamp?: number;
+      tokenTransfers?: { mint?: string; tokenAmount?: number; fromUserAccount?: string; toUserAccount?: string }[];
+      nativeTransfers?: { amount?: number; fromUserAccount?: string; toUserAccount?: string }[];
+    }[];
+    const now = Date.now() / 1000;
+    const out: Trade[] = [];
+    for (const tx of txs) {
+      if (tx.type !== "SWAP") continue;
+      const move = (tx.tokenTransfers ?? []).find((t) => t.mint === mint && (t.tokenAmount ?? 0) > 0);
+      if (!move) continue;
+      // Pool sends tokens to the user → BUY; user sends tokens to the pool → SELL.
+      const buy = move.fromUserAccount === pair;
+      const user = (buy ? move.toUserAccount : move.fromUserAccount) ?? "";
+      // SOL leg: lamports crossing the pool boundary in the opposite direction.
+      const lamports = (tx.nativeTransfers ?? [])
+        .filter((x) => (buy ? x.toUserAccount === pair : x.fromUserAccount === pair))
+        .reduce((s, x) => s + (x.amount ?? 0), 0);
+      out.push({
+        addr: shortAddr(user),
+        side: buy ? "BUY" : "SELL",
+        sol: (lamports / 1e9).toFixed(2),
+        tokens: Math.round(move.tokenAmount ?? 0).toLocaleString("en-US"),
+        ageSeconds: Math.max(0, Math.round(now - (tx.timestamp ?? now))),
+      });
+      if (out.length >= n) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {

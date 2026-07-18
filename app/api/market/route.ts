@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   }
   const [candles, trades] = await Promise.all([
     getCandles(stats.pairAddress, tf),
-    getRecentTrades(stats.pairAddress),
+    getRecentTrades(stats.pairAddress, 10, mint),
   ]);
   return NextResponse.json({ stats, candles, trades });
 }
