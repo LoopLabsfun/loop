@@ -6,6 +6,10 @@ import type { Chain } from "./chains/types";
 // the simulated trade feed (lib/api.ts), which is not yet wired to live data.
 export const SOL_USD = 164;
 
+// Fallback ETH/USD snapshot — the native currency on Hood (Robinhood Chain).
+// Live spot comes from getEthUsd(); this is the failure fallback.
+export const ETH_USD = 3200;
+
 export function usd(n: number): string {
   // Guard non-finite input (NaN/±Infinity) so a bad upstream number renders a
   // clean "0.00" instead of "NaN"/"∞" leaking into the UI — same posture as

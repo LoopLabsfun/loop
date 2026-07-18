@@ -8,6 +8,9 @@ import {
   type MarketStats,
 } from "./market";
 import { getTopHoldersCached, getHolderCountCached, getTokenSupplyUiCached, getSolBalanceCached } from "./solana";
+import { getEthBalanceCached } from "./chains/hood";
+import { getHoodTokenMarket } from "./chains/hood-market";
+import { getEthUsd } from "./price";
 import { compactUsd, compactNum } from "./format";
 
 // Server-side aggregator for a launched token's live market. Combines the
@@ -37,6 +40,18 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   const net = project.network ?? "mainnet";
   if (!mint) {
     return { project, stats: null, candles: [], trades: [], holders: [], agentSol: null };
+  }
+
+  // Hood (Robinhood Chain) tokens: market comes from the bonding curve, not
+  // DexScreener. Holders/candles/trades need Blockscout indexing (a later step),
+  // so those stay empty for now; the agent balance is native ETH.
+  if (project.chain === "hood") {
+    const ethUsd = await getEthUsd();
+    const [{ project: withMarket, stats }, agentEth] = await Promise.all([
+      getHoodTokenMarket(project, ethUsd),
+      project.agentWallet ? getEthBalanceCached(project.agentWallet) : Promise.resolve(null),
+    ]);
+    return { project: withMarket, stats, candles: [], trades: [], holders: [], agentSol: agentEth };
   }
 
   const stats = await getMarketStats(mint);
@@ -105,9 +120,17 @@ async function withLoopProfiles(holders: Holder[]): Promise<Holder[]> {
  * the landing so cards show real numbers. Best-effort: a failure keeps the row.
  */
 export async function withLiveMarket(projects: Project[]): Promise<Project[]> {
+  // ETH/USD is fetched once (cached) only when a Hood project is present, so the
+  // all-Solana path keeps zero extra calls.
+  const hasHood = projects.some((p) => p.chain === "hood" && p.mint);
+  const ethUsd = hasHood ? await getEthUsd() : 0;
   return Promise.all(
     projects.map(async (p) => {
       if (!p.mint) return p;
+      if (p.chain === "hood") {
+        const { project } = await getHoodTokenMarket(p, ethUsd);
+        return project;
+      }
       const stats = await getMarketStats(p.mint);
       return stats ? applyLiveMarket(p, stats, null, null) : p;
     })
