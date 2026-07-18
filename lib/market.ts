@@ -280,7 +280,7 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
       out.push({
         addr: shortAddr(user),
         side: buy ? "BUY" : "SELL",
-        sol: (lamports / 1e9).toFixed(2),
+        sol: fmtSolAmount(lamports / 1e9),
         tokens: Math.round(move.tokenAmount ?? 0).toLocaleString("en-US"),
         ageSeconds: Math.max(0, Math.round(now - (tx.timestamp ?? now))),
       });
@@ -306,7 +306,7 @@ async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {
       return {
         addr: shortAddr(a.tx_from_address),
         side: a.kind === "buy" ? "BUY" : "SELL",
-        sol: sol.toFixed(2),
+        sol: fmtSolAmount(sol),
         tokens: Math.round(tokens).toLocaleString("en-US"),
         ageSeconds: Math.max(0, Math.round((now - Date.parse(a.block_timestamp)) / 1000)),
       } satisfies Trade;
@@ -320,6 +320,11 @@ async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {
 function num(v: unknown): number {
   const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : 0;
   return Number.isFinite(n) ? n : 0;
+}
+
+/** SOL amount for the trades list: 2 decimals normally, 4 for dust. */
+function fmtSolAmount(v: number): string {
+  return v >= 0.1 || v === 0 ? v.toFixed(2) : v.toFixed(4);
 }
 
 function shortAddr(a: string): string {
