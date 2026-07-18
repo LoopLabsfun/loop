@@ -50,6 +50,7 @@ export async function POST(req: Request) {
     keywords?: string[];
     prepBrief?: string;
     resultHash?: string;
+    payoutAddress?: string;
   };
   try {
     body = await req.json();
@@ -78,6 +79,7 @@ export async function POST(req: Request) {
     deviceId: (body.deviceId || "unknown").slice(0, 128),
     deviceName: body.deviceName?.slice(0, 128),
     complexity: body.complexity?.slice(0, 16),
+    payoutAddress: body.payoutAddress?.trim().slice(0, 64) || undefined,
     keywords: Array.isArray(body.keywords) ? body.keywords.map(String).slice(0, 20) : [],
     prepBrief: prepBrief.slice(0, 12000),
     resultHash: body.resultHash?.slice(0, 128),

@@ -143,6 +143,8 @@ export interface PublishDeviceAssistInput {
   keywords?: string[];
   prepBrief: string;
   resultHash?: string;
+  /** Contributor wallet that earns the reward for this assist. */
+  payoutAddress?: string;
 }
 
 /**
@@ -175,6 +177,7 @@ export async function publishDeviceAssist(
       prep_brief: input.prepBrief.slice(0, 12000),
       result_hash: (input.resultHash ?? "").slice(0, 128),
       source: "loop-compute",
+      payout_address: input.payoutAddress?.slice(0, 64) ?? null,
     },
     { onConflict: "project_key,job_id" }
   );
@@ -205,6 +208,17 @@ export async function publishDeviceAssist(
       .eq("id", input.taskId)
       .eq("project_key", input.projectKey);
     if (!uErr) taskTouch = true;
+  }
+
+  // 4) Close the pool claim for this task (best-effort; table may not exist —
+  // supabase-js reports that via `error`, it never throws here)
+  if (input.taskId > 0) {
+    await supabaseAdmin
+      .from("device_job_claims")
+      .update({ completed_at: new Date().toISOString(), assist_job_id: input.jobId })
+      .eq("project_key", input.projectKey)
+      .eq("task_id", input.taskId)
+      .eq("device_id", input.deviceId);
   }
 
   return { table, action, taskTouch, error };
