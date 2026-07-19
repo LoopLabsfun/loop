@@ -50,19 +50,20 @@ export function LiveProjects({
           {placeLabel} · funded by markets
         </span>
       </div>
-      {visible.length === 0 ? (
+      {visible.length === 0 && chain !== "hood" ? (
         <div className="border border-dashed border-line-3 rounded-[16px] py-12 px-6 text-center">
           <p className="font-display font-semibold text-[16px] m-0 mb-1">
             No projects on {placeLabel} yet
           </p>
           <p className="text-[13.5px] text-muted m-0">
-            {chain === "hood"
-              ? "The first Hood launches are coming — $LOOP relaunches on Robinhood Chain soon. Switch back to Solana to see live projects."
-              : `Switch the network in the nav to see ${network === "devnet" ? "mainnet" : "devnet"} projects, or launch one here.`}
+            Switch the network in the nav to see {network === "devnet" ? "mainnet" : "devnet"} projects, or launch one here.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* On Hood, LOOP is the flagship — surfaced as an official "coming
+              soon" card until it relaunches there (non-launched). */}
+          {chain === "hood" && <HoodLoopComingSoon />}
           {visible.map((p) => (
             <ProjectCard
               key={p.key}
@@ -75,6 +76,52 @@ export function LiveProjects({
         </div>
       )}
     </section>
+  );
+}
+
+// Official LOOP surfaced on the Hood view before its relaunch there — a
+// "coming soon" flagship card (non-launched, not clickable) so the Hood tab
+// reads as intentional rather than empty. See docs/multichain-hood.md.
+function HoodLoopComingSoon() {
+  return (
+    <div className="text-left bg-surface rounded-[16px] overflow-hidden relative border-[1.5px] border-accent-300">
+      <span className="absolute top-3 left-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] bg-accent text-white">
+        OFFICIAL
+      </span>
+      <span className="absolute top-3 right-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-accent-300 text-accent-text bg-canvas/80">
+        Hood
+      </span>
+      <div className="h-[120px] flex items-center justify-center bg-accent-tint">
+        <LoopMark width={64} height={38} stroke="var(--accent)" />
+      </div>
+      <div className="p-4">
+        <div className="font-display font-semibold text-[16px]">Loop</div>
+        <div className="font-mono text-[12px] text-accent-text mt-[2px] mb-2">$LOOP</div>
+        <p className="text-[13px] text-muted leading-[1.45] m-0 mb-[14px] min-h-[38px] line-clamp-3">
+          $LOOP relaunches on Robinhood Chain — one project, one agent, one
+          treasury, now funded by two markets. Trading opens when the token goes
+          live on Hood.
+        </p>
+        <div className="grid grid-cols-2 gap-x-[6px] gap-y-[10px] text-[11px] text-faint border-t border-line-4 pt-[10px]">
+          <div>
+            Treasury
+            <div className="font-mono text-[12px] text-ink mt-[2px]">— ETH</div>
+          </div>
+          <div>
+            Market Cap
+            <div className="font-mono text-[12px] text-ink mt-[2px]">—</div>
+          </div>
+          <div>
+            24h Vol
+            <div className="font-mono text-[12px] text-ink mt-[2px]">—</div>
+          </div>
+          <div>
+            Status
+            <div className="font-mono text-[12px] text-accent-text mt-[2px]">◷ Coming soon</div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

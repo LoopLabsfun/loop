@@ -8,6 +8,7 @@ import { WalletIcon, GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../Aut
 import { NavUserActions } from "../NavUserActions";
 import { ChainSwitch } from "../ChainSwitch";
 import { useWallet } from "@/lib/wallet";
+import { useChain } from "@/lib/chains/chain-context";
 import { EXTERNAL_LINKS } from "@/lib/links";
 import type { Network } from "@/lib/types";
 
@@ -37,7 +38,16 @@ export function Nav({
   loopNetwork?: Network;
 }) {
   const wallet = useWallet();
+  const { chain } = useChain();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // The header CA follows the active chain: on Solana it's the $LOOP mint; on
+  // Hood it's the relaunched $LOOP ERC-20 (NEXT_PUBLIC_HOOD_LOOP_MINT, null until
+  // launched → the "coming to Hood" placeholder).
+  const caMint =
+    chain === "hood"
+      ? process.env.NEXT_PUBLIC_HOOD_LOOP_MINT || null
+      : loopMint;
 
   return (
     <nav className="sticky top-0 z-50 flex items-center justify-between gap-3 px-4 sm:px-10 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
@@ -69,9 +79,6 @@ export function Nav({
           <Link href="/activity" className="hover:text-ink transition-colors">
             Activity
           </Link>
-          <Link href="/compute" className="hover:text-ink transition-colors">
-            Compute
-          </Link>
           <Link href="/docs" className="hover:text-ink transition-colors">
             Docs
           </Link>
@@ -87,8 +94,9 @@ export function Nav({
       <div className="flex items-center gap-[10px] flex-none">
         {/* Official $LOOP CA — auto-appears at mainnet, reserved spot before */}
         <LoopContract
-          mint={loopMint}
+          mint={caMint}
           network={loopNetwork}
+          chain={chain}
           className="hidden lg:inline-flex"
         />
         <ChainSwitch className="hidden md:flex" />
@@ -173,13 +181,6 @@ export function Nav({
             Activity
           </Link>
           <Link
-            href="/compute"
-            onClick={() => setMenuOpen(false)}
-            className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
-          >
-            Compute
-          </Link>
-          <Link
             href="/docs"
             onClick={() => setMenuOpen(false)}
             className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
@@ -213,7 +214,7 @@ export function Nav({
           </Link>
           <div className="flex items-center justify-between py-[11px]">
             <span className="text-[15px] text-body">$LOOP contract</span>
-            <LoopContract mint={loopMint} network={loopNetwork} />
+            <LoopContract mint={caMint} network={loopNetwork} chain={chain} />
           </div>
           <div className="flex items-center justify-between py-[11px] border-t border-line-2">
             <span className="text-[15px] text-body">Chain</span>
