@@ -62,7 +62,7 @@ export function truncateAtWord(text: string, max: number): string {
   const cut = text.slice(0, max);
   const lastSpace = cut.lastIndexOf(" ");
   const kept = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
-  return `${kept.replace(/[\s,;:—–-]+$/, "")}…`;
+  return `${kept.replace(/[\s.,;:—–-]+$/, "")}…`;
 }
 
 /** app/layout.jsx — metadata (title/description/OG) driven by the project's

@@ -17,6 +17,11 @@ describe("truncateAtWord", () => {
     const out = truncateAtWord("marketing and outreach — all funded by its treasury", 27);
     expect(out).toBe("marketing and outreach…");
   });
+
+  it("never emits a period glued to the ellipsis", () => {
+    const out = truncateAtWord("outgrow the National Debt. Governments print money.", 31);
+    expect(out).toBe("outgrow the National Debt…");
+  });
 });
 
 describe("loopTokenUrl / loopOgImageUrl", () => {
