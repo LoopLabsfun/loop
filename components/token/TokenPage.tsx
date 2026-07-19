@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { LoopMark } from "../LoopMark";
 import { NavUserActions } from "../NavUserActions";
 import { ChainSwitch } from "../ChainSwitch";
+import { HoodSwapCard } from "./HoodSwapCard";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -867,26 +868,11 @@ function SwapCard({
     setAmt(buy ? max.toFixed(3) : String(Math.floor(max)));
   };
 
-  // Hood projects: on-curve trading arrives with the Hood launcher wiring
-  // (docs/multichain-hood.md Phase 3) — until then, an honest disabled state.
+  // Hood projects trade on the HoodLauncher bonding curve via an EVM wallet —
+  // a distinct card (HoodSwapCard) that self-gates to an "opens soon" state
+  // until the launcher is deployed. See docs/multichain-hood.md Phase 3.
   if (p.chain === "hood") {
-    return (
-      <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
-        <div className="font-display font-semibold text-[15px] mb-1">
-          Trade {p.ticker}
-        </div>
-        <div className="text-[12.5px] text-muted leading-[1.5] mb-3">
-          {p.ticker} lives on Hood (Robinhood Chain). Trading from this page
-          opens when the Hood launcher goes live.
-        </div>
-        <button
-          disabled
-          className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[11px] bg-surface-3 text-faint cursor-not-allowed"
-        >
-          Hood trading opens soon
-        </button>
-      </div>
-    );
+    return <HoodSwapCard project={p} />;
   }
 
   // Pre-launch: no token to trade yet. Show an honest disabled state instead of
