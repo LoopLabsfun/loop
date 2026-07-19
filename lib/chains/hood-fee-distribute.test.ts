@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   MIN_TRANSFER_WEI,
   executeHoodFeeDistribution,
+  hoodPlatformWallet,
   planHoodFeeDistribution,
   splitFeesWei,
 } from "./hood-fee-distribute";
@@ -78,6 +79,21 @@ describe("planHoodFeeDistribution", () => {
       agentWallet: AGENT,
     });
     expect(plan.transfers).toHaveLength(0);
+  });
+});
+
+describe("hoodPlatformWallet", () => {
+  const ORIG = { ...process.env };
+  afterEach(() => {
+    process.env = { ...ORIG };
+  });
+  it("reads a valid EVM address, else null", () => {
+    process.env.HOOD_PLATFORM_WALLET = PLATFORM;
+    expect(hoodPlatformWallet()).toBe(PLATFORM);
+    process.env.HOOD_PLATFORM_WALLET = "not-an-address";
+    expect(hoodPlatformWallet()).toBeNull();
+    delete process.env.HOOD_PLATFORM_WALLET;
+    expect(hoodPlatformWallet()).toBeNull();
   });
 });
 

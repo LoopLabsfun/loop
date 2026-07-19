@@ -30,6 +30,7 @@ interface Draft {
   homeKey: string | null;
   homeRepo: string | null;
   homeVercelUrl: string | null;
+  chain: "solana" | "hood";
   createdAt: string;
 }
 interface Funding {
@@ -644,8 +645,20 @@ function PrelaunchPanel() {
       ) : activeDrafts.length === 0 && (liveProjects?.length ?? 0) === 0 ? (
         <Empty>No drafts yet.</Empty>
       ) : (
-        <div className="flex flex-col gap-3">
-          {activeDrafts.map((d) => {
+        <div className="flex flex-col gap-4">
+          {(["solana", "hood"] as const).map((groupChain) => {
+            // Drafts are separated by target chain (Solana / Hood) so curation of
+            // each launch surface is unambiguous. Pre-`chain`-migration rows
+            // default to solana.
+            const group = activeDrafts.filter((d) => (d.chain ?? "solana") === groupChain);
+            if (!group.length) return null;
+            return (
+              <div key={groupChain} className="flex flex-col gap-2">
+                <div className="text-[11px] font-mono uppercase tracking-wide text-faint">
+                  {groupChain === "hood" ? "Hood · Robinhood Chain" : "Solana"} · {group.length}
+                </div>
+                <div className="flex flex-col gap-3">
+          {group.map((d) => {
             const isBusy = (a: string) => busy === `${d.wallet}:${a}`;
             const launched = d.status === "launched";
             const p = pf[d.wallet];
@@ -659,6 +672,9 @@ function PrelaunchPanel() {
                   <span className="font-display font-semibold text-[14px]">{d.name}</span>
                   <span className="font-mono text-[12px] text-accent-text">${d.ticker}</span>
                   <span className="font-mono text-[10px] px-2 py-[2px] rounded-full bg-surface-2 text-muted">{d.status}</span>
+                  {d.chain === "hood" && (
+                    <span className="font-mono text-[10px] px-2 py-[2px] rounded-full border border-accent-300 text-accent-text">Hood</span>
+                  )}
                   <span className="font-mono text-[11px] text-faint ml-auto">{shortAddr(d.wallet)}</span>
                 </div>
                 <div className="text-[11.5px] text-faint font-mono mt-1">
@@ -776,6 +792,10 @@ function PrelaunchPanel() {
                     </a>
                   )
                 )}
+              </div>
+            );
+          })}
+                </div>
               </div>
             );
           })}

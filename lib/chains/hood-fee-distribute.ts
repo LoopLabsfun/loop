@@ -17,6 +17,14 @@ import { agentWalletConfigured } from "../agent-wallet";
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 
+/** The Hood treasury / platform wallet (HOOD_PLATFORM_WALLET) — where the
+ *  launcher's withdrawFees() lands and the platform 5% leg is destined. Null when
+ *  unset or malformed. */
+export function hoodPlatformWallet(): string | null {
+  const w = (process.env.HOOD_PLATFORM_WALLET || "").trim();
+  return EVM.test(w) ? w : null;
+}
+
 /** Default dust floor — never build a transfer below this (gas would dominate).
  *  0.0001 ETH; cheap on an L2 but still a sane floor. */
 export const MIN_TRANSFER_WEI = BigInt("100000000000000");

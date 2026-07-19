@@ -261,6 +261,8 @@ export interface PrelaunchListItem {
   homeKey: string | null;
   homeRepo: string | null;
   homeVercelUrl: string | null;
+  /** Target chain the draft launches on ("solana" | "hood"). */
+  chain: "solana" | "hood";
   createdAt: string;
 }
 
@@ -268,11 +270,11 @@ export interface PrelaunchListItem {
 export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]> {
   const sb = supabaseAdmin;
   if (!sb) return [];
+  // select("*") rather than an explicit list so a newer column (chain) missing
+  // from an unmigrated table doesn't 42703 the whole admin query.
   const { data } = await sb
     .from("launch_waitlist")
-    .select(
-      "wallet,name,ticker,status,email,x_handle,prompt,repo,banner_url,token_image_url,fee_founder_pct,project_key,project_wallet,home_key,home_repo,home_vercel_url,created_at",
-    )
+    .select("*")
     .not("name", "is", null)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -293,6 +295,7 @@ export async function listPrelaunches(limit = 100): Promise<PrelaunchListItem[]>
     homeKey: (r.home_key as string) ?? null,
     homeRepo: (r.home_repo as string) ?? null,
     homeVercelUrl: (r.home_vercel_url as string) ?? null,
+    chain: r.chain === "hood" ? "hood" : "solana",
     createdAt: r.created_at as string,
   }));
 }
