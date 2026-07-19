@@ -15,7 +15,7 @@ import "server-only";
 // later for signing without storing Privy's wallet id.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PRIVY_BASE = "https://api.privy.io/v1";
+export const PRIVY_BASE = "https://api.privy.io/v1";
 
 export function agentWalletConfigured(): boolean {
   return Boolean(process.env.PRIVY_APP_ID && process.env.PRIVY_APP_SECRET);
@@ -26,7 +26,9 @@ export function walletExternalId(projectKey: string): string {
   return `loop-agent-${projectKey}`.slice(0, 64);
 }
 
-function authHeaders(): Record<string, string> {
+/** Basic-auth + app-id headers for Privy's REST API (read at call time). Shared
+ *  with the Hood EVM agent-wallet module. */
+export function privyAuthHeaders(): Record<string, string> {
   const id = process.env.PRIVY_APP_ID as string;
   const secret = process.env.PRIVY_APP_SECRET as string;
   return {
@@ -64,7 +66,7 @@ export async function provisionAgentWallet(
 
   const res = await fetch(`${PRIVY_BASE}/wallets`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: privyAuthHeaders(),
     cache: "no-store",
     body: JSON.stringify({
       chain_type: "solana",
@@ -94,7 +96,7 @@ export async function getAgentWallet(
   const url = `${PRIVY_BASE}/wallets?external_id=${encodeURIComponent(
     walletExternalId(projectKey)
   )}`;
-  const res = await fetch(url, { headers: authHeaders(), cache: "no-store" });
+  const res = await fetch(url, { headers: privyAuthHeaders(), cache: "no-store" });
   if (!res.ok) return null;
   const json = (await res.json()) as { data?: Array<{ id: string; address: string }> };
   const w = json.data?.[0];
@@ -125,7 +127,7 @@ export async function privySignAndSendSolanaTx(
   }
   const res = await fetch(`${PRIVY_BASE}/wallets/${walletId}/rpc`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: privyAuthHeaders(),
     cache: "no-store",
     body: JSON.stringify({
       method: "signAndSendTransaction",
@@ -161,7 +163,7 @@ export async function privySignSolanaTx(walletId: string, base64Tx: string): Pro
   }
   const res = await fetch(`${PRIVY_BASE}/wallets/${walletId}/rpc`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: privyAuthHeaders(),
     cache: "no-store",
     body: JSON.stringify({
       method: "signTransaction",
