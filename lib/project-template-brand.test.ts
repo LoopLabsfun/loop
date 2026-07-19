@@ -1,7 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { brandedLayoutJsx, brandedPageJsx, loopTokenUrl, loopOgImageUrl } from "./project-template-brand";
+import { brandedLayoutJsx, brandedPageJsx, loopTokenUrl, loopOgImageUrl, truncateAtWord } from "./project-template-brand";
 
 const BRAND = { key: "forge", name: "MEMEFORGE", ticker: "FORGE", description: "An AI meme factory.", tokenImageUrl: "https://x.com/logo.png" };
+
+describe("truncateAtWord", () => {
+  it("returns short text untouched, no ellipsis", () => {
+    expect(truncateAtWord("An AI meme factory.", 300)).toBe("An AI meme factory.");
+  });
+
+  it("never cuts mid-word and marks the drop with an ellipsis", () => {
+    const out = truncateAtWord("outgrow the U.S. National Debt forever", 33);
+    expect(out).toBe("outgrow the U.S. National Debt…");
+  });
+
+  it("strips a dangling dash/comma left at the boundary", () => {
+    const out = truncateAtWord("marketing and outreach — all funded by its treasury", 27);
+    expect(out).toBe("marketing and outreach…");
+  });
+});
 
 describe("loopTokenUrl / loopOgImageUrl", () => {
   it("point at the project's own token page + the shared dynamic OG image", () => {

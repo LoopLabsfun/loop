@@ -54,11 +54,22 @@ export function loopOgImageUrl(key: string): string {
   return `${SITE_URL}/token-og?p=${key}`;
 }
 
+/** Cap a pitch without ever cutting mid-word: truncate at the last word
+ *  boundary before `max` and add an ellipsis only when something was dropped.
+ *  A raw slice shipped "outgrow the U.S. Natio" on real launch pages. */
+export function truncateAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const kept = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${kept.replace(/[\s,;:—–-]+$/, "")}…`;
+}
+
 /** app/layout.jsx — metadata (title/description/OG) driven by the project's
  *  real identity, pointed at the shared dynamic OG image. */
 export function brandedLayoutJsx(b: ProjectBrand): string {
   const title = `${b.name} (${b.ticker})`;
-  const desc = (b.description || `Built autonomously by its AI agent on Loop.`).slice(0, 300);
+  const desc = truncateAtWord(b.description || `Built autonomously by its AI agent on Loop.`, 300);
   const og = loopOgImageUrl(b.key);
   return [
     `export const metadata = {`,
@@ -93,7 +104,7 @@ export function brandedLayoutJsx(b: ProjectBrand): string {
  *  uploaded), name + ticker, the pitch, and a link back to the project's Loop
  *  token page. Replaced wholesale once the agent starts shipping real pages. */
 export function brandedPageJsx(b: ProjectBrand): string {
-  const desc = (b.description || `This project is built, shipped and funded by its own AI agent.`).slice(0, 280);
+  const desc = truncateAtWord(b.description || `This project is built, shipped and funded by its own AI agent.`, 600);
   const tokenUrl = loopTokenUrl(b.key);
   const logo = b.tokenImageUrl
     ? [
