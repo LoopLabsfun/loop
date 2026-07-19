@@ -3,6 +3,7 @@
 import { useChain } from "@/lib/chains/chain-context";
 import { chainInfo } from "@/lib/chains/registry";
 import { CHAINS } from "@/lib/chains/types";
+import { HoodMark } from "./HoodMark";
 
 /**
  * The header's Solana / Hood segmented switch. Sets the app-wide chain mode
@@ -24,12 +25,13 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
             key={c}
             onClick={() => setChain(c)}
             aria-pressed={active}
-            className={`font-mono text-[11.5px] px-[10px] py-[5px] rounded-[8px] transition-colors whitespace-nowrap ${
+            className={`inline-flex items-center gap-[5px] font-mono text-[11.5px] px-[10px] py-[5px] rounded-[8px] transition-colors whitespace-nowrap ${
               active
                 ? "bg-accent text-white"
                 : "text-muted hover:text-ink"
             }`}
           >
+            {c === "hood" && <HoodMark size={12} />}
             {chainInfo(c).label}
           </button>
         );

@@ -1,5 +1,6 @@
 import { useRouter } from "next/navigation";
 import { LoopMark } from "../LoopMark";
+import { HoodMark } from "../HoodMark";
 import { COVERS } from "@/lib/projects";
 import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
@@ -88,8 +89,9 @@ function HoodLoopComingSoon() {
       <span className="absolute top-3 left-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] bg-accent text-white">
         OFFICIAL
       </span>
-      <span className="absolute top-3 right-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-accent-300 text-accent-text bg-canvas/80">
-        Hood
+      <span className="absolute top-3 right-3 z-[1] inline-flex items-center gap-[5px] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] border border-accent-300 text-accent-text bg-canvas/80">
+        <HoodMark size={12} />
+        Robinhood Chain
       </span>
       <div className="h-[120px] flex items-center justify-center bg-accent-tint">
         <LoopMark width={64} height={38} stroke="var(--accent)" />

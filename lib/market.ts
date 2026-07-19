@@ -214,24 +214,24 @@ function bucketSeconds(resolution: "minute" | "hour" | "day", aggregate: number)
  */
 export function densify(rows: number[][], bucketS: number, limit: number): Candle[] {
   if (rows.length === 0 || bucketS <= 0) return [];
-  const out: { t: number; o: number; h: number; l: number; c: number }[] = [];
-  for (const [t, o, h, l, c] of rows) {
+  const out: Required<Candle>[] = [];
+  for (const [t, o, h, l, c, v = 0] of rows) {
     const prev = out[out.length - 1];
     if (prev) {
       for (let ts = prev.t + bucketS; ts < t && out.length < 5_000; ts += bucketS) {
-        out.push({ t: ts, o: prev.c, h: prev.c, l: prev.c, c: prev.c });
+        out.push({ t: ts, o: prev.c, h: prev.c, l: prev.c, c: prev.c, v: 0 });
       }
     }
-    out.push({ t, o, h, l, c });
+    out.push({ t, o, h, l, c, v });
   }
   // Extend flat to the current bucket so a month-old last trade doesn't render
   // as the rightmost candle (which reads as "traded just now").
   const last = out[out.length - 1]!;
   const nowBucket = Math.floor(Date.now() / 1000 / bucketS) * bucketS;
   for (let ts = last.t + bucketS; ts <= nowBucket && out.length < 10_000; ts += bucketS) {
-    out.push({ t: ts, o: last.c, h: last.c, l: last.c, c: last.c });
+    out.push({ t: ts, o: last.c, h: last.c, l: last.c, c: last.c, v: 0 });
   }
-  return out.slice(-limit).map(({ o, h, l, c }) => ({ o, h, l, c }));
+  return out.slice(-limit);
 }
 
 /**
@@ -260,6 +260,7 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
     if (!res.ok) return [];
     const txs = (await res.json()) as {
       type?: string;
+      signature?: string;
       timestamp?: number;
       tokenTransfers?: { mint?: string; tokenAmount?: number; fromUserAccount?: string; toUserAccount?: string }[];
       nativeTransfers?: { amount?: number; fromUserAccount?: string; toUserAccount?: string }[];
@@ -279,10 +280,12 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
         .reduce((s, x) => s + (x.amount ?? 0), 0);
       out.push({
         addr: shortAddr(user),
+        fullAddr: user || undefined,
         side: buy ? "BUY" : "SELL",
         sol: fmtSolAmount(lamports / 1e9),
         tokens: Math.round(move.tokenAmount ?? 0).toLocaleString("en-US"),
         ageSeconds: Math.max(0, Math.round(now - (tx.timestamp ?? now))),
+        sig: tx.signature,
       });
       if (out.length >= n) break;
     }
@@ -303,12 +306,17 @@ async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {
       const fromSol = a.from_token_address === SOL_MINT;
       const sol = num(fromSol ? a.from_token_amount : a.to_token_amount);
       const tokens = num(fromSol ? a.to_token_amount : a.from_token_amount);
+      // Per-token USD price of the token side of the swap (Gecko quotes both legs).
+      const priceUsd = num(fromSol ? a.price_to_in_usd : a.price_from_in_usd) || undefined;
       return {
         addr: shortAddr(a.tx_from_address),
+        fullAddr: a.tx_from_address || undefined,
         side: a.kind === "buy" ? "BUY" : "SELL",
         sol: fmtSolAmount(sol),
         tokens: Math.round(tokens).toLocaleString("en-US"),
         ageSeconds: Math.max(0, Math.round((now - Date.parse(a.block_timestamp)) / 1000)),
+        sig: a.tx_hash,
+        priceUsd,
       } satisfies Trade;
     });
   } catch {
@@ -345,10 +353,14 @@ interface DexPair {
 }
 
 interface GeckoTrade {
+  tx_hash?: string;
   tx_from_address: string;
   kind: "buy" | "sell";
   from_token_amount: string;
   to_token_amount: string;
   from_token_address: string;
+  /** Per-token USD price of each swap leg (GeckoTerminal quotes both). */
+  price_from_in_usd?: string;
+  price_to_in_usd?: string;
   block_timestamp: string;
 }

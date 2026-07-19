@@ -148,6 +148,12 @@ export interface Trade {
   sol: string;
   tokens: string;
   ageSeconds: number;
+  /** Full trader address — links the row to the explorer. Absent on simulated data. */
+  fullAddr?: string;
+  /** Transaction hash/signature — links the row to the on-chain tx. */
+  sig?: string;
+  /** Per-token USD price at execution, when the source provides it. */
+  priceUsd?: number;
 }
 
 export interface Candle {
@@ -155,6 +161,10 @@ export interface Candle {
   h: number;
   l: number;
   c: number;
+  /** Bucket open time (unix seconds). Absent on simulated data. */
+  t?: number;
+  /** Traded volume in USD for the bucket (0 for gap-filled candles). */
+  v?: number;
 }
 
 /** Live market stats for a launched token (USD throughout). */

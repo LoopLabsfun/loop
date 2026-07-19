@@ -9,6 +9,8 @@ import { HoodSwapCard } from "./HoodSwapCard";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
+import { useChain } from "@/lib/chains/chain-context";
+import { ChainMismatchPanel } from "./ChainMismatchPanel";
 import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { buildSwapTx } from "@/lib/pump";
@@ -112,6 +114,27 @@ export function TokenPage({
   // Honest liveness: relative time of the agent's current focus (when the building
   // task started, else when the next item was queued). undefined ⇒ omit.
   const heroTaskAt = heroTask?.at;
+
+  // Header chain switch vs. this project's chain: a Solana chart/trades under a
+  // "Hood" header would read as live Hood data. When they diverge, render an
+  // honest chain state instead of the market panels ("coming soon" for official
+  // LOOP pre-relaunch; a switch-back path for everything else).
+  const { chain: activeChain, setChain, ready: chainReady } = useChain();
+  const projectChain = p.chain ?? "solana";
+  if (chainReady && activeChain !== projectChain) {
+    return (
+      <InspectorProvider project={p}>
+        <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
+        <main>
+          <ChainMismatchPanel
+            project={p}
+            activeChain={activeChain}
+            onSwitchBack={() => setChain(projectChain)}
+          />
+        </main>
+      </InspectorProvider>
+    );
+  }
 
   return (
     <InspectorProvider project={p}>
@@ -296,25 +319,53 @@ export function TokenPage({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
+                <div className="grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
                   <span>ACCOUNT</span>
                   <span>TYPE</span>
+                  <span>PRICE</span>
                   <span>SOL</span>
                   <span>TOKENS</span>
-                  <span className="text-right">AGE</span>
+                  <span className="text-right">AGE · TX</span>
                 </div>
                 {trades.map((t, i) => (
                   <div
-                    key={i}
-                    className="grid grid-cols-[1fr_1fr_1fr_1fr_0.8fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
+                    key={t.sig ?? i}
+                    className="grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
                   >
-                    <span className="text-muted">{t.addr}</span>
+                    {t.fullAddr ? (
+                      <a
+                        href={explorerUrl(t.fullAddr, p.network === "devnet" ? "devnet" : "mainnet", p.chain ?? "solana")}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-muted hover:text-accent-text no-underline"
+                        title={t.fullAddr}
+                      >
+                        {t.addr}
+                      </a>
+                    ) : (
+                      <span className="text-muted">{t.addr}</span>
+                    )}
                     <span style={{ color: t.side === "BUY" ? "var(--pos)" : "var(--neg)" }}>
                       {t.side}
                     </span>
+                    <span className="text-muted">{t.priceUsd != null ? fmtPrice(t.priceUsd) : "—"}</span>
                     <span>{t.sol}</span>
                     <span className="text-muted">{t.tokens}</span>
-                    <span className="text-faint text-right">{shortAge(t.ageSeconds)} ago</span>
+                    <span className="text-faint text-right">
+                      {t.sig ? (
+                        <a
+                          href={explorerTx(t.sig, p.network === "devnet" ? "devnet" : "mainnet", p.chain ?? "solana")}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-faint hover:text-accent-text no-underline"
+                          title="View transaction on the explorer"
+                        >
+                          {shortAge(t.ageSeconds)} ago ↗
+                        </a>
+                      ) : (
+                        <>{shortAge(t.ageSeconds)} ago</>
+                      )}
+                    </span>
                   </div>
                 ))}
               </>
