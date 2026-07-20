@@ -69,7 +69,7 @@ export function Nav({
           collapses into the hamburger below xl — the controls stay heavy on
           Hood (CA + chain switch + EVM wallet), so the full menu only fits on
           wide screens. */}
-      <div className="flex-1 min-w-0 hidden xl:flex items-center justify-center gap-6 text-[14px] text-body overflow-hidden">
+      <div className="flex-1 min-w-0 hidden min-[1360px]:flex items-center justify-center gap-6 text-[14px] text-body overflow-hidden">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -100,7 +100,7 @@ export function Nav({
       </div>
 
       {/* Spacer keeps the controls pinned right when the menu is collapsed (<xl) */}
-      <div className="flex-1 xl:hidden" />
+      <div className="flex-1 min-[1360px]:hidden" />
 
       <div className="flex items-center gap-[10px] flex-none">
         {/* Official $LOOP CA — auto-appears at mainnet, reserved spot before */}
@@ -115,7 +115,7 @@ export function Nav({
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Toggle navigation menu"
           aria-expanded={menuOpen}
-          className="xl:hidden w-[38px] h-[38px] flex-none flex items-center justify-center rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+          className="min-[1360px]:hidden w-[38px] h-[38px] flex-none flex items-center justify-center rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             {menuOpen ? (
@@ -151,7 +151,7 @@ export function Nav({
       </div>
 
       {menuOpen && (
-        <div className="xl:hidden absolute top-full left-0 right-0 bg-canvas border-b border-line shadow-[0_12px_28px_-16px_rgba(22,19,26,0.18)] flex flex-col px-4 py-2 animate-fadeInFast">
+        <div className="min-[1360px]:hidden absolute top-full left-0 right-0 bg-canvas border-b border-line shadow-[0_12px_28px_-16px_rgba(22,19,26,0.18)] flex flex-col px-4 py-2 animate-fadeInFast">
           {SECTIONS.map((s) => (
             <button
               key={s.id}

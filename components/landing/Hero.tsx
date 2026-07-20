@@ -327,8 +327,17 @@ function TreasuryCard({
         {usd(totalUsd)}
       </div>
       <div className="mt-[6px] mb-4">
+        {/* One treasury, two markets: both taps always listed so the Hood view
+            never reads as "the treasury is in SOL" — the ETH line shows its
+            pre-launch state until $LOOP is live on Hood. */}
         <div className="font-mono text-[13px] text-faint">
-          {sol(engine.balance)} SOL spendable
+          {sol(engine.balance)} SOL spendable <span className="text-faint/60">· Solana</span>
+        </div>
+        <div className="font-mono text-[12px] text-faint mt-[5px]">
+          {process.env.NEXT_PUBLIC_HOOD_LOOP_MINT ? "" : "— "}ETH{" "}
+          <span className="text-faint/60">
+            · Hood{process.env.NEXT_PUBLIC_HOOD_LOOP_MINT ? "" : " (coming soon)"}
+          </span>
         </div>
         {hasToken ? (
           <div className="font-mono text-[12px] text-faint mt-[5px]">
