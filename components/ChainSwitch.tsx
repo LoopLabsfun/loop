@@ -26,6 +26,7 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
             key={c}
             onClick={() => setChain(c)}
             aria-pressed={active}
+            aria-label={`Switch to ${chainInfo(c).label}`}
             className={`inline-flex items-center gap-[5px] font-mono text-[11.5px] px-[10px] py-[5px] rounded-[8px] transition-colors whitespace-nowrap ${
               active
                 ? "bg-accent text-white"
