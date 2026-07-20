@@ -89,7 +89,7 @@ export function Nav({
           Docs
         </Link>
         <Link href="/bridge" className="hover:text-ink transition-colors">
-          Bridge
+          Swap
         </Link>
         <Link
           href="/token?p=loop"
@@ -190,7 +190,7 @@ export function Nav({
             onClick={() => setMenuOpen(false)}
             className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
           >
-            Bridge
+            Swap
           </Link>
           {wallet.connected && (
             <>

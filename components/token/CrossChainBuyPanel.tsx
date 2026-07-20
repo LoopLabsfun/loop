@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { useWallet } from "@/lib/wallet";
 import type { useHoodWallet } from "@/lib/chains/hood-wallet";
 import { parseUnits } from "@/lib/chains/units";
@@ -171,19 +172,17 @@ export function CrossChainBuyPanel({
         )}
       </div>
 
-      <a
-        href="https://relay.link/bridge"
-        target="_blank"
-        rel="noopener noreferrer"
+      <Link
+        href="/bridge"
         className={`block text-center font-display font-semibold text-[15px] py-[13px] rounded-[11px] transition-opacity ${
           combined ? "bg-accent text-white hover:opacity-90" : "bg-surface-3 text-faint pointer-events-none"
         }`}
       >
-        Bridge &amp; buy with SOL ↗
-      </a>
+        Bridge &amp; buy with SOL →
+      </Link>
       <div className="mt-[10px] text-[11px] text-faint text-center leading-[1.5]">
-        Pay in SOL, receive {tokenSymbol} on Hood · bridged via Relay with your own
-        wallets, never custodial
+        Pay in SOL, receive {tokenSymbol} on Hood · bridged &amp; executed in-app
+        with your own wallets, never custodial
       </div>
     </div>
   );

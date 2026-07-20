@@ -7,14 +7,18 @@
 
 import { useMemo } from "react";
 import {
+  AddressLookupTableAccount,
   clusterApiUrl,
   Connection,
   LAMPORTS_PER_SOL,
   PublicKey,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
+  TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { hexToBytes, type RelaySvmInstruction } from "./relay-execute";
 import {
   ConnectionProvider,
   WalletProvider as AdapterWalletProvider,
@@ -180,6 +184,15 @@ export interface WalletState {
    */
   sendSwapTx: (txBytes: Uint8Array) => Promise<string>;
   /**
+   * Build, sign, and send a v0 transaction from Relay deposit instructions +
+   * address-lookup tables — the SVM leg of an in-app cross-chain swap. Resolves
+   * with the signature; throws if no wallet is connected.
+   */
+  sendInstructions: (
+    instructions: RelaySvmInstruction[],
+    altAddresses?: string[]
+  ) => Promise<string>;
+  /**
    * Transfer `uiAmount` of an SPL token (`mint`, with `decimals`) from the
    * connected wallet to `to` on the active cluster, creating the destination ATA
    * if it's missing. Used to charge $LOOP for an agent chat message (the boost
@@ -260,6 +273,45 @@ export function useWallet(): WalletState {
       throw new Error("Connect a wallet first");
     }
     const tx = VersionedTransaction.deserialize(txBytes);
+    const signature = await sendTransaction(tx, connection);
+    await confirmByPolling(connection, signature);
+    return signature;
+  };
+
+  // Build + sign a v0 transaction from Relay's deposit instructions (the SVM
+  // leg of an in-app cross-chain swap). Loads the address-lookup tables, compiles
+  // to a VersionedTransaction with the connected wallet as fee payer, and sends.
+  const sendInstructions = async (
+    instructions: RelaySvmInstruction[],
+    altAddresses: string[] = []
+  ): Promise<string> => {
+    if (!publicKey || !sendTransaction) {
+      throw new Error("Connect a wallet first");
+    }
+    const ixs = instructions.map(
+      (ix) =>
+        new TransactionInstruction({
+          programId: new PublicKey(ix.programId),
+          keys: ix.keys.map((k) => ({
+            pubkey: new PublicKey(k.pubkey),
+            isSigner: k.isSigner,
+            isWritable: k.isWritable,
+          })),
+          data: Buffer.from(hexToBytes(ix.data)),
+        })
+    );
+    const alts: AddressLookupTableAccount[] = [];
+    for (const addr of altAddresses) {
+      const res = await connection.getAddressLookupTable(new PublicKey(addr));
+      if (res.value) alts.push(res.value);
+    }
+    const { blockhash } = await connection.getLatestBlockhash();
+    const msg = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: ixs,
+    }).compileToV0Message(alts);
+    const tx = new VersionedTransaction(msg);
     const signature = await sendTransaction(tx, connection);
     await confirmByPolling(connection, signature);
     return signature;
@@ -402,6 +454,7 @@ export function useWallet(): WalletState {
     signComputeEnrollProof,
     sendSol,
     sendSwapTx,
+    sendInstructions,
     sendSplToken,
     getSolBalance,
     getSplBalance,

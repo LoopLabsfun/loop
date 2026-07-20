@@ -40,6 +40,8 @@ export interface BridgeQuoteInput {
   fromCurrency?: string;
   /** Token address on toChain; defaults to native. */
   toCurrency?: string;
+  /** Slippage tolerance in basis points (e.g. 100 = 1%). Omit for Relay's auto. */
+  slippageBps?: number;
 }
 
 export interface RelayQuoteRequest {
@@ -51,10 +53,11 @@ export interface RelayQuoteRequest {
   destinationCurrency: string;
   amount: string;
   tradeType: "EXACT_INPUT";
+  slippageTolerance?: string;
 }
 
 export function buildRelayQuoteRequest(input: BridgeQuoteInput): RelayQuoteRequest {
-  return {
+  const req: RelayQuoteRequest = {
     user: input.user,
     recipient: input.recipient,
     originChainId: relayChainId(input.fromChain),
@@ -64,6 +67,10 @@ export function buildRelayQuoteRequest(input: BridgeQuoteInput): RelayQuoteReque
     amount: input.amount,
     tradeType: "EXACT_INPUT",
   };
+  if (input.slippageBps != null && Number.isFinite(input.slippageBps)) {
+    req.slippageTolerance = String(Math.max(0, Math.min(10000, Math.round(input.slippageBps))));
+  }
+  return req;
 }
 
 // --- response normalisation ------------------------------------------------

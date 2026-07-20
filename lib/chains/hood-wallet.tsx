@@ -71,6 +71,9 @@ export interface HoodWalletState {
     minOutWei: bigint,
     valueWei: bigint
   ) => Promise<string>;
+  /** eth_sendTransaction with pre-mapped params (Relay deposit — EVM leg of an
+   *  in-app cross-chain swap). Resolves with the tx hash. */
+  sendRawTx: (params: Record<string, string>) => Promise<string>;
 }
 
 export function useHoodWallet(): HoodWalletState {
@@ -232,6 +235,21 @@ export function useHoodWallet(): HoodWalletState {
     [sendTx]
   );
 
+  // Send a Relay deposit tx (already mapped to eth_sendTransaction params). The
+  // `from` is forced to the connected account so a stale quote can't redirect it.
+  const sendRawTx = useCallback(
+    async (params: Record<string, string>): Promise<string> => {
+      const p = injected();
+      if (!p) throw new Error("No EVM wallet found.");
+      if (!address) throw new Error("Connect your wallet first.");
+      return (await p.request({
+        method: "eth_sendTransaction",
+        params: [{ ...params, from: address }],
+      })) as string;
+    },
+    [address]
+  );
+
   return useMemo(
     () => ({
       available,
@@ -247,7 +265,8 @@ export function useHoodWallet(): HoodWalletState {
       buy,
       sell,
       createToken,
+      sendRawTx,
     }),
-    [available, address, chainId, connect, switchToHood, getEthBalance, quoteBuy, quoteSell, buy, sell, createToken]
+    [available, address, chainId, connect, switchToHood, getEthBalance, quoteBuy, quoteSell, buy, sell, createToken, sendRawTx]
   );
 }
