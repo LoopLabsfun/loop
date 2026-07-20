@@ -46,7 +46,10 @@ export async function sendTelegramMessage(
   chatId: string | number,
   text: string,
   /** Optional forum topic id — routes the message into a specific group topic. */
-  messageThreadId?: number
+  messageThreadId?: number,
+  /** Parse mode — defaults to MarkdownV2 (unchanged for existing callers). The
+   *  buybot posts HTML (safer for links + $ values). */
+  parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
 ): Promise<SendResult> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return { ok: false, skipped: true };
@@ -58,7 +61,7 @@ export async function sendTelegramMessage(
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: "MarkdownV2",
+        parse_mode: parseMode,
         disable_web_page_preview: true,
         ...(messageThreadId ? { message_thread_id: messageThreadId } : {}),
       }),
