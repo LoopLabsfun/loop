@@ -4,6 +4,7 @@ import { useChain } from "@/lib/chains/chain-context";
 import { chainInfo } from "@/lib/chains/registry";
 import { CHAINS } from "@/lib/chains/types";
 import { HoodMark } from "./HoodMark";
+import { SolMark } from "./SolMark";
 
 /**
  * The header's Solana / Hood segmented switch. Sets the app-wide chain mode
@@ -31,7 +32,7 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
                 : "text-muted hover:text-ink"
             }`}
           >
-            {c === "hood" && <HoodMark size={12} />}
+            {c === "hood" ? <HoodMark size={12} /> : <SolMark size={12} />}
             {chainInfo(c).label}
           </button>
         );

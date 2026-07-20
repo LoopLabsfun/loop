@@ -64,7 +64,11 @@ export function LiveProjects({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* On Hood, LOOP is the flagship — surfaced as an official "coming
               soon" card until it relaunches there (non-launched). */}
-          {chain === "hood" && <HoodLoopComingSoon />}
+          {chain === "hood" && (
+            <HoodLoopComingSoon
+              description={projects.find((p) => p.key === "loop")?.description}
+            />
+          )}
           {visible.map((p) => (
             <ProjectCard
               key={p.key}
@@ -83,7 +87,7 @@ export function LiveProjects({
 // Official LOOP surfaced on the Hood view before its relaunch there — a
 // "coming soon" flagship card (non-launched, not clickable) so the Hood tab
 // reads as intentional rather than empty. See docs/multichain-hood.md.
-function HoodLoopComingSoon() {
+function HoodLoopComingSoon({ description }: { description?: string }) {
   return (
     <div className="text-left bg-surface rounded-[16px] overflow-hidden relative border-[1.5px] border-accent-300">
       <span className="absolute top-3 left-3 z-[1] font-mono text-[10.5px] px-[9px] py-1 rounded-[6px] bg-accent text-white">
@@ -100,9 +104,8 @@ function HoodLoopComingSoon() {
         <div className="font-display font-semibold text-[16px]">Loop</div>
         <div className="font-mono text-[12px] text-accent-text mt-[2px] mb-2">$LOOP</div>
         <p className="text-[13px] text-muted leading-[1.45] m-0 mb-[14px] min-h-[38px] line-clamp-3">
-          $LOOP relaunches on Robinhood Chain — one project, one agent, one
-          treasury, now funded by two markets. Trading opens when the token goes
-          live on Hood.
+          {description ??
+            "The platform that builds itself — an AI agent funded by its own token, shipping in public."}
         </p>
         <div className="grid grid-cols-2 gap-x-[6px] gap-y-[10px] text-[11px] text-faint border-t border-line-4 pt-[10px]">
           <div>

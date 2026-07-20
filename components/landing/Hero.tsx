@@ -1,4 +1,6 @@
 import { LoopMarkAnimated } from "../LoopMark";
+import { HoodMark } from "../HoodMark";
+import { useChain } from "@/lib/chains/chain-context";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import type { Network } from "@/lib/types";
 import type { AgentTask } from "@/lib/agent";
@@ -90,11 +92,7 @@ export function Hero({
               ✓ {shippedCount} tasks shipped by the agent
             </p>
           )}
-          <div className="flex items-center gap-[18px] text-[13px] text-faint">
-            <span>Built on</span>
-            <SolanaLogo />
-            <PumpFunLogo />
-          </div>
+          <BuiltOn />
         </div>
 
         <TreasuryCard
@@ -111,6 +109,40 @@ export function Hero({
         />
       </div>
     </section>
+  );
+}
+
+// The "Built on" strip follows the header's chain switch: Solana + Pump.fun in
+// Solana mode, the Robinhood Chain lockup in Hood mode — never both at once.
+function BuiltOn() {
+  const { chain } = useChain();
+  return (
+    <div className="flex items-center gap-[18px] text-[13px] text-faint">
+      <span>Built on</span>
+      {chain === "hood" ? (
+        <RobinhoodLogo />
+      ) : (
+        <>
+          <SolanaLogo />
+          <PumpFunLogo />
+        </>
+      )}
+    </div>
+  );
+}
+
+function RobinhoodLogo() {
+  return (
+    <span
+      className="inline-flex items-center gap-[7px]"
+      role="img"
+      aria-label="Robinhood Chain"
+    >
+      <HoodMark size={17} />
+      <span className="font-display font-bold text-[15px] tracking-[-0.02em] text-ink">
+        Robinhood Chain
+      </span>
+    </span>
   );
 }
 
