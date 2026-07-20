@@ -101,7 +101,9 @@ function HoodLoopComingSoon({ description }: { description?: string }) {
         <LoopMark width={64} height={38} stroke="var(--accent)" />
       </div>
       <div className="p-4">
-        <div className="font-display font-semibold text-[16px]">Loop</div>
+        {/* Name matches the Solana token exactly ("LOOP", not "Loop") — one
+            token identity across both chains. */}
+        <div className="font-display font-semibold text-[16px]">LOOP</div>
         <div className="font-mono text-[12px] text-accent-text mt-[2px] mb-2">$LOOP</div>
         <p className="text-[13px] text-muted leading-[1.45] m-0 mb-[14px] min-h-[38px] line-clamp-3">
           {description ??
