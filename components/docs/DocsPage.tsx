@@ -102,7 +102,7 @@ export function DocsPage() {
             <Steps
               steps={[
                 ["Launch a project", "Submit a name, a vision, and an initial prompt for the agent."],
-                ["A token is created", "Loop launches the token on Pump.fun."],
+                ["A token is created", "Loop launches the token — on Pump.fun (Solana) or the Loop launcher on Robinhood Chain."],
                 ["Rewards connect", "Creator rewards are routed into the project's treasury wallet."],
                 ["The AI starts building", "An agent codes in the cloud, on the treasury's budget."],
                 ["Traders fund it", "Trading activity generates fees that refill the treasury."],
@@ -329,7 +329,11 @@ export function DocsPage() {
             />
             <Faq
               q="Which chains and launchpads?"
-              a="Solana at launch, via Pump.fun. More launchpads (Bags, Believe, Bonk, LaunchLab, Meteora) over time."
+              a="Dual-chain: Solana (via Pump.fun) and Robinhood Chain — 'Hood' — via Loop's own bonding-curve launcher (the header switch picks the active chain; $LOOP is relaunching there). More launchpads (Bags, Believe, Bonk, LaunchLab, Meteora) over time."
+            />
+            <Faq
+              q="What is the Compute pool?"
+              a="Loop Compute turns idle consumer devices into workers for the project agents. The beta client is the /compute page itself: connect a wallet, sign once, and your browser claims real backlog items, prepares briefs locally, and submits them — the server re-verifies every result, and assists are credited to your wallet."
             />
           </Section>
 
