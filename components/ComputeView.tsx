@@ -5,6 +5,7 @@ import { LoopMark } from "./LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { NavUserActions } from "./NavUserActions";
 import { shortAge } from "@/lib/format";
+import { BrowserNode } from "./compute/BrowserNode";
 import type { ComputePoolStats } from "@/lib/device-assists";
 
 // The /compute page: Loop's device pool made visible. Consumer devices (Macs,
@@ -43,6 +44,9 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
             backlog work on-device, no datacenter. {lastAgo ? `Last assist ${lastAgo} ago.` : ""}
           </p>
         </div>
+
+        {/* The beta client — the browser is the node */}
+        <BrowserNode />
 
         {/* Headline stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">

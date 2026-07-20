@@ -55,6 +55,14 @@ export function verifyDeviceToken(token: string | null | undefined): string | nu
   return timingSafeEqual(expected, got) ? deviceId : null;
 }
 
+/** Constant-time string compare — a plain === leaks the match length/timing. */
+function secretsEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 export type ComputeAuth =
   | { ok: true; kind: "secret"; deviceId: null }
   | { ok: true; kind: "device-token"; deviceId: string }
@@ -73,7 +81,7 @@ export function authorizeCompute(req: Request): ComputeAuth {
     req.headers.get("x-compute-secret") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     "";
-  if (secret && header && header === secret) {
+  if (secret && header && secretsEqual(header, secret)) {
     return { ok: true, kind: "secret", deviceId: null };
   }
   const deviceId = verifyDeviceToken(req.headers.get("x-device-token"));

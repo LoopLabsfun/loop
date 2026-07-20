@@ -34,6 +34,7 @@ import { buildLaunchMessage } from "./launch-message";
 import { buildAdminMessage } from "./admin-message";
 import { buildProfileMessage } from "./profile-message";
 import { buildWaitlistMessage } from "./waitlist-message";
+import { buildComputeEnrollMessage } from "./compute-message";
 import { toBaseUnits, TOKEN_DECIMALS, buildChatMessage } from "./chat";
 import { buildDirectiveMessage } from "./directives";
 import { buildStakeMessage } from "./staking";
@@ -161,6 +162,9 @@ export interface WalletState {
   /** Sign the canonical waitlist message for `wallet` to pre-launch a project (the
    *  server also checks pubkey === wallet). null if unsupported. */
   signWaitlistProof: (wallet: string) => Promise<LaunchProof | null>;
+  /** Sign the canonical compute-enroll message for `wallet` to join the device
+   *  pool (the server also checks pubkey === wallet). null if unsupported. */
+  signComputeEnrollProof: (wallet: string) => Promise<LaunchProof | null>;
   /**
    * Send `sol` SOL from the connected wallet to `to` on the active cluster
    * (a plain SystemProgram.transfer — used for project donations). Resolves
@@ -378,6 +382,9 @@ export function useWallet(): WalletState {
   const signWaitlistProof = (wallet: string): Promise<LaunchProof | null> =>
     signProof(buildWaitlistMessage(wallet, Date.now()));
 
+  const signComputeEnrollProof = (wallet: string): Promise<LaunchProof | null> =>
+    signProof(buildComputeEnrollMessage(wallet, Date.now()));
+
   return {
     connected,
     address,
@@ -392,6 +399,7 @@ export function useWallet(): WalletState {
     signAdminProof,
     signProfileProof,
     signWaitlistProof,
+    signComputeEnrollProof,
     sendSol,
     sendSwapTx,
     sendSplToken,

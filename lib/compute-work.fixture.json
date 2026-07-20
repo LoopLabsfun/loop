@@ -1,0 +1,51 @@
+{
+  "payload": {
+    "kind": "agent_assist",
+    "projectKey": "loop",
+    "taskId": 116,
+    "title": "Add a 'View on explorer' deep-link to each on-chain action in ProjectWallet",
+    "detail": "Holders should be able to verify every treasury movement themselves. Each row in the ProjectWallet on-chain action list should link to solscan for the tx. Keep the api read-only and test the mobile layout of the wallet panel.",
+    "status": "todo",
+    "priority": 7,
+    "category": "feature",
+    "repo": null
+  },
+  "result": {
+    "taskId": 116,
+    "projectKey": "loop",
+    "title": "Add a 'View on explorer' deep-link to each on-chain action in ProjectWallet",
+    "prepBrief": "## Agent assist brief — loop task #116\n\n**Title:** Add a 'View on explorer' deep-link to each on-chain action in ProjectWallet\n**Priority:** 7 · **Complexity:** M (~90m)\n**Keywords:** each, on-chain, action, projectwallet, add, view, explorer, deep-link\n\n### Detail\nHolders should be able to verify every treasury movement themselves. Each row in the ProjectWallet on-chain action list should link to solscan for the tx. Keep the api read-only and test the mobile layout of the wallet panel.\n\n### Checklist\n1. Clarify success criteria for: Add a 'View on explorer' deep-link to each on-chain action in ProjectWallet\n2. Read related code / existing UI before editing\n3. Implement smallest shippable change\n4. Add or update tests / typecheck\n5. Verify on local or preview\n6. Double-check money-path guardrails (no unguarded transfers)\n7. Check mobile + desktop layout\n\n### Acceptance hints\n- Must include automated test\n- Must improve holder-facing honesty\n- Must work on small screens\n- Must keep public API read-only safe\n\n_Prepared by Loop Compute device for the project agent._",
+    "keywords": [
+      "each",
+      "on-chain",
+      "action",
+      "projectwallet",
+      "add",
+      "view",
+      "explorer",
+      "deep-link"
+    ],
+    "checklist": [
+      "Clarify success criteria for: Add a 'View on explorer' deep-link to each on-chain action in ProjectWallet",
+      "Read related code / existing UI before editing",
+      "Implement smallest shippable change",
+      "Add or update tests / typecheck",
+      "Verify on local or preview",
+      "Double-check money-path guardrails (no unguarded transfers)",
+      "Check mobile + desktop layout"
+    ],
+    "complexity": "M",
+    "estimateMinutes": 90,
+    "wordCount": 50,
+    "detailHash": "0a1f3cb31b8bf1e6c3c85f563905e5f5e0b916348667c2d27b742414ab7cd4d0",
+    "acceptanceHints": [
+      "Must include automated test",
+      "Must improve holder-facing honesty",
+      "Must work on small screens",
+      "Must keep public API read-only safe"
+    ],
+    "processedAt": "",
+    "deviceNote": ""
+  },
+  "resultHash": "046dfcbcf568870378bf88fce609d1f8c6a936f5a410e193e384018eb3e1df7c"
+}
