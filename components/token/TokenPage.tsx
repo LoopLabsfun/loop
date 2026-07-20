@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { LoopMark } from "../LoopMark";
 import { NavUserActions } from "../NavUserActions";
 import { ChainSwitch } from "../ChainSwitch";
+import { ChainWalletButton } from "../ChainWalletButton";
 import { HoodSwapCard } from "./HoodSwapCard";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
@@ -499,13 +500,11 @@ function TokenNav({
           ← All projects
         </Link>
         <NavUserActions messagesHidden />
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
-        >
-          {connected && <span className="w-[7px] h-[7px] rounded-full bg-pos-bright inline-block" />}
-          {walletLabel}
-        </button>
+        <ChainWalletButton
+          solConnected={connected}
+          solLabel={walletLabel}
+          onSolToggle={onToggle}
+        />
       </div>
     </nav>
   );

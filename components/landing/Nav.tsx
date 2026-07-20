@@ -4,9 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { LoopContract } from "../LoopContract";
-import { WalletIcon, GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../AuthIcons";
+import { GitHubIcon, XIcon, TelegramIcon, DiscordIcon } from "../AuthIcons";
 import { NavUserActions } from "../NavUserActions";
 import { ChainSwitch } from "../ChainSwitch";
+import { ChainWalletButton } from "../ChainWalletButton";
 import { useWallet } from "@/lib/wallet";
 import { useChain } from "@/lib/chains/chain-context";
 import { EXTERNAL_LINKS } from "@/lib/links";
@@ -132,24 +133,11 @@ export function Nav({
           <span className="hidden sm:inline">Launch a Project</span>
         </button>
         <NavUserActions messagesHidden />
-        <button
-          onClick={wallet.toggle}
-          className="flex items-center gap-[7px] font-mono text-[13px] px-3 sm:px-4 py-[9px] rounded-[10px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors whitespace-nowrap"
-        >
-          {wallet.connected ? (
-            <span className="inline-block w-[7px] h-[7px] rounded-full bg-pos-bright" />
-          ) : (
-            <WalletIcon size={14} className="text-muted" />
-          )}
-          {wallet.connected ? (
-            wallet.label
-          ) : (
-            <>
-              <span className="sm:hidden">Connect</span>
-              <span className="hidden sm:inline">Connect Wallet</span>
-            </>
-          )}
-        </button>
+        <ChainWalletButton
+          solConnected={wallet.connected}
+          solLabel={wallet.label}
+          onSolToggle={wallet.toggle}
+        />
       </div>
 
       {menuOpen && (
