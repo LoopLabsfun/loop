@@ -129,7 +129,7 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
               Explore projects
             </Link>
             <a
-              href="https://looplabs.fun/api/compute/stats"
+              href="/api/compute/stats"
               className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors text-muted"
             >
               Pool API
