@@ -462,7 +462,8 @@ function ShareButton() {
           strokeLinejoin="round"
         />
       </svg>
-      <span className={copied ? "text-pos" : undefined}>
+      {/* Icon-only below sm — frees nav width for the ticker + chain switch. */}
+      <span className={`${copied ? "text-pos " : ""}hidden sm:inline`}>
         {copied ? "Copied" : "Share"}
       </span>
     </button>
@@ -485,13 +486,15 @@ function TokenNav({
       <div className="flex items-center gap-[10px] sm:gap-[14px] min-w-0">
         <Link href="/" className="flex items-center gap-[10px] text-ink flex-none">
           <LoopMark width={30} height={18} />
-          <span className="font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
+          {/* Wordmark yields to the chain switch on phones — mark + ticker
+              already identify the page. */}
+          <span className="hidden sm:inline font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
         </Link>
-        <span className="text-line-hover">/</span>
+        <span className="hidden sm:inline text-line-hover">/</span>
         <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
       </div>
       <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
-        <ChainSwitch className="hidden md:flex" />
+        <ChainSwitch className="flex" />
         <ShareButton />
         <Link
           href="/"

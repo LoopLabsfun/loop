@@ -100,7 +100,7 @@ export function Nav({
           chain={chain}
           className="hidden lg:inline-flex"
         />
-        <ChainSwitch className="hidden md:flex" />
+        <ChainSwitch className="flex" />
         <button
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Toggle navigation menu"

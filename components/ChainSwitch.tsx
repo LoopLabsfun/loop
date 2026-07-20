@@ -33,7 +33,9 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
             }`}
           >
             {c === "hood" ? <HoodMark size={12} /> : <SolMark size={12} />}
-            {chainInfo(c).label}
+            {/* Icon-only below sm so the switch fits the mobile nav — chains
+                must stay reachable on phones. */}
+            <span className="hidden sm:inline">{chainInfo(c).label}</span>
           </button>
         );
       })}
