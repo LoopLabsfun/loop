@@ -2,41 +2,49 @@
 
 import { useEffect, useState } from "react";
 import { useHoodWallet } from "@/lib/chains/hood-wallet";
+import { useWallet } from "@/lib/wallet";
 import { hoodLauncherAddress } from "@/lib/chains/hood-abi";
 import { chainInfo } from "@/lib/chains/registry";
 import { parseUnits, formatUnits } from "@/lib/chains/units";
 import type { Project } from "@/lib/types";
 import { shortAddr } from "@/lib/format";
+import { CrossChainBuyPanel } from "./CrossChainBuyPanel";
 
-// Buy/sell a Hood token directly on the HoodLauncher bonding curve, via the
-// injected EVM wallet (useHoodWallet). Quotes come live from the launcher's
-// quoteBuy/quoteSell; minOut applies a slippage floor. Distinct from the Solana
-// SwapCard (pump.fun path) — dispatched by chain in TokenPage.
+// Buy/sell a Hood token on the HoodLauncher bonding curve via the injected EVM
+// wallet, PLUS a cross-chain "Buy with SOL" path (bridge SOL -> ETH on Hood,
+// then buy on the curve). Distinct from the Solana SwapCard (pump.fun path) —
+// dispatched by chain in TokenPage.
 
 const SLIPPAGE_PCT = 5; // the curve moves fast; a generous floor avoids reverts
 const ETH = chainInfo("hood").nativeSymbol;
 
 export function HoodSwapCard({ project: p }: { project: Project }) {
   const w = useHoodWallet();
+  const sol = useWallet();
   const token = p.mint;
   const sym = p.ticker.replace(/^\$/, "");
   const deployed = !!hoodLauncherAddress();
 
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [payWith, setPayWith] = useState<"eth" | "sol">("eth");
   const [amt, setAmt] = useState("0.05");
   const [quote, setQuote] = useState<bigint | null>(null);
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [tx, setTx] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const buy = side === "buy";
+  // Cross-chain buy: pay SOL. Its bridge leg is REAL even before the launcher,
+  // so this path is available pre-launch (the token estimate fills once live).
+  const crossChain = buy && payWith === "sol";
 
   // amount → base units (ETH when buying, the 18-decimal token when selling).
   const amountWei = parseUnits(amt || "", 18);
 
-  // Live quote from the curve as the amount/side changes (best-effort).
+  // Live quote from the curve as the amount/side changes (best-effort). Skipped
+  // in cross-chain mode — that panel owns its own quoting.
   useEffect(() => {
     let cancelled = false;
-    if (!deployed || !token || amountWei === null || amountWei <= BigInt(0)) {
+    if (crossChain || !deployed || !token || amountWei === null || amountWei <= BigInt(0)) {
       setQuote(null);
       return;
     }
@@ -50,16 +58,79 @@ export function HoodSwapCard({ project: p }: { project: Project }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amt, side, token, deployed, w.address]);
+  }, [amt, side, payWith, token, deployed, w.address]);
 
-  // Launcher not deployed yet → honest gate (same as the pre-deploy state).
+  // Shared header: Buy/Sell, plus (in Buy) a "Pay with" ETH/SOL toggle.
+  const header = (
+    <>
+      <div className="grid grid-cols-2 gap-1 bg-surface-3 rounded-[10px] p-[3px] mb-[10px]">
+        <button
+          onClick={() => {
+            setSide("buy");
+            setAmt("0.05");
+          }}
+          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
+            buy ? "bg-[oklch(0.55_0.15_150)] text-white" : "text-muted"
+          }`}
+        >
+          Buy
+        </button>
+        <button
+          onClick={() => {
+            setSide("sell");
+            setPayWith("eth");
+            setAmt("1000");
+          }}
+          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
+            !buy ? "bg-[oklch(0.55_0.17_25)] text-white" : "text-muted"
+          }`}
+        >
+          Sell
+        </button>
+      </div>
+      {buy && (
+        <div className="grid grid-cols-2 gap-1 bg-surface-2 rounded-[9px] p-[3px] mb-[14px]">
+          {(["eth", "sol"] as const).map((pw) => (
+            <button
+              key={pw}
+              onClick={() => setPayWith(pw)}
+              className={`font-mono text-[12px] py-[7px] rounded-[7px] transition-colors ${
+                payWith === pw ? "bg-surface text-ink shadow-sm" : "text-faint"
+              }`}
+            >
+              {pw === "eth" ? `Pay ${ETH}` : "Pay SOL"}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  // Cross-chain buy (bridge leg is real pre-launch) — always available.
+  if (crossChain) {
+    return (
+      <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
+        {header}
+        <CrossChainBuyPanel
+          token={token ?? null}
+          tokenSymbol={sym}
+          deployed={deployed}
+          sol={sol}
+          hood={w}
+        />
+      </div>
+    );
+  }
+
+  // Direct ETH path but launcher not live → honest gate (SOL path above still works).
   if (!deployed) {
     return (
       <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
-        <div className="font-display font-semibold text-[15px] mb-1">Trade {p.ticker}</div>
+        {header}
         <div className="text-[12.5px] text-muted leading-[1.5] mb-3">
-          {p.ticker} lives on Hood (Robinhood Chain). Trading from this page opens
-          when the Hood launcher goes live.
+          {p.ticker} lives on Hood (Robinhood Chain). Direct {ETH} trading opens
+          when the Hood launcher goes live — or switch to <strong>Pay SOL</strong>{" "}
+          above to bridge in today.
         </div>
         <button
           disabled
@@ -112,30 +183,7 @@ export function HoodSwapCard({ project: p }: { project: Project }) {
 
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
-      <div className="grid grid-cols-2 gap-1 bg-surface-3 rounded-[10px] p-[3px] mb-[14px]">
-        <button
-          onClick={() => {
-            setSide("buy");
-            setAmt("0.05");
-          }}
-          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
-            buy ? "bg-[oklch(0.55_0.15_150)] text-white" : "text-muted"
-          }`}
-        >
-          Buy
-        </button>
-        <button
-          onClick={() => {
-            setSide("sell");
-            setAmt("1000");
-          }}
-          className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
-            !buy ? "bg-[oklch(0.55_0.17_25)] text-white" : "text-muted"
-          }`}
-        >
-          Sell
-        </button>
-      </div>
+      {header}
 
       <label className="block text-[12px] text-muted mb-[6px]">
         {buy ? `Amount in ${ETH}` : `Amount in ${sym}`}
