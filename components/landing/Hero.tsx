@@ -274,6 +274,11 @@ function TreasuryCard({
   currentTask?: AgentTask;
 }) {
   const net = (network ?? "mainnet").toUpperCase();
+  // Chain-aware: in Hood mode the card speaks ETH. Pre-launch (no Hood mint)
+  // there ARE no Hood flows yet, so the stats/badge/sparkline show an honest
+  // pre-launch state — never Solana flows dressed up in ETH units.
+  const { chain } = useChain();
+  const hoodMode = chain === "hood" && !process.env.NEXT_PUBLIC_HOOD_LOOP_MINT;
   // The treasury also holds the project's OWN token. Shown as a separate line —
   // its market value is illiquid/circular, so it sits ALONGSIDE the spendable
   // SOL, never folded into it (honest by design).
@@ -310,7 +315,12 @@ function TreasuryCard({
     <div className="bg-surface border border-line-2 rounded-[18px] p-[26px] shadow-[0_1px_2px_rgba(22,19,26,0.04),0_12px_32px_-16px_rgba(22,19,26,0.10)]">
       <div className="flex items-center justify-between mb-[14px]">
         <span className="font-display font-semibold text-[15px]">LOOP Treasury</span>
-        {launched ? (
+        {hoodMode ? (
+          <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-faint">
+            <span className="w-[6px] h-[6px] rounded-full bg-faint" />
+            HOOD · COMING SOON
+          </span>
+        ) : launched ? (
           <span className="inline-flex items-center gap-[6px] font-mono text-[11.5px] text-accent-text">
             <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulseFast" />
             LIVE · {net}
@@ -348,17 +358,28 @@ function TreasuryCard({
           </div>
         ) : null}
       </div>
-      <TreasurySparkline values={series} />
-      <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
-        <Stat label="24h Income" value={`+${sol(income24)} SOL`} tone="pos" />
-        <Stat label="24h Spend" value={`−${sol(spend24)} SOL`} />
-        <Stat
-          label="Runtime"
-          value={agentActive ? "● Active" : "○ Idle"}
-          tone={agentActive ? "pos" : undefined}
-        />
-        <Stat label="Next Check" value={agentActive ? "~2 min" : "—"} />
-      </div>
+      <TreasurySparkline values={hoodMode ? null : series} />
+      {hoodMode ? (
+        // Hood tap pre-launch: no ETH flows exist yet — honest zeros in ETH,
+        // never the Solana trajectory relabelled.
+        <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
+          <Stat label="24h Income" value="— ETH" />
+          <Stat label="24h Spend" value="— ETH" />
+          <Stat label="Runtime" value="○ Soon" />
+          <Stat label="Opens with" value="$LOOP" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-[10px] border-t border-line-4 pt-4">
+          <Stat label="24h Income" value={`+${sol(income24)} SOL`} tone="pos" />
+          <Stat label="24h Spend" value={`−${sol(spend24)} SOL`} />
+          <Stat
+            label="Runtime"
+            value={agentActive ? "● Active" : "○ Idle"}
+            tone={agentActive ? "pos" : undefined}
+          />
+          <Stat label="Next Check" value={agentActive ? "~2 min" : "—"} />
+        </div>
+      )}
       {currentTask && (
         <div className="flex items-center gap-[8px] mt-3 px-[10px] py-[8px] rounded-[8px] bg-accent/[0.06] border border-accent/20">
           <span className="w-[6px] h-[6px] shrink-0 rounded-full bg-accent animate-pulseFast" />
