@@ -88,6 +88,9 @@ export function Nav({
         <Link href="/docs" className="hover:text-ink transition-colors">
           Docs
         </Link>
+        <Link href="/bridge" className="hover:text-ink transition-colors">
+          Bridge
+        </Link>
         <Link
           href="/token?p=loop"
           className="font-mono text-[13px] text-accent-text hover:text-accent-d transition-colors whitespace-nowrap"
@@ -181,6 +184,13 @@ export function Nav({
             className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
           >
             Docs
+          </Link>
+          <Link
+            href="/bridge"
+            onClick={() => setMenuOpen(false)}
+            className="text-[15px] text-body py-[11px] border-b border-line-2 hover:text-ink transition-colors"
+          >
+            Bridge
           </Link>
           {wallet.connected && (
             <>
