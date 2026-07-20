@@ -1,0 +1,40 @@
+# Polls the Hood LOOP buy-alert endpoint. Vercel Hobby only allows DAILY crons
+# (a */2 entry in vercel.json REJECTS every deployment — learned the hard way
+# 2026-07-20), so recurring cadence lives here, like agent-cron.yml.
+#
+# GitHub throttles public-repo schedules (effective cadence ~5–30 min), which is
+# fine: the endpoint scans a ~1200-block window and dedupes by tx hash, so late
+# fires still post every buy exactly once. For tighter cadence, add the
+# Supabase pg_cron primary (see docs/go-to-hood.md) — this stays the backstop.
+#
+# Uses the same repo secret CRON_SECRET as agent-cron; no-ops cleanly when the
+# buybot env isn't configured yet, so it's safe to arm pre-launch.
+
+name: hood-buybot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # manual fire from the Actions tab
+
+concurrency:
+  group: hood-buybot
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Poll Hood buys → Telegram
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET not set — skipping."
+            exit 0
+          fi
+          # Apex directly: www 308-redirects and curl drops the auth header
+          # across the host change (same gotcha as agent-cron).
+          curl -sS -m 60 -H "Authorization: Bearer $CRON_SECRET" \
+            "https://looplabs.fun/api/hood-buybot" | head -c 500
