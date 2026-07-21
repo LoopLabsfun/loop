@@ -236,12 +236,6 @@ export default function AdminPage() {
           <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] bg-accent text-white">FOUNDER</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            href="/admin/v2"
-            className="font-mono text-[12px] px-3 py-[6px] rounded-[8px] border border-line-2 hover:bg-surface-2 transition-colors"
-          >
-            Preview Loop v2 →
-          </Link>
           {authed && (
             <button
               onClick={signOut}

@@ -56,8 +56,17 @@ scripts/trigger-set-env.ts
 scripts/post-github-thread.ts
 scripts/dryrun-trigger-session.ts
 scripts/diag-sandbox-phases.ts
+scripts/claim-buildtopia-fees.ts
+scripts/claim-signer-fees.ts
+scripts/sweep-buildtopia-to-7kyek.ts
+scripts/sweep-loop-agent-to-7kyek.ts
+scripts/sweep-ploop-to-7kyek.ts
+scripts/claim-and-sweep-all-to-7kyek.ts
+scripts/set-project-key.ts
+scripts/force-sdk-tick.ts
 
 .env.local.bak
 
 # Cloudflare email worker deps
 workers/email-inbound/node_modules/
+.env*

@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "loop-dev-preview",
+      "runtimeExecutable": "/Users/godisrupt/.nvm/versions/node/v20.18.0/bin/node",
+      "runtimeArgs": ["node_modules/.bin/next", "dev", "-p", "3017"],
+      "port": 3017
     }
   ]
 }
