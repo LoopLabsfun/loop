@@ -1,0 +1,65 @@
+// COMPUTE REWARDS PAYOUT — sends real SOL from the configured source wallet
+// to every compute-pool device with a claimable balance (accrued by
+// lib/compute-rewards-exec.ts from VERIFIED work only — see lib/compute-rewards-payout.ts
+// for the full safety posture: disarmed by default, signer==source bolt,
+// reserve guard, dust floor, claimed-before-next-send idempotency).
+//
+// Dry-run by default — shows what WOULD be sent without signing anything.
+//
+//   set -a; source .env.local; set +a
+//   npx tsx scripts/pay-compute-rewards.ts                # dry-run (default)
+//   npx tsx scripts/pay-compute-rewards.ts --execute       # ALSO requires
+//                                                           # COMPUTE_REWARDS_PAY=1
+//                                                           # in the environment —
+//                                                           # signs + broadcasts, moves real SOL.
+import { createClient } from "@supabase/supabase-js";
+import { claimableLamports } from "../lib/compute-rewards";
+import { executeComputeRewardsPayout, computeRewardsPayArmed } from "../lib/compute-rewards-payout";
+
+const EXECUTE = process.argv.includes("--execute");
+
+(async () => {
+  const sb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+  const { data: rows, error } = await sb
+    .from("compute_rewards")
+    .select("device_id, payout_address, earned_lamports, claimed_lamports");
+  if (error) throw new Error(error.message);
+
+  type Row = { device_id: string; payout_address: string | null; earned_lamports: number; claimed_lamports: number };
+  const candidates = ((rows ?? []) as Row[]).filter(
+    (r) => r.payout_address && claimableLamports({ earnedLamports: r.earned_lamports, claimedLamports: r.claimed_lamports }) > 0
+  );
+
+  console.log(`\n=== COMPUTE REWARDS PAYOUT (${EXECUTE ? "EXECUTE" : "dry-run"}) ===`);
+  if (!candidates.length) {
+    console.log("nothing claimable — no devices have earned more than they've been paid.\n");
+    return;
+  }
+  for (const c of candidates) {
+    const sol = claimableLamports({ earnedLamports: c.earned_lamports, claimedLamports: c.claimed_lamports }) / 1e9;
+    console.log(`  ${c.device_id}  →  ${c.payout_address}   ${sol.toFixed(6)} SOL claimable`);
+  }
+
+  if (!EXECUTE) {
+    console.log("\n(dry-run) nothing signed. Re-run with --execute to broadcast.\n");
+    return;
+  }
+  if (!computeRewardsPayArmed()) {
+    console.log("\nABORTED: --execute was passed but COMPUTE_REWARDS_PAY=1 is not set in the environment.");
+    console.log("Both are required to move real money — that's intentional, not a bug.\n");
+    return;
+  }
+
+  const outcome = await executeComputeRewardsPayout();
+  console.log(`\n${outcome.ok ? "✅" : "❌"} ${outcome.note}`);
+  for (const s of outcome.sent) console.log(`  sent ${s.sol} SOL → ${s.to} (${s.deviceId})  sig=${s.sig}`);
+  for (const s of outcome.skipped) console.log(`  skipped: ${s}`);
+  console.log("");
+})().catch((e) => {
+  console.error("FAILED:", e.message);
+  process.exit(1);
+});

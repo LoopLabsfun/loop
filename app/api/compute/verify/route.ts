@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runConsensus } from "@/lib/compute-consensus";
+import { accrueComputeRewards } from "@/lib/compute-rewards-exec";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,8 +27,15 @@ async function handle(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const result = await runConsensus();
+  // Accrual (crediting the reward ledger) reads BOTH device_assists (just
+  // flagged above) and treasury_checks (flagged inline at submission time) —
+  // one pass covers whichever job type has newly-verified work. No-op
+  // (disarmed) unless COMPUTE_REWARD_LAMPORTS_PER_UNIT is set; never real
+  // money — see lib/compute-rewards-payout.ts for the separate, more tightly
+  // gated SOL-send step.
+  const rewards = await accrueComputeRewards();
   const status = result.ok ? 200 : 500;
-  return NextResponse.json(result, { status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ ...result, rewards }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 // GET so a Vercel cron (which issues GET) can trigger it; POST for manual runs.

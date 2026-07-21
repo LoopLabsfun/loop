@@ -901,6 +901,37 @@ create index if not exists treasury_checks_bucket_idx
 alter table public.treasury_checks enable row level security;
 create policy "treasury_checks public read" on public.treasury_checks for select to anon, authenticated using (true);
 
+-- ── compute_rewards ──────────────────────────────────────────────────────────
+-- Real payout mechanism for the compute pool. Accrual (lib/compute-rewards-exec.ts)
+-- credits a device for verified contributions (consensus_ok=true rows in
+-- device_assists / treasury_checks, marked rewarded_at so nothing is double-
+-- credited); payout (lib/compute-rewards-payout.ts) is a separate, DISARMED-
+-- by-default execution step that sends real SOL — mirrors lib/fee-distribute-exec.ts's
+-- safety posture exactly (env-gated, signer==source safety bolt, reserve guard,
+-- dust floor, claimed-before-next-send idempotency).
+create table if not exists public.compute_rewards (
+  device_id text primary key,
+  payout_address text,
+  payout_address_hood text,
+  earned_lamports bigint not null default 0,
+  claimed_lamports bigint not null default 0,
+  -- Hood/ETH leg: accrual-only for now (ledger tracks it), payout execution
+  -- not yet built — same documented gap as docs/compute-beta.md's "ETH payout
+  -- leg pending $LOOP launch". numeric, not bigint: wei amounts can exceed
+  -- JS/Postgres bigint range for larger balances.
+  earned_wei numeric(40,0) not null default 0,
+  claimed_wei numeric(40,0) not null default 0,
+  updated_at timestamptz not null default now()
+);
+comment on table public.compute_rewards is 'Per-device compute-pool reward ledger (earned/claimed, SOL + Hood/ETH legs). Real payout execution: lib/compute-rewards-payout.ts, disarmed unless COMPUTE_REWARDS_PAY=1.';
+alter table public.compute_rewards enable row level security;
+create policy "compute_rewards public read" on public.compute_rewards for select to anon, authenticated using (true);
+
+-- Accrual watermark: which verified rows have already been credited, so a
+-- re-run of the accrual pass can never double-pay the same contribution.
+alter table public.device_assists add column if not exists rewarded_at timestamptz;
+alter table public.treasury_checks add column if not exists rewarded_at timestamptz;
+
 -- ── Phase A: LOOP-only (close public project creation) ───────────────────────
 -- No anon insert policy on projects → only the service-role launch script can
 -- create a project. Reopen with a hardened insert policy for the public phase.
