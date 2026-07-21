@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LoopMark } from "@/components/LoopMark";
 import { SwapWidget } from "@/components/swap/SwapWidget";
+import { getProjects } from "@/lib/queries";
+import { TOKEN_DECIMALS } from "@/lib/chat";
+import type { SwapToken } from "@/lib/relay-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +13,26 @@ export const metadata: Metadata = {
   description: "Swap any token between Solana and Robinhood Chain (Hood), in-app via Relay.",
 };
 
-export default function BridgePage() {
+// Every launched Loop project token is swappable too — not just the curated
+// SOL/USDC/xStocks list. Verified live against Relay: it routes arbitrary
+// Solana SPL tokens (incl. low-liquidity pump.fun ones like our own LOOP) both
+// same-chain and cross-chain, as long as the traded amount clears its
+// minimum-to-cover-fees floor — no special-casing needed beyond listing them.
+async function platformTokens(): Promise<SwapToken[]> {
+  const projects = await getProjects().catch(() => []);
+  return projects
+    .filter((p) => p.mint && (p.chain ?? "solana") === "solana")
+    .map((p) => ({
+      chain: "solana" as const,
+      symbol: p.ticker.replace(/^\$/, ""),
+      name: p.name,
+      address: p.mint as string,
+      decimals: TOKEN_DECIMALS, // every pump.fun-launched SPL token is 6dp
+    }));
+}
+
+export default async function BridgePage() {
+  const extraTokens = await platformTokens();
   return (
     <div className="min-h-screen">
       <nav className="border-b border-line max-w-[1280px] mx-auto px-6 sm:px-8 h-[60px] flex items-center">
@@ -31,7 +53,7 @@ export default function BridgePage() {
             custodial.
           </p>
         </div>
-        <SwapWidget />
+        <SwapWidget extraTokens={extraTokens} />
       </main>
     </div>
   );
