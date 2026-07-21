@@ -873,6 +873,34 @@ $$;
 revoke all on function public.release_repo_lock(text, text) from public, anon, authenticated;
 grant execute on function public.release_repo_lock(text, text) to service_role;
 
+-- ── treasury_checks ──────────────────────────────────────────────────────────
+-- Redundant treasury-balance verification by the device pool — the compute
+-- pool's first job type that needs ZERO Claude/LLM anywhere in its lifecycle
+-- (dispatch, execution, or verification), unlike the prep-brief work, which
+-- only exists to feed an agent's LLM prompt. Multiple devices independently
+-- read the SAME on-chain balance for the same 5-minute bucket; k-redundancy
+-- consensus (mirrors lib/compute-consensus.ts) flags disagreement. See
+-- lib/treasury-checks.ts.
+create table if not exists public.treasury_checks (
+  id bigint generated always as identity primary key,
+  project_key text not null references public.projects(key) on delete cascade,
+  wallet text not null,
+  bucket_ts timestamptz not null,
+  lamports bigint not null,
+  device_id text not null,
+  device_name text,
+  payout_address text,
+  payout_address_hood text,
+  consensus_ok boolean,
+  created_at timestamptz not null default now(),
+  unique (project_key, bucket_ts, device_id)
+);
+comment on table public.treasury_checks is 'Redundant device-pool reads of a project treasury balance, cross-checked by k-redundancy consensus (lib/treasury-checks.ts) — zero LLM involvement anywhere in this job type.';
+create index if not exists treasury_checks_bucket_idx
+  on public.treasury_checks (project_key, bucket_ts desc);
+alter table public.treasury_checks enable row level security;
+create policy "treasury_checks public read" on public.treasury_checks for select to anon, authenticated using (true);
+
 -- ── Phase A: LOOP-only (close public project creation) ───────────────────────
 -- No anon insert policy on projects → only the service-role launch script can
 -- create a project. Reopen with a hardened insert policy for the public phase.

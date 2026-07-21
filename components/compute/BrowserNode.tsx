@@ -53,8 +53,44 @@ export function BrowserNode() {
     setStatus("off");
   }, []);
 
+  // Redundant treasury-balance check — Loop Compute's first job with ZERO
+  // Claude/LLM anywhere in its lifecycle (unlike the prep-brief work below,
+  // which only exists to feed an agent's prompt). This device reads a
+  // project treasury's balance independently; the server cross-checks it
+  // against every other device's read for the same 5-minute window
+  // (lib/treasury-checks.ts). Best-effort, silent on failure — never
+  // disrupts the main backlog pass.
+  const treasuryCheckPass = useCallback(async () => {
+    const token = tokenRef.current;
+    if (!token) return;
+    try {
+      const listRes = await fetch("/api/compute/treasury-check");
+      if (!listRes.ok) return;
+      const { projects } = (await listRes.json()) as { projects: { projectKey: string; wallet: string }[] };
+      for (const p of projects) {
+        const rpcRes = await fetch("/api/rpc?cluster=mainnet", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [p.wallet] }),
+        });
+        if (!rpcRes.ok) continue;
+        const rpcJson = (await rpcRes.json()) as { result?: { value?: number } };
+        const lamports = rpcJson.result?.value;
+        if (typeof lamports !== "number") continue;
+        await fetch("/api/compute/treasury-check", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-device-token": token },
+          body: JSON.stringify({ projectKey: p.projectKey, wallet: p.wallet, lamports }),
+        });
+      }
+    } catch {
+      /* best-effort — the backlog pass is the primary job */
+    }
+  }, []);
+
   // One work pass: backlog → claim → compute → submit. Never throws.
   const pass = useCallback(async () => {
+    void treasuryCheckPass();
     const address = wallet.address;
     const token = tokenRef.current;
     if (!address || !token || busyRef.current) return;
@@ -129,7 +165,7 @@ export function BrowserNode() {
     } finally {
       busyRef.current = false;
     }
-  }, [wallet.address, say]);
+  }, [wallet.address, say, treasuryCheckPass]);
 
   const start = useCallback(async () => {
     const address = wallet.address;
