@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { claimableLamports, planAccrual } from "./compute-rewards";
+import { claimableLoopUnits, planAccrual } from "./compute-rewards";
 
-describe("claimableLamports", () => {
+describe("claimableLoopUnits", () => {
   it("earned minus claimed", () => {
-    expect(claimableLamports({ earnedLamports: 100, claimedLamports: 40 })).toBe(60);
+    expect(claimableLoopUnits({ earnedLoopUnits: 100, claimedLoopUnits: 40 })).toBe(60);
   });
   it("clamps at zero (never negative)", () => {
-    expect(claimableLamports({ earnedLamports: 10, claimedLamports: 40 })).toBe(0);
+    expect(claimableLoopUnits({ earnedLoopUnits: 10, claimedLoopUnits: 40 })).toBe(0);
   });
   it("zero balance is zero", () => {
-    expect(claimableLamports({ earnedLamports: 0, claimedLamports: 0 })).toBe(0);
+    expect(claimableLoopUnits({ earnedLoopUnits: 0, claimedLoopUnits: 0 })).toBe(0);
   });
 });
 
@@ -27,19 +27,19 @@ describe("planAccrual", () => {
 
   it("credits one unit at the configured rate", () => {
     const plan = planAccrual([unit("a", "wa")], 1000);
-    expect(plan).toEqual([{ deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLamports: 1000 }]);
+    expect(plan).toEqual([{ deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLoopUnits: 1000 }]);
   });
 
   it("sums multiple units for the same device", () => {
     const plan = planAccrual([unit("a", "wa"), unit("a", "wa"), unit("a", "wa")], 1000);
-    expect(plan).toEqual([{ deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLamports: 3000 }]);
+    expect(plan).toEqual([{ deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLoopUnits: 3000 }]);
   });
 
   it("keeps devices separate", () => {
     const plan = planAccrual([unit("a", "wa"), unit("b", "wb")], 500);
     expect(plan.sort((x, y) => x.deviceId.localeCompare(y.deviceId))).toEqual([
-      { deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLamports: 500 },
-      { deviceId: "b", payoutAddress: "wb", payoutAddressHood: null, addLamports: 500 },
+      { deviceId: "a", payoutAddress: "wa", payoutAddressHood: null, addLoopUnits: 500 },
+      { deviceId: "b", payoutAddress: "wb", payoutAddressHood: null, addLoopUnits: 500 },
     ]);
   });
 

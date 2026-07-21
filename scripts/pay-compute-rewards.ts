@@ -1,8 +1,9 @@
-// COMPUTE REWARDS PAYOUT — sends real SOL from the configured source wallet
-// to every compute-pool device with a claimable balance (accrued by
-// lib/compute-rewards-exec.ts from VERIFIED work only — see lib/compute-rewards-payout.ts
-// for the full safety posture: disarmed by default, signer==source bolt,
-// reserve guard, dust floor, claimed-before-next-send idempotency).
+// COMPUTE REWARDS PAYOUT — sends real $LOOP (SPL token, never native SOL/ETH)
+// from the treasury's $LOOP position to every compute-pool device with a
+// claimable balance (accrued by lib/compute-rewards-exec.ts from VERIFIED
+// work only — see lib/compute-rewards-payout.ts for the full safety posture:
+// disarmed by default, signer==source bolt, SOL reserve for ATA rent, $LOOP
+// dust floor, claimed-before-next-send idempotency).
 //
 // Dry-run by default — shows what WOULD be sent without signing anything.
 //
@@ -11,11 +12,12 @@
 //   npx tsx scripts/pay-compute-rewards.ts --execute       # ALSO requires
 //                                                           # COMPUTE_REWARDS_PAY=1
 //                                                           # in the environment —
-//                                                           # signs + broadcasts, moves real SOL.
+//                                                           # signs + broadcasts, moves real $LOOP.
 import { createClient } from "@supabase/supabase-js";
-import { claimableLamports } from "../lib/compute-rewards";
+import { claimableLoopUnits } from "../lib/compute-rewards";
 import { executeComputeRewardsPayout, computeRewardsPayArmed } from "../lib/compute-rewards-payout";
 
+const LOOP_DECIMALS_FACTOR = 1e6; // TOKEN_DECIMALS (lib/chat.ts)
 const EXECUTE = process.argv.includes("--execute");
 
 (async () => {
@@ -26,22 +28,22 @@ const EXECUTE = process.argv.includes("--execute");
   );
   const { data: rows, error } = await sb
     .from("compute_rewards")
-    .select("device_id, payout_address, earned_lamports, claimed_lamports");
+    .select("device_id, payout_address, earned_loop_units, claimed_loop_units");
   if (error) throw new Error(error.message);
 
-  type Row = { device_id: string; payout_address: string | null; earned_lamports: number; claimed_lamports: number };
+  type Row = { device_id: string; payout_address: string | null; earned_loop_units: number; claimed_loop_units: number };
   const candidates = ((rows ?? []) as Row[]).filter(
-    (r) => r.payout_address && claimableLamports({ earnedLamports: r.earned_lamports, claimedLamports: r.claimed_lamports }) > 0
+    (r) => r.payout_address && claimableLoopUnits({ earnedLoopUnits: r.earned_loop_units, claimedLoopUnits: r.claimed_loop_units }) > 0
   );
 
-  console.log(`\n=== COMPUTE REWARDS PAYOUT (${EXECUTE ? "EXECUTE" : "dry-run"}) ===`);
+  console.log(`\n=== COMPUTE REWARDS PAYOUT ($LOOP, ${EXECUTE ? "EXECUTE" : "dry-run"}) ===`);
   if (!candidates.length) {
     console.log("nothing claimable — no devices have earned more than they've been paid.\n");
     return;
   }
   for (const c of candidates) {
-    const sol = claimableLamports({ earnedLamports: c.earned_lamports, claimedLamports: c.claimed_lamports }) / 1e9;
-    console.log(`  ${c.device_id}  →  ${c.payout_address}   ${sol.toFixed(6)} SOL claimable`);
+    const loop = claimableLoopUnits({ earnedLoopUnits: c.earned_loop_units, claimedLoopUnits: c.claimed_loop_units }) / LOOP_DECIMALS_FACTOR;
+    console.log(`  ${c.device_id}  →  ${c.payout_address}   ${loop.toLocaleString()} $LOOP claimable`);
   }
 
   if (!EXECUTE) {
@@ -56,7 +58,7 @@ const EXECUTE = process.argv.includes("--execute");
 
   const outcome = await executeComputeRewardsPayout();
   console.log(`\n${outcome.ok ? "✅" : "❌"} ${outcome.note}`);
-  for (const s of outcome.sent) console.log(`  sent ${s.sol} SOL → ${s.to} (${s.deviceId})  sig=${s.sig}`);
+  for (const s of outcome.sent) console.log(`  sent ${s.loop.toLocaleString()} $LOOP → ${s.to} (${s.deviceId})  sig=${s.sig}`);
   for (const s of outcome.skipped) console.log(`  skipped: ${s}`);
   console.log("");
 })().catch((e) => {

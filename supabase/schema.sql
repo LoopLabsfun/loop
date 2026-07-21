@@ -906,24 +906,28 @@ create policy "treasury_checks public read" on public.treasury_checks for select
 -- credits a device for verified contributions (consensus_ok=true rows in
 -- device_assists / treasury_checks, marked rewarded_at so nothing is double-
 -- credited); payout (lib/compute-rewards-payout.ts) is a separate, DISARMED-
--- by-default execution step that sends real SOL — mirrors lib/fee-distribute-exec.ts's
--- safety posture exactly (env-gated, signer==source safety bolt, reserve guard,
--- dust floor, claimed-before-next-send idempotency).
+-- by-default execution step that sends real $LOOP (SPL token, never native
+-- SOL/ETH — a compute reward should never compete with the agent's own
+-- Claude-spend treasury for the same native balance) — mirrors
+-- lib/fee-distribute-exec.ts's safety posture (env-gated, signer==source
+-- safety bolt, reserve guard, dust floor, claimed-before-next-send
+-- idempotency).
 create table if not exists public.compute_rewards (
   device_id text primary key,
   payout_address text,
   payout_address_hood text,
-  earned_lamports bigint not null default 0,
-  claimed_lamports bigint not null default 0,
-  -- Hood/ETH leg: accrual-only for now (ledger tracks it), payout execution
-  -- not yet built — same documented gap as docs/compute-beta.md's "ETH payout
-  -- leg pending $LOOP launch". numeric, not bigint: wei amounts can exceed
-  -- JS/Postgres bigint range for larger balances.
-  earned_wei numeric(40,0) not null default 0,
-  claimed_wei numeric(40,0) not null default 0,
+  -- $LOOP SPL-token base units (6 decimals — lib/chat.ts TOKEN_DECIMALS).
+  earned_loop_units bigint not null default 0,
+  claimed_loop_units bigint not null default 0,
+  -- LOOP-on-Hood (ERC20) leg: accrual-only stub, same documented-gap pattern
+  -- as the rest of the dual-chain work — payout execution not built until
+  -- LOOP-on-Hood exists and has a spendable treasury position. numeric, not
+  -- bigint: ERC20 base-unit amounts can exceed bigint range at 18 decimals.
+  earned_loop_hood_units numeric(40,0) not null default 0,
+  claimed_loop_hood_units numeric(40,0) not null default 0,
   updated_at timestamptz not null default now()
 );
-comment on table public.compute_rewards is 'Per-device compute-pool reward ledger (earned/claimed, SOL + Hood/ETH legs). Real payout execution: lib/compute-rewards-payout.ts, disarmed unless COMPUTE_REWARDS_PAY=1.';
+comment on table public.compute_rewards is 'Per-device compute-pool reward ledger, paid in $LOOP (never native SOL/ETH — never drains the operational treasury). Real payout execution: lib/compute-rewards-payout.ts, disarmed unless COMPUTE_REWARDS_PAY=1.';
 alter table public.compute_rewards enable row level security;
 create policy "compute_rewards public read" on public.compute_rewards for select to anon, authenticated using (true);
 

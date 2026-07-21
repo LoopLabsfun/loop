@@ -1,35 +1,36 @@
 import "server-only";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPUTE REWARDS — PAYOUT (the real-money half). Sends actual SOL from a
-// designated source wallet to compute-pool contributors' linked payout
-// addresses, bounded by what lib/compute-rewards-exec.ts's accrual actually
-// credited them. Mirrors lib/fee-distribute-exec.ts's safety posture exactly:
+// COMPUTE REWARDS — PAYOUT (the real-money half). Sends actual $LOOP (an SPL
+// token transfer, never native SOL) from the treasury's LOOP position to
+// compute-pool contributors' linked payout addresses, bounded by what
+// lib/compute-rewards-exec.ts's accrual actually credited them. $LOOP, not
+// SOL/ETH, so a compute reward never competes with the agent's own
+// Claude-spend treasury for the same native balance. Mirrors
+// lib/fee-distribute-exec.ts's safety posture; the SPL instruction shape
+// mirrors lib/prefunding-distribute.ts (this codebase's other SPL-transfer
+// precedent — createAssociatedTokenAccountIdempotentInstruction +
+// createTransferInstruction).
 //
 //   • DISARMED unless COMPUTE_REWARDS_PAY=1 (founder arms it explicitly).
 //   • amounts come ONLY from the ledger's claimable (earned − claimed), which
 //     itself only grows via accrual from VERIFIED (consensus_ok=true) work —
-//     so it can never send more than was genuinely earned, and a confirmed
-//     send is recorded as "claimed" before moving to the next transfer (no
+//     so it can never send more $LOOP than was genuinely earned, and a
+//     confirmed send is recorded as "claimed" before the next transfer (no
 //     double-send even if the process is interrupted mid-run).
 //   • SAFETY BOLT: if COMPUTE_REWARDS_SOURCE_WALLET is set, the signer
-//     (LAUNCH_SIGNER_SECRET) pubkey MUST equal it — refuses to send from an
-//     unexpected wallet. Unset = no bolt (the signer wallet IS the source),
-//     matching the pattern's LOOP-today default.
-//   • mainnet + Helius required; dust-floored; reserve-guarded (never drains
-//     the source below a safety margin); fully failure-safe (returns a note,
-//     never throws).
-//
-// The Hood/ETH leg is accrual-only (lib/compute-rewards-exec.ts tracks
-// earned_wei/claimed_wei) — payout execution for it is NOT built here; same
-// documented gap as docs/compute-beta.md's "ETH payout leg pending $LOOP
-// launch". Sending ETH needs its own signer path once a Hood treasury with
-// spendable funds exists.
+//     (LAUNCH_SIGNER_SECRET) pubkey MUST equal it.
+//   • Bounded by the treasury's ACTUAL $LOOP balance (partial payouts are
+//     fine — the remainder stays claimable for next cycle) — and by a small
+//     SOL reserve, since creating a first-time recipient ATA still costs a
+//     little native SOL in rent even though the reward itself is $LOOP.
+//   • mainnet + Helius required; dust-floored; fully failure-safe.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabaseAdmin } from "./supabase";
 import { parseSecretKeyJson } from "./vanity";
-import { claimableLamports } from "./compute-rewards";
+import { claimableLoopUnits } from "./compute-rewards";
+import { TOKEN_DECIMALS } from "./chat";
 
 export function computeRewardsPayArmed(env: Record<string, string | undefined> = process.env): boolean {
   return env.COMPUTE_REWARDS_PAY === "1";
@@ -37,15 +38,18 @@ export function computeRewardsPayArmed(env: Record<string, string | undefined> =
 
 export interface ComputePayoutOutcome {
   ok: boolean;
-  sent: { deviceId: string; to: string; sol: number; sig: string }[];
+  sent: { deviceId: string; to: string; loop: number; sig: string }[];
   skipped: string[];
   note: string;
 }
 
+const LOOP_DECIMALS_FACTOR = 10 ** TOKEN_DECIMALS;
+
 /**
- * Pay out every device's claimable SOL balance. `force` bypasses the env arm
- * gate for a founder-confirmed manual run only (mirrors executeFeeDistribution's
- * `force`) — the safety bolt and ledger-bounded amounts apply either way.
+ * Pay out every device's claimable $LOOP balance. `force` bypasses the env
+ * arm gate for a founder-confirmed manual run only (mirrors
+ * executeFeeDistribution's `force`) — the safety bolt and ledger-bounded
+ * amounts apply either way.
  */
 export async function executeComputeRewardsPayout(
   opts: { force?: boolean } = {}
@@ -61,26 +65,40 @@ export async function executeComputeRewardsPayout(
   }
 
   try {
+    const { data: loopProject } = await supabaseAdmin
+      .from("projects")
+      .select("mint")
+      .eq("key", "loop")
+      .maybeSingle();
+    const mint = (loopProject as { mint?: string } | null)?.mint;
+    if (!mint) return { ok: false, sent: [], skipped: [], note: "$LOOP mint not set on the loop project row" };
+
     const { data: rows } = await supabaseAdmin
       .from("compute_rewards")
-      .select("device_id, payout_address, earned_lamports, claimed_lamports");
-    type Row = { device_id: string; payout_address: string | null; earned_lamports: number; claimed_lamports: number };
+      .select("device_id, payout_address, earned_loop_units, claimed_loop_units");
+    type Row = { device_id: string; payout_address: string | null; earned_loop_units: number; claimed_loop_units: number };
     const candidates = ((rows ?? []) as Row[])
       .map((r) => ({
         deviceId: r.device_id,
         payoutAddress: r.payout_address,
-        earnedLamports: Number(r.earned_lamports),
-        claimedLamports: Number(r.claimed_lamports),
+        earnedLoopUnits: Number(r.earned_loop_units),
+        claimedLoopUnits: Number(r.claimed_loop_units),
       }))
-      .filter((r) => r.payoutAddress && claimableLamports(r) > 0);
+      .filter((r) => r.payoutAddress && claimableLoopUnits(r) > 0);
     if (!candidates.length) return { ok: true, sent: [], skipped: [], note: "nothing claimable" };
 
     const secret = parseSecretKeyJson(signerSecret);
     if (!secret) {
       return { ok: false, sent: [], skipped: [], note: "LAUNCH_SIGNER_SECRET must be a 64-byte JSON array" };
     }
-    const { Keypair, Connection, SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL } =
-      await import("@solana/web3.js");
+    const { Keypair, Connection, Transaction, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+    const {
+      getAssociatedTokenAddress,
+      getAccount,
+      createAssociatedTokenAccountIdempotentInstruction,
+      createTransferInstruction,
+      TOKEN_PROGRAM_ID,
+    } = await import("@solana/spl-token");
     const signer = Keypair.fromSecretKey(Uint8Array.from(secret));
 
     // SAFETY BOLT: when a source wallet is explicitly pinned, the signer must
@@ -96,66 +114,81 @@ export async function executeComputeRewardsPayout(
     }
 
     const conn = new Connection(`https://mainnet.helius-rpc.com/?api-key=${heliusKey}`, "confirmed");
+    const mintPk = new PublicKey(mint);
 
-    // RESERVE GUARD: only the balance ABOVE the reserve is distributable, so a
-    // payout run can never overdraw the source wallet or starve its own tx
-    // fees. Configurable (COMPUTE_REWARDS_RESERVE_SOL), default 0.05 SOL —
-    // same default as fee-distribute-exec.ts's FEE_DISTRIBUTE_RESERVE_SOL.
+    // SOL reserve: rewards are paid in $LOOP, but a first-time recipient's ATA
+    // still costs a little native rent (~0.002 SOL) plus the tx fee — so the
+    // treasury's OPERATING SOL (what funds the agent's own Claude spend) is
+    // still guarded, just for a much smaller amount than a native-SOL payout
+    // would need. Default 0.02 SOL headroom, configurable.
     const reserveSol = (() => {
       const n = Number(process.env.COMPUTE_REWARDS_RESERVE_SOL);
-      return Number.isFinite(n) && n >= 0 ? n : 0.05;
+      return Number.isFinite(n) && n >= 0 ? n : 0.02;
     })();
     const balanceSol = (await conn.getBalance(signer.publicKey)) / LAMPORTS_PER_SOL;
-    let availableSol = Math.max(0, balanceSol - reserveSol);
-    if (availableSol <= 0) {
+    if (balanceSol - reserveSol <= 0) {
       return {
         ok: true,
         sent: [],
-        skipped: [`source ${balanceSol.toFixed(4)} SOL ≤ reserve ${reserveSol} — nothing distributable yet`],
-        note: "below reserve — held until the source wallet can spare it",
+        skipped: [`source has ${balanceSol.toFixed(4)} SOL ≤ reserve ${reserveSol} — can't even afford ATA rent yet`],
+        note: "below SOL reserve — held until the treasury can spare rent for new recipient accounts",
       };
     }
 
-    // Dust floor: skip a transfer too small for the network fee to be worth it.
-    const dust = (() => {
-      const n = Number(process.env.COMPUTE_REWARDS_MIN_TRANSFER_SOL);
-      return Number.isFinite(n) && n > 0 ? n : 0.001;
+    // $LOOP headroom: bounded by what the treasury's own token account
+    // actually holds — never sends more $LOOP than exists, partial is fine.
+    const sourceAta = await getAssociatedTokenAddress(mintPk, signer.publicKey);
+    let availableLoopUnits = 0;
+    try {
+      availableLoopUnits = Number((await getAccount(conn, sourceAta)).amount);
+    } catch {
+      return { ok: true, sent: [], skipped: [], note: "treasury has no $LOOP token account yet — nothing to pay out" };
+    }
+    if (availableLoopUnits <= 0) {
+      return { ok: true, sent: [], skipped: [], note: "treasury holds 0 $LOOP — nothing to pay out" };
+    }
+
+    // Dust floor in $LOOP units (default 1 $LOOP — the token itself is cheap,
+    // this just avoids a transfer too small to be worth the tx fee).
+    const dustLoopUnits = (() => {
+      const n = Number(process.env.COMPUTE_REWARDS_MIN_TRANSFER_LOOP);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * LOOP_DECIMALS_FACTOR) : LOOP_DECIMALS_FACTOR;
     })();
-    const round9 = (n: number) => Math.round(n * 1e9) / 1e9;
 
     const sent: ComputePayoutOutcome["sent"] = [];
     const skipped: string[] = [];
 
     for (const c of candidates) {
-      const claimableSol = claimableLamports(c) / LAMPORTS_PER_SOL;
-      const sendSol = round9(Math.min(claimableSol, availableSol));
-      if (sendSol < dust) {
-        skipped.push(`${c.deviceId}: ${sendSol.toFixed(6)} SOL (< dust floor ${dust} or no headroom left)`);
+      const claimable = claimableLoopUnits(c);
+      const sendUnits = Math.min(claimable, availableLoopUnits);
+      if (sendUnits < dustLoopUnits) {
+        skipped.push(`${c.deviceId}: ${(sendUnits / LOOP_DECIMALS_FACTOR).toFixed(2)} $LOOP (< dust floor or no headroom left)`);
         continue;
       }
       try {
-        const lamports = Math.round(sendSol * LAMPORTS_PER_SOL);
-        const tx = new Transaction().add(
-          SystemProgram.transfer({
-            fromPubkey: signer.publicKey,
-            toPubkey: new PublicKey(c.payoutAddress!),
-            lamports,
-          })
+        const toPk = new PublicKey(c.payoutAddress!);
+        const destAta = await getAssociatedTokenAddress(mintPk, toPk);
+        const bh = await conn.getLatestBlockhash("confirmed");
+        const tx = new Transaction({
+          feePayer: signer.publicKey,
+          blockhash: bh.blockhash,
+          lastValidBlockHeight: bh.lastValidBlockHeight,
+        }).add(
+          // Idempotent: a no-op if the recipient's $LOOP account already
+          // exists, so this never fails on a repeat recipient.
+          createAssociatedTokenAccountIdempotentInstruction(signer.publicKey, destAta, toPk, mintPk),
+          createTransferInstruction(sourceAta, destAta, signer.publicKey, sendUnits, [], TOKEN_PROGRAM_ID)
         );
         const sig = await conn.sendTransaction(tx, [signer]);
-        const latest = await conn.getLatestBlockhash();
-        await conn.confirmTransaction(
-          { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
-          "confirmed"
-        );
+        await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
         // Recorded as claimed IMMEDIATELY — before the next iteration — so an
         // interruption partway through this loop can never double-send.
         await supabaseAdmin
           .from("compute_rewards")
-          .update({ claimed_lamports: c.claimedLamports + lamports, updated_at: new Date().toISOString() })
+          .update({ claimed_loop_units: c.claimedLoopUnits + sendUnits, updated_at: new Date().toISOString() })
           .eq("device_id", c.deviceId);
-        availableSol = round9(Math.max(0, availableSol - sendSol));
-        sent.push({ deviceId: c.deviceId, to: c.payoutAddress!, sol: sendSol, sig });
+        availableLoopUnits -= sendUnits;
+        sent.push({ deviceId: c.deviceId, to: c.payoutAddress!, loop: sendUnits / LOOP_DECIMALS_FACTOR, sig });
       } catch (e) {
         skipped.push(`${c.deviceId}: send failed — ${e instanceof Error ? e.message : "error"}`);
       }
@@ -165,7 +198,7 @@ export async function executeComputeRewardsPayout(
       ok: true,
       sent,
       skipped,
-      note: `paid ${sent.reduce((s, x) => s + x.sol, 0)} SOL across ${sent.length} device(s)`,
+      note: `paid ${sent.reduce((s, x) => s + x.loop, 0).toLocaleString()} $LOOP across ${sent.length} device(s)`,
     };
   } catch (e) {
     return { ok: false, sent: [], skipped: [], note: e instanceof Error ? e.message : "error" };
