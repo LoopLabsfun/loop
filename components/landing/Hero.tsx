@@ -4,6 +4,7 @@ import { useChain } from "@/lib/chains/chain-context";
 import type { LoopEngineState } from "@/lib/useLoopEngine";
 import type { Network } from "@/lib/types";
 import type { AgentTask } from "@/lib/agent";
+import type { XStockHolding } from "@/lib/xstocks-holdings";
 import { compactNum, sol, usd } from "@/lib/format";
 
 export function Hero({
@@ -15,6 +16,7 @@ export function Hero({
   treasuryToken,
   treasuryTokenUsd,
   treasuryHistory,
+  treasuryHoldings,
   agentActive,
   currentTask,
   shippedCount,
@@ -29,6 +31,8 @@ export function Hero({
   treasuryToken?: number;
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
+  /** Live xStocks positions held by the treasury wallet. */
+  treasuryHoldings?: XStockHolding[];
   agentActive?: boolean;
   currentTask?: AgentTask;
   /** Cumulative count of shipped tasks — shown as social proof below the CTA buttons. */
@@ -104,6 +108,7 @@ export function Hero({
           treasuryToken={treasuryToken}
           treasuryTokenUsd={treasuryTokenUsd}
           treasuryHistory={treasuryHistory}
+          treasuryHoldings={treasuryHoldings}
           agentActive={agentActive}
           currentTask={currentTask}
         />
@@ -259,6 +264,7 @@ function TreasuryCard({
   treasuryToken,
   treasuryTokenUsd,
   treasuryHistory,
+  treasuryHoldings,
   agentActive,
   currentTask,
 }: {
@@ -270,6 +276,7 @@ function TreasuryCard({
   treasuryToken?: number;
   treasuryTokenUsd?: number;
   treasuryHistory?: { t: number; sol: number }[];
+  treasuryHoldings?: XStockHolding[];
   agentActive?: boolean;
   currentTask?: AgentTask;
 }) {
@@ -291,7 +298,9 @@ function TreasuryCard({
   // Headline the REAL total the treasury controls: spendable SOL + the live value
   // of the project tokens it holds. The SOL/token breakdown stays on the sub-lines.
   const heldUsd = typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? treasuryTokenUsd : 0;
-  const totalUsd = spendableUsd + heldUsd;
+  const holdings = treasuryHoldings ?? [];
+  const holdingsUsd = holdings.reduce((sum, h) => sum + (h.valueUsd ?? 0), 0);
+  const totalUsd = spendableUsd + heldUsd + holdingsUsd;
   const series =
     treasuryHistory && treasuryHistory.length >= 2
       ? treasuryHistory.map((p) => p.sol * solUsd)
@@ -355,6 +364,17 @@ function TreasuryCard({
             {typeof treasuryTokenUsd === "number" && treasuryTokenUsd > 0 ? (
               <span className="text-faint/70"> ≈ ${usd(treasuryTokenUsd)} held</span>
             ) : null}
+          </div>
+        ) : null}
+        {holdings.length > 0 ? (
+          <div className="font-mono text-[12px] text-faint mt-[5px] flex flex-wrap gap-x-[10px] gap-y-[3px]">
+            <span className="text-faint/70">holdings:</span>
+            {holdings.map((h) => (
+              <span key={h.symbol}>
+                {compactNum(h.amount)} {h.symbol}
+                {h.valueUsd != null ? <span className="text-faint/70"> (${usd(h.valueUsd)})</span> : null}
+              </span>
+            ))}
           </div>
         ) : null}
       </div>

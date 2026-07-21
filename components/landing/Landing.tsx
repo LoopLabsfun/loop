@@ -17,6 +17,7 @@ import { useLoopEngine } from "@/lib/useLoopEngine";
 import type { Project } from "@/lib/types";
 import type { AgentTask } from "@/lib/agent";
 import type { PublicPrelaunch } from "@/lib/prelaunch-public";
+import type { XStockHolding } from "@/lib/xstocks-holdings";
 
 export function Landing({
   projects,
@@ -28,6 +29,7 @@ export function Landing({
   matchCommits,
   agentTasks = [],
   agentLive = false,
+  treasuryHoldings = [],
 }: {
   projects: Project[];
   solUsd: number;
@@ -45,6 +47,8 @@ export function Landing({
   agentTasks?: AgentTask[];
   /** Whether the LOOP agent has real activity (LIVE LOG indicator). */
   agentLive?: boolean;
+  /** Live xStocks positions held by the LOOP treasury wallet. */
+  treasuryHoldings?: XStockHolding[];
 }) {
   const loop = projects.find((p) => p.key === "loop");
   const engine = useLoopEngine(loop?.treasurySol);
@@ -80,6 +84,7 @@ export function Landing({
           treasuryToken={loop?.treasuryTokenUi ?? 0}
           treasuryTokenUsd={(loop?.treasuryTokenUi ?? 0) * (loop?.price ?? 0)}
           treasuryHistory={loop?.treasuryHistory ?? undefined}
+          treasuryHoldings={treasuryHoldings}
           agentActive={agentActive}
           currentTask={currentTask}
           shippedCount={shippedCount}

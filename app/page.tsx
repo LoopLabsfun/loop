@@ -4,6 +4,7 @@ import { getSolUsd } from "@/lib/price";
 import { isAgentActive, getAgentState } from "@/lib/agent-data";
 import { getRecentCommits } from "@/lib/commits";
 import { getPublicPrelaunches } from "@/lib/prelaunch-public";
+import { getTreasuryXStockHoldings } from "@/lib/xstocks-holdings";
 
 // Always fetch fresh so newly launched projects appear without a redeploy.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function HomePage() {
   // agent's real tasks for the loop-engine terminal (same source as the token
   // page, so the home terminal never drifts). All fall back to empty on failure.
   const launched = projects.filter((p) => p.mint);
-  const [activeEntries, commitsAll, agentState] = await Promise.all([
+  const [activeEntries, commitsAll, agentState, treasuryHoldings] = await Promise.all([
     Promise.all(
       launched.map(async (p) => [p.key, await isAgentActive(p.key)] as const)
     ),
@@ -29,6 +30,7 @@ export default async function HomePage() {
       ? getRecentCommits(loop.repo, 30)
       : Promise.resolve([] as { hash: string; msg: string }[]),
     loop ? getAgentState(loop) : Promise.resolve(null),
+    getTreasuryXStockHoldings(loop?.treasuryWallet, loop?.network),
   ]);
   const activeByKey = Object.fromEntries(activeEntries);
   return (
@@ -42,6 +44,7 @@ export default async function HomePage() {
       matchCommits={commitsAll}
       agentTasks={agentState?.tasks ?? []}
       agentLive={agentState?.live ?? false}
+      treasuryHoldings={treasuryHoldings}
     />
   );
 }
