@@ -442,7 +442,9 @@ export function AgentFeed({
       {/* Mandate */}
       <div className="px-5 py-3 border-b border-line-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
         <span className="text-faint">Mandate</span>
-        <span className="text-body truncate max-w-[420px]">{mandate.mission}</span>
+        <span className="text-body truncate max-w-[420px]" title={mandate.mission}>
+          {mandate.mission}
+        </span>
         <span className="ml-auto flex flex-wrap gap-[6px]">
           {mandate.guardrails.map((g) => (
             <span

@@ -29,7 +29,11 @@ export function ChainWalletButton({
 
   if (chain !== "hood") {
     return (
-      <button onClick={onSolToggle} className={cls}>
+      <button
+        onClick={onSolToggle}
+        aria-label={solConnected ? `Solana wallet ${solLabel}` : "Connect Solana wallet"}
+        className={cls}
+      >
         {solConnected ? (
           <span className="inline-block w-[7px] h-[7px] rounded-full bg-pos-bright" />
         ) : (
@@ -68,6 +72,11 @@ export function ChainWalletButton({
     <button
       onClick={() => void onClick()}
       disabled={busy}
+      aria-label={
+        hood.connected && !hood.wrongChain
+          ? `Hood wallet ${shortEvm}`
+          : "Connect an EVM wallet on Robinhood Chain"
+      }
       title={
         err ??
         (hood.connected && !hood.wrongChain
