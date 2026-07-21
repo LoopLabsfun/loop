@@ -67,6 +67,57 @@ export interface BuybackResult {
   txSig?: string;
 }
 
+/** Shared exec core for buyback AND swap — both are "SOL -> outputMint via
+ *  Jupiter, signed from the agent wallet", differing only in which mint and
+ *  which policy-gate label. Kept private; each public fn owns its own
+ *  kind-check + outputMint source so a caller can't mix them up. */
+async function runJupiterSwapAction(
+  action: AgentAction,
+  outputMint: string,
+  ctx: {
+    cluster: LaunchCluster;
+    policy?: ActionPolicy;
+    spentTodaySol?: number;
+    agentWallet?: { id: string; address: string } | null;
+  }
+): Promise<BuybackResult> {
+  const verdict = evaluateAction(action, ctx.policy ?? DEFAULT_POLICY, ctx.spentTodaySol ?? 0);
+  if (!verdict.ok) {
+    return { executed: false, escalated: verdict.escalate, simulated: false, reason: verdict.reason };
+  }
+
+  const canRaw = Boolean(process.env.AGENT_WALLET_SECRET);
+  const canPrivy =
+    !canRaw && agentWalletConfigured() && Boolean(ctx.agentWallet?.id && ctx.agentWallet?.address);
+
+  let expectedOut: string | undefined;
+  try {
+    const quote = await fetchQuote(outputMint, action.amountSol ?? 0);
+    expectedOut = quote.outAmount;
+    if (!canRaw && !canPrivy) {
+      return {
+        executed: false,
+        escalated: false,
+        simulated: true,
+        reason: `Simulated ${action.kind} from ${walletFor(action.kind)} wallet (fund the agent wallet to execute).`,
+        expectedOut,
+      };
+    }
+    const txSig = canPrivy
+      ? await signAndSubmitSwapPrivy(quote, ctx.cluster, ctx.agentWallet!)
+      : await signAndSubmitSwap(quote, ctx.cluster);
+    return { executed: true, escalated: false, simulated: false, reason: `${action.kind} executed.`, expectedOut, txSig };
+  } catch (e) {
+    return {
+      executed: false,
+      escalated: false,
+      simulated: true,
+      reason: e instanceof Error ? e.message : `${action.kind} could not be planned.`,
+      expectedOut,
+    };
+  }
+}
+
 async function fetchQuote(outputMint: string, amountSol: number, slippageBps?: number) {
   const res = await fetch(buildQuoteQuery({ outputMint, amountSol, slippageBps }));
   if (!res.ok) throw new Error(`Jupiter quote failed (${res.status}).`);
@@ -92,45 +143,32 @@ export async function executeBuyback(
   if (action.kind !== "buyback") {
     return { executed: false, escalated: false, simulated: false, reason: "Not a buyback." };
   }
-  const verdict = evaluateAction(action, ctx.policy ?? DEFAULT_POLICY, ctx.spentTodaySol ?? 0);
-  if (!verdict.ok) {
-    return { executed: false, escalated: verdict.escalate, simulated: false, reason: verdict.reason };
-  }
+  return runJupiterSwapAction(action, ctx.outputMint, ctx);
+}
 
-  // Pick a signer: a raw hot-key takes precedence (explicit override / tests),
-  // otherwise Privy custody when a wallet is available for this project. With
-  // neither, we still return a real Jupiter quote but sign nothing (simulated).
-  const canRaw = Boolean(process.env.AGENT_WALLET_SECRET);
-  const canPrivy =
-    !canRaw && agentWalletConfigured() && Boolean(ctx.agentWallet?.id && ctx.agentWallet?.address);
-
-  // Allowed. Fetch a live route either way (so the plan is real).
-  let expectedOut: string | undefined;
-  try {
-    const quote = await fetchQuote(ctx.outputMint, action.amountSol ?? 0);
-    expectedOut = quote.outAmount;
-    if (!canRaw && !canPrivy) {
-      return {
-        executed: false,
-        escalated: false,
-        simulated: true,
-        reason: `Simulated buyback from ${walletFor("buyback")} wallet (fund the agent wallet to execute).`,
-        expectedOut,
-      };
-    }
-    const txSig = canPrivy
-      ? await signAndSubmitSwapPrivy(quote, ctx.cluster, ctx.agentWallet!)
-      : await signAndSubmitSwap(quote, ctx.cluster);
-    return { executed: true, escalated: false, simulated: false, reason: "Buyback executed.", expectedOut, txSig };
-  } catch (e) {
-    return {
-      executed: false,
-      escalated: false,
-      simulated: true,
-      reason: e instanceof Error ? e.message : "Buyback could not be planned.",
-      expectedOut,
-    };
+/**
+ * Execute a treasury-portfolio swap: SOL -> an xStock the agent picked
+ * (`action.outputMint`, its own judgment call — see lib/agent-actions.ts).
+ * evaluateAction has already confirmed the mint is a verified xStock; this
+ * layer just runs the same signed-Jupiter-route path buyback uses. Stays
+ * simulated until the agent wallet is funded, exactly like buyback.
+ */
+export async function executeSwap(
+  action: AgentAction,
+  ctx: {
+    cluster: LaunchCluster;
+    policy?: ActionPolicy;
+    spentTodaySol?: number;
+    agentWallet?: { id: string; address: string } | null;
   }
+): Promise<BuybackResult> {
+  if (action.kind !== "swap") {
+    return { executed: false, escalated: false, simulated: false, reason: "Not a swap." };
+  }
+  if (!action.outputMint) {
+    return { executed: false, escalated: false, simulated: false, reason: "swap requires an outputMint." };
+  }
+  return runJupiterSwapAction(action, action.outputMint, ctx);
 }
 
 /** Build a Jupiter swap for `userPublicKey` → base64 VersionedTransaction. */

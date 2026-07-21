@@ -6,6 +6,15 @@
 // guardrail evaluation. Execution (Jupiter for spot/buyback/burn, a bounty
 // escrow, etc.) is a later layer that signs from the Privy agent wallet — this
 // module decides what is ALLOWED vs. what must ESCALATE before anything signs.
+//
+// "swap" is the treasury-portfolio lever (xStocks, see lib/xstocks.ts): the
+// agent picks the target, the size, and the timing itself, on its own
+// judgment — evaluateAction only enforces the SAME budget caps every other
+// action already has (maxSolPerAction/maxDailySol) plus one security check
+// specific to swap: outputMint must be a verified listed token (not "which
+// stocks are good", just "is this actually the token it claims to be").
+
+import { isXStockMint } from "./xstocks";
 
 export type AgentActionKind =
   | "buyback" // buy the project's own token with treasury SOL
@@ -27,6 +36,10 @@ export interface AgentAction {
   amountTokens?: number;
   /** Airdrop recipients (count only — addresses resolved at execution). */
   recipients?: number;
+  /** swap only: the mint the agent wants treasury SOL routed into (its own
+   *  portfolio pick — e.g. an xStock). Required for kind "swap"; validated
+   *  against the verified xStocks registry, not against a financial-picks list. */
+  outputMint?: string;
   note?: string;
 }
 
@@ -73,6 +86,19 @@ export function evaluateAction(
   // (burn/airdrop) commit tokens, not SOL, so they fall through to their own gate.
   if (sol === 0 && !isIrreversible(a.kind)) {
     return { ok: false, escalate: false, reason: "Zero amount — nothing to commit." };
+  }
+
+  // swap = the treasury-portfolio lever. The agent's own judgment picks the
+  // target; we only verify the mint is a real, listed xStock — never a
+  // financial-quality opinion, purely "is this the token it claims to be".
+  if (a.kind === "swap" && !isXStockMint(a.outputMint)) {
+    return {
+      ok: false,
+      escalate: false,
+      reason: a.outputMint
+        ? `outputMint ${a.outputMint} is not a verified xStock — refusing to route funds to an unlisted token.`
+        : "swap requires an outputMint (which xStock to buy).",
+    };
   }
 
   if (sol > policy.maxSolPerAction) {
