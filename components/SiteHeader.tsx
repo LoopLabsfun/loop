@@ -7,9 +7,13 @@ import { LoopMark } from "./LoopMark";
 import { NotificationBell } from "./NotificationBell";
 import { ChainSwitch } from "./ChainSwitch";
 import { ChainWalletButton } from "./ChainWalletButton";
+import { LoopContract } from "./LoopContract";
 import { GitHubIcon, XIcon, TelegramIcon, DiscordIcon, MessageIcon, ProfileIcon } from "./AuthIcons";
 import { useWallet } from "@/lib/wallet";
+import { useChain } from "@/lib/chains/chain-context";
 import { EXTERNAL_LINKS } from "@/lib/links";
+import { fmtPrice } from "@/lib/format";
+import type { Network } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE site header — one shared, sticky nav for every page (landing, token,
@@ -18,8 +22,10 @@ import { EXTERNAL_LINKS } from "@/lib/links";
 // links, the $LOOP pill, the Launch CTA, and the wallet cluster.
 //
 // Organization rules (the point of the redesign):
-// - ≤4 nav links, so the full menu fits from md (768px) up — the hamburger is
-//   a phone-only object, not a 13-inch-laptop one.
+// - Nav sits LEFT-aligned right after the logo (not centered) — reads as a
+//   real product menu, not a floating island; the five links (Projects, Swap,
+//   Compute, Activity, Docs) are every top-level surface the app has, so
+//   nothing dead-ends behind a page-local link.
 // - Landing-only scroll anchors (How it works, Use cases) are NOT nav: they
 //   stay reachable on the landing page itself.
 // - One primary CTA (Launch). The wallet button is the only other big control.
@@ -32,10 +38,50 @@ import { EXTERNAL_LINKS } from "@/lib/links";
 
 const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/explore", label: "Projects" },
-  { href: "/activity", label: "Activity" },
   { href: "/bridge", label: "Swap" },
+  { href: "/compute", label: "Compute" },
+  { href: "/activity", label: "Activity" },
   { href: "/docs", label: "Docs" },
 ];
+
+interface LoopTicker {
+  /** undefined = not fetched yet (render nothing), null = pre-launch. */
+  mint: string | null | undefined;
+  network: Network;
+  priceUsd: number | null;
+  change24h: number | null;
+}
+
+/** Live $LOOP ticker for the header: official CA + price/24h, polled every 60s
+ *  from the lightweight /api/market/loop. Degrades to nothing on failure. */
+function useLoopTicker(): LoopTicker {
+  const [t, setT] = useState<LoopTicker>({
+    mint: undefined,
+    network: "mainnet",
+    priceUsd: null,
+    change24h: null,
+  });
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/market/loop");
+        if (!r.ok) return;
+        const j = await r.json();
+        if (alive) setT(j);
+      } catch {
+        /* keep the last value */
+      }
+    };
+    load();
+    const iv = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, []);
+  return t;
+}
 
 const COMMUNITY_ICONS: Record<string, JSX.Element> = {
   github: <GitHubIcon size={18} />,
@@ -59,7 +105,16 @@ export function SiteHeader({
 }) {
   const wallet = useWallet();
   const pathname = usePathname();
+  const { chain } = useChain();
+  const ticker = useLoopTicker();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // The header CA follows the active chain: the $LOOP mint on Solana, the
+  // relaunched ERC-20 on Hood (null until launched → "coming to Hood").
+  const caMint =
+    chain === "hood" ? process.env.NEXT_PUBLIC_HOOD_LOOP_MINT || null : ticker.mint;
+  // Price is the Solana market's; hide it in Hood mode rather than mislead.
+  const showPrice = chain !== "hood" && ticker.priceUsd != null;
 
   const launchCls =
     "font-display font-semibold text-[14px] px-3 sm:px-4 py-[9px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors whitespace-nowrap";
@@ -67,7 +122,7 @@ export function SiteHeader({
   return (
     <nav className="sticky top-0 z-50 flex items-center gap-3 px-4 sm:px-8 py-[12px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
       {/* Logo + breadcrumb — pinned left */}
-      <div className="flex items-center gap-[10px] min-w-0 flex-none max-w-[46%]">
+      <div className="flex items-center gap-[10px] min-w-0 flex-none">
         <Link href="/" className="flex items-center gap-[10px] text-ink flex-none">
           <LoopMark width={30} height={18} />
           <span className={`${context ? "hidden sm:inline" : ""} font-display font-bold text-[19px] tracking-[-0.02em]`}>
@@ -82,9 +137,9 @@ export function SiteHeader({
         )}
       </div>
 
-      {/* Product nav — absorbs all slack so the edges can never collide. Four
-          links max is what lets it survive down to md instead of 1360px. */}
-      <div className="flex-1 min-w-0 hidden md:flex items-center justify-center gap-6 text-[14px] text-body overflow-hidden">
+      {/* Product nav — left-aligned right after the logo, not centered: reads
+          as a real menu. */}
+      <div className="hidden md:flex items-center gap-4 pl-2 text-[14px] text-body flex-none">
         {NAV_LINKS.map((l) => (
           <Link
             key={l.href}
@@ -97,17 +152,43 @@ export function SiteHeader({
           </Link>
         ))}
       </div>
-      <div className="flex-1 md:hidden" />
 
-      <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
-        {/* $LOOP — the platform token, one pill, always the token page. The CA
-            itself lives (copyable) on that page, where it's actually needed. */}
+      {/* Spacer — absorbs all slack between the left menu and the right
+          cluster, so the two can never collide. */}
+      <div className="flex-1 min-w-0" />
+
+      <div className="flex items-center gap-[6px] sm:gap-[8px] flex-none">
+        {/* $LOOP ticker — the platform token pill with its live price + 24h,
+            linking to the token page. */}
         <Link
           href="/token?p=loop"
-          className="hidden md:inline-flex items-center font-mono text-[12px] px-3 py-[6px] rounded-full bg-accent-tint border border-accent-tint-border text-accent-text hover:border-line-hover transition-colors whitespace-nowrap"
+          className="hidden xl:inline-flex items-center gap-[8px] font-mono text-[12px] px-3 py-[6px] rounded-full bg-accent-tint border border-accent-tint-border text-accent-text hover:border-line-hover transition-colors whitespace-nowrap"
         >
           $LOOP
+          {showPrice && (
+            <>
+              <span className="text-ink">{fmtPrice(ticker.priceUsd as number)}</span>
+              {ticker.change24h != null && (
+                <span className={ticker.change24h >= 0 ? "text-pos" : "text-neg"}>
+                  {ticker.change24h >= 0 ? "+" : ""}
+                  {ticker.change24h.toFixed(1)}%
+                </span>
+              )}
+            </>
+          )}
         </Link>
+
+        {/* Official $LOOP CA — click to copy, ↗ explorer. Waits for the ticker
+            fetch on Solana so the pre-launch placeholder never flashes. Back
+            at md (was lg) — it's a trust/anti-impersonation cue, not clutter. */}
+        {caMint !== undefined && (
+          <LoopContract
+            mint={caMint}
+            network={ticker.network}
+            chain={chain}
+            className="hidden xl:inline-flex"
+          />
+        )}
 
         {actions}
 
@@ -186,6 +267,10 @@ export function SiteHeader({
             </>
           )}
           <div className="flex items-center justify-between py-[11px]">
+            <span className="text-[15px] text-body">$LOOP contract</span>
+            <LoopContract mint={caMint ?? null} network={ticker.network} chain={chain} />
+          </div>
+          <div className="flex items-center justify-between py-[11px] border-t border-line-2">
             <span className="text-[15px] text-body">Chain</span>
             <ChainSwitch labels="always" className="flex" />
           </div>
