@@ -31,6 +31,10 @@ export const SELECTOR = {
   quoteSell: "0xd98b2f5c",
   /** creationFee() → uint256 */
   creationFee: "0xdce0b4e4",
+  /** pendingFees() → uint256 (wei accrued in the launcher, sweepable) */
+  pendingFees: "0x224438d1",
+  /** withdrawFees() — no args; only callable by the launcher's treasury or owner */
+  withdrawFees: "0x476343ee",
 } as const;
 
 /** Total supply every CurveToken mints (1B, 18 decimals) — the mcap multiplier. */
