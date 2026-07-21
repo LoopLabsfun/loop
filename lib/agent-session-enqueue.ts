@@ -25,6 +25,7 @@ import { effortForTask } from "./agent-effort";
 import { effectivePriority } from "./agent-backlog";
 import { commitMessageWithThrottle } from "./deploy-throttle";
 import { effectiveEnv } from "./project-config";
+import { acquireRepoLock, repoSlugOf } from "./repo-lock";
 import type { AgentSessionPayload } from "../trigger/agent-session";
 
 export function brainMode(env: Record<string, string | undefined> = process.env): "legacy" | "sdk" {
@@ -182,11 +183,20 @@ export async function enqueueSdkSession(
   }
 
   const cfg = sdkSessionConfig(env);
-  const repoSlug = p.repo
-    .replace(/^https?:\/\//, "")
-    .replace(/^github\.com\//, "")
-    .replace(/\.git$/, "")
-    .replace(/\/$/, "");
+  const repoSlug = repoSlugOf(p.repo);
+
+  // Cross-project push lock: a second project row sharing this repo (e.g. a
+  // future LOOP-Hood row alongside LOOP-Solana) must not enqueue a session
+  // that will push while this repo is already mid-push from another project's
+  // tick. Skip this cycle rather than race — the next tick retries. Never
+  // blocks a repo that's ticking alone (the common case today).
+  if (!(await acquireRepoLock(repoSlug, p.key))) {
+    return {
+      enqueued: false,
+      note: `repo lock held by another project's session — deferred to next cycle`,
+    };
+  }
+
   const prefix = decision.task.category === "fix" ? "fix" : "feat";
   const gitId = agentGitIdentity();
 
@@ -267,7 +277,16 @@ export async function enqueueSdkSession(
   await applyDecision(p, building, undefined, { postingPolicy: "authored-only" });
 
   const { tasks } = await import("@trigger.dev/sdk");
-  const handle = await tasks.trigger("agent-session", payload);
+  let handle: { id: string };
+  try {
+    handle = await tasks.trigger("agent-session", payload);
+  } catch (e) {
+    // Never enqueued ⇒ no session will ever call finish to release the lock —
+    // release it now instead of leaving the repo stuck until the TTL clears.
+    const { releaseRepoLock } = await import("./repo-lock");
+    await releaseRepoLock(repoSlug, p.key);
+    throw e;
+  }
   return {
     enqueued: true,
     runId: handle.id,

@@ -10,6 +10,7 @@ import {
 import { authorSocial } from "@/lib/agent-social";
 import type { TaskCategory } from "@/lib/agent";
 import { secretsMatch } from "@/lib/api-auth";
+import { releaseRepoLock, repoSlugOf } from "@/lib/repo-lock";
 
 // Persist callback for a Trigger.dev agent-session run (trigger/agent-session.ts).
 // The durable task runs the E2B SDK session, then POSTs the raw sandbox stdout
@@ -48,6 +49,13 @@ export async function POST(req: Request) {
   if (!project) {
     return NextResponse.json({ error: "project not found" }, { status: 404 });
   }
+
+  // Release the cross-project push lock as early as possible — this session's
+  // push (if any) already happened in the sandbox by the time this callback
+  // fires, so the repo is free for another project's session the moment we
+  // know that. Best-effort (releaseRepoLock never throws); every remaining
+  // code path below is a persist/social step, not a push.
+  await releaseRepoLock(repoSlugOf(project.repo), project.key);
 
   const hands = parseHandsOutput(stdout);
 

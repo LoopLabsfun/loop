@@ -818,6 +818,54 @@ create table if not exists public.agent_tick_attempts (
 comment on table public.agent_tick_attempts is 'Last tick-attempt time per project (written before the heavy build) so fair scheduling advances even when a tick times out.';
 alter table public.agent_tick_attempts enable row level security;
 
+-- ── repo_locks ────────────────────────────────────────────────────────────────
+-- Cross-project push serialization: one row per GitHub repo, held by whichever
+-- project's agent tick is currently pushing. TTL-expiring so a crashed/
+-- never-finished session cannot deadlock the repo forever. Needed once two
+-- independent project rows (e.g. LOOP-Solana + LOOP-Hood) can share one repo
+-- and tick on independent cadences (lib/repo-lock.ts).
+create table if not exists public.repo_locks (
+  repo_slug text primary key,
+  locked_by text not null,
+  locked_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+comment on table public.repo_locks is 'Cross-project push serialization: one row per GitHub repo, held by whichever project''s agent tick is currently pushing. TTL-expiring so a crashed/never-finished session cannot deadlock the repo forever (lib/repo-lock.ts).';
+alter table public.repo_locks enable row level security;
+-- Service-role only (no anon/authenticated policies) — acquire/release happen
+-- server-side via the SECURITY DEFINER functions below, never client-side.
+
+create or replace function public.acquire_repo_lock(p_repo_slug text, p_project_key text, p_ttl_minutes int)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.repo_locks (repo_slug, locked_by, locked_at, expires_at)
+  values (p_repo_slug, p_project_key, now(), now() + (p_ttl_minutes || ' minutes')::interval)
+  on conflict (repo_slug) do update
+    set locked_by = excluded.locked_by,
+        locked_at = excluded.locked_at,
+        expires_at = excluded.expires_at
+    where public.repo_locks.expires_at < now() or public.repo_locks.locked_by = p_project_key;
+  return found;
+end;
+$$;
+revoke all on function public.acquire_repo_lock(text, text, int) from public, anon, authenticated;
+grant execute on function public.acquire_repo_lock(text, text, int) to service_role;
+
+create or replace function public.release_repo_lock(p_repo_slug text, p_project_key text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.repo_locks where repo_slug = p_repo_slug and locked_by = p_project_key;
+$$;
+revoke all on function public.release_repo_lock(text, text) from public, anon, authenticated;
+grant execute on function public.release_repo_lock(text, text) to service_role;
+
 -- ── Phase A: LOOP-only (close public project creation) ───────────────────────
 -- No anon insert policy on projects → only the service-role launch script can
 -- create a project. Reopen with a hardened insert policy for the public phase.
