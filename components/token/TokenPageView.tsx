@@ -10,21 +10,13 @@ import { getComputeLedger } from "@/lib/compute-ledger-store";
 import { getFeeLedger } from "@/lib/fee-ledger-store";
 import { getVercelVisitorsTotal } from "@/lib/vercel-analytics";
 
-// Shared server-side data load + render for the token page, so the public route
-// (/token) and the founder-only v2 preview (/admin/v2) draw from ONE source. The
-// only difference is the `hero` variant passed through to <TokenPage>.
+// Shared server-side data load + render for the public token page (/token).
 
 // Window for "since launch" metrics (Claude spend + Vercel visitors). Snaps to
 // the LOOP token's creation day; overridable so other deployments can retarget.
 const SINCE_ISO = process.env.ANTHROPIC_COST_SINCE || "2026-06-16T00:00:00Z";
 
-export async function TokenPageView({
-  projectKey,
-  hero = "classic",
-}: {
-  projectKey: string;
-  hero?: "classic" | "merged";
-}) {
+export async function TokenPageView({ projectKey }: { projectKey: string }) {
   const base = (await getProject(projectKey)) ?? (await getProject("loop"));
   if (!base) notFound();
   // Compute (Claude spend) is org-wide and visitors are site-wide, so both are
@@ -72,7 +64,6 @@ export async function TokenPageView({
       compute={compute}
       feeLedger={feeLedger}
       visitors={visitors}
-      hero={hero}
     />
   );
 }

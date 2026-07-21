@@ -30,14 +30,13 @@ export async function generateMetadata({
   };
 }
 
-// Public token page — now the v2 "merged" hero (identity + contract + price + Buy
-// on the left, the live agent on the right): same data source, it surfaces what the
-// project's agent is actually doing (building now, last ship, self-funding proof).
-// Promoted from the founder-only /admin/v2 preview to prod.
+// Public token page — the hero (identity + contract + price + Buy on the left,
+// the live agent on the right) surfaces what the project's agent is actually
+// doing (building now, last ship, self-funding proof).
 export default async function TokenRoute({
   searchParams,
 }: {
   searchParams: { p?: string };
 }) {
-  return <TokenPageView projectKey={searchParams.p ?? "loop"} hero="merged" />;
+  return <TokenPageView projectKey={searchParams.p ?? "loop"} />;
 }

@@ -62,7 +62,6 @@ export function TokenPage({
   compute,
   feeLedger,
   visitors,
-  hero = "classic",
 }: {
   project: Project;
   market: LiveMarket;
@@ -79,9 +78,6 @@ export function TokenPage({
   feeLedger?: FeeLedger;
   /** Total Vercel visitors since launch, or null when unconfigured. */
   visitors?: number | null;
-  /** "classic" = the public v1 header; "merged" = the v2 hero (identity + price +
-   *  buy on the left, the live agent on the right). Founder-only /admin/v2 preview. */
-  hero?: "classic" | "merged";
 }) {
   // Real commits from the repo only — no static sample (empty state otherwise).
   const commitFeed = commits;
@@ -99,9 +95,9 @@ export function TokenPage({
   const last = stats?.priceUsd ?? 0;
   const change = stats?.priceChange24h ?? 0;
 
-  // v2 hero summary of the live agent: what it's building now (or the next queued
-  // item) + its most recent ship + the self-funding-loop proof. Only used by the
-  // "merged" hero. All derived from props already loaded — no extra fetch.
+  // Hero summary of the live agent: what it's building now (or the next queued
+  // item) + its most recent ship + the self-funding-loop proof. All derived
+  // from props already loaded — no extra fetch.
   const allTasks = agentState?.tasks ?? [];
   const buildingTask = allTasks.find((t) => t.status === "building");
   const heroTask = buildingTask ?? allTasks.find((t) => t.status === "todo");
@@ -142,92 +138,21 @@ export function TokenPage({
       <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
 
       <main>
-      {hero === "merged" ? (
-        <MergedHero
-          p={p}
-          last={last}
-          change={change}
-          stats={stats}
-          preLaunch={preLaunch}
-          building={Boolean(buildingTask)}
-          heroTaskTitle={heroTask?.title}
-          heroTaskAt={heroTaskAt}
-          tasks={agentState?.tasks}
-          lastShip={lastShip}
-          shippedCount={shippedCount}
-          computeSpentUsd={computeSpentUsd}
-          onchainActions={onchainActions}
-        />
-      ) : (
-      <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5 flex items-center justify-between gap-6 flex-wrap">
-        <div className="flex items-center gap-4">
-          <div className="w-[60px] h-[60px] rounded-[14px] border border-line-2 bg-accent-tint flex items-center justify-center">
-            <LoopMark width={36} height={22} stroke="var(--accent)" />
-          </div>
-          <div>
-            <div className="flex items-center gap-[10px] flex-wrap">
-              <h1 className="font-display font-bold text-[26px] tracking-[-0.02em] m-0">
-                {p.name}
-              </h1>
-              <span className="font-mono text-[13px] text-accent-text">{p.ticker}</span>
-              {p.official && (
-                <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] bg-accent text-white">
-                  OFFICIAL
-                </span>
-              )}
-              {p.network === "devnet" && (
-                <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">
-                  devnet
-                </span>
-              )}
-              <AgentStatusBadge project={p} />
-            </div>
-            <p className="text-[13.5px] text-muted mt-[5px] mb-0">{p.description}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-7">
-          <div>
-            <div className="font-display font-bold text-[32px] tracking-[-0.02em] tabular-nums">
-              {preLaunch ? "—" : fmtPrice(last)}
-            </div>
-            {preLaunch ? (
-              <div className="font-mono text-[13px] text-faint">not launched</div>
-            ) : (
-              <div
-                className="font-mono text-[13px]"
-                style={{ color: change >= 0 ? "var(--pos)" : "var(--neg)" }}
-              >
-                {(change >= 0 ? "+" : "") + change.toFixed(2)}% · 24h
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pl-7 border-l border-line-2">
-            {/* Live market values (DexScreener) when launched; fall back to the
-                stored snapshot only pre-launch so nothing reads as stale/fake. */}
-            <HeaderStat
-              label="Market Cap"
-              value={stats ? compactUsd(stats.marketCap) : p.marketCap}
-              help="Token price × circulating supply — the market's live valuation of the project. It's also what the agent's mascot reacts to."
-            />
-            <HeaderStat
-              label="Liquidity"
-              value={stats ? compactUsd(stats.liquidityUsd) : p.liquidity}
-              help="Value pooled for trading. Deeper liquidity = lower slippage when you buy or sell."
-            />
-            <HeaderStat
-              label="Holders"
-              value={p.holders}
-              help="Distinct wallets holding the token. Click a wallet in the holders list to inspect it on-chain."
-            />
-            <HeaderStat
-              label="24h Volume"
-              value={stats ? compactUsd(stats.volume24hUsd) : p.volume24h}
-              help="Total traded value over the last 24 hours — how active the market is right now."
-            />
-          </div>
-        </div>
-      </section>
-      )}
+      <MergedHero
+        p={p}
+        last={last}
+        change={change}
+        stats={stats}
+        preLaunch={preLaunch}
+        building={Boolean(buildingTask)}
+        heroTaskTitle={heroTask?.title}
+        heroTaskAt={heroTaskAt}
+        tasks={agentState?.tasks}
+        lastShip={lastShip}
+        shippedCount={shippedCount}
+        computeSpentUsd={computeSpentUsd}
+        onchainActions={onchainActions}
+      />
 
       {/* Main grid */}
       <section className="max-w-[1280px] mx-auto px-8 pb-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px] gap-4 items-start">
@@ -386,17 +311,7 @@ export function TokenPage({
 
         {/* Right column */}
         <div className="flex flex-col gap-4">
-          {/* The mascot: shown here in v1; in v2 it lives in the hero (single placement). */}
-          {hero !== "merged" && (
-            <div className="bg-surface border border-line-2 rounded-[16px] p-[14px] flex items-center justify-center">
-              <AgentFace
-                project={p}
-                tasks={agentState?.tasks}
-                size="lg"
-                market={{ changePct: change }}
-              />
-            </div>
-          )}
+          {/* The mascot lives in the hero (single placement) — see MergedHero. */}
           <div id="swap" className="scroll-mt-4 rounded-[16px] jump-target">
             {p.prelaunch ? (
               <PrelaunchBackCard project={p} />
@@ -513,14 +428,13 @@ function TokenNav({
   );
 }
 
-// v2 hero (founder-only /admin/v2 preview): identity + contract + price + Buy on
-// the left, the LIVE agent on the right — mascot, what it's building now (with
-// freshness), the SELF-FUNDING-LOOP proof (features shipped · compute the token
-// spent building itself · on-chain actions), and the last ship. So a first-time
-// visitor grasps the whole thesis — "this token funds an agent that ships, here
-// it is working" — above the fold. Everything is project-data-driven (no LOOP
-// hardcoding) so it works verbatim for every future token. Reuses the same
-// HeaderStat / AgentFace / AgentStatusBadge as the classic header.
+// The token page's hero: identity + contract + price + Buy on the left, the
+// LIVE agent on the right — mascot, what it's building now (with freshness),
+// the SELF-FUNDING-LOOP proof (features shipped · compute the token spent
+// building itself · on-chain actions), and the last ship. So a first-time
+// visitor grasps the whole thesis — "this token funds an agent that ships,
+// here it is working" — above the fold. Everything is project-data-driven (no
+// LOOP hardcoding) so it works verbatim for every project's token.
 function MergedHero({
   p,
   last,
