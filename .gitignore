@@ -70,3 +70,5 @@ scripts/force-sdk-tick.ts
 # Cloudflare email worker deps
 workers/email-inbound/node_modules/
 .env*
+forge/
+supabase/.temp/
