@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
+import { getProjects } from "./queries";
 
 // Server-only seam for Loop's social graph: wallet-to-wallet follows and the
 // per-recipient notification feed. Public follow data is readable directly; all
@@ -92,33 +93,62 @@ async function enrich(wallets: string[], viewer?: string | null): Promise<Social
   }));
 }
 
+/** Wallets that ARE platform infrastructure (an official project's on-chain
+ *  creator/treasury, e.g. LOOP's 7kyek…) — real people to discover, they're not.
+ *  Kept out of the People surfaces below so an infra wallet never shows up as
+ *  "a person named Loop" with a Follow button (still visible via direct /u/ link,
+ *  badged — see ProfileView's isPlatformWallet). */
+async function getPlatformWallets(): Promise<Set<string>> {
+  const projects = await getProjects();
+  const wallets = new Set<string>();
+  for (const p of projects) {
+    if (!p.official) continue;
+    if (p.creatorWallet) wallets.add(p.creatorWallet);
+    if (p.treasuryWallet) wallets.add(p.treasuryWallet);
+  }
+  return wallets;
+}
+
+const PLATFORM_LIMIT_PAD = 8; // headroom so filtering out platform wallets doesn't starve the page below `limit`.
+
 /** Recently-joined profiles that have set at least a display name or username —
- *  people worth discovering on Explore. Excludes the viewer. */
+ *  people worth discovering on Explore. Excludes the viewer and platform wallets. */
 export async function getRecentProfiles(viewer?: string | null, limit = 24): Promise<SocialUser[]> {
   const sb = supabaseAdmin;
   if (!sb) return [];
-  const { data } = await sb
-    .from("profiles")
-    .select("wallet,display_name,avatar_url,username")
-    .or("display_name.not.is.null,username.not.is.null")
-    .order("created_at", { ascending: false })
-    .limit(limit + 1);
-  const wallets = ((data ?? []) as { wallet: string }[]).map((p) => p.wallet).filter((w) => w !== viewer).slice(0, limit);
+  const [{ data }, platform] = await Promise.all([
+    sb
+      .from("profiles")
+      .select("wallet,display_name,avatar_url,username")
+      .or("display_name.not.is.null,username.not.is.null")
+      .order("created_at", { ascending: false })
+      .limit(limit + PLATFORM_LIMIT_PAD),
+    getPlatformWallets(),
+  ]);
+  const wallets = ((data ?? []) as { wallet: string }[])
+    .map((p) => p.wallet)
+    .filter((w) => w !== viewer && !platform.has(w))
+    .slice(0, limit);
   return enrich(wallets, viewer);
 }
 
-/** Search profiles by username or display name (prefix-friendly), enriched. */
+/** Search profiles by username or display name (prefix-friendly), enriched.
+ *  Excludes platform wallets — see getRecentProfiles. */
 export async function searchPeople(q: string, viewer?: string | null, limit = 12): Promise<SocialUser[]> {
   const sb = supabaseAdmin;
   const term = q.trim();
   if (!sb || term.length < 2) return [];
   const like = `%${term.replace(/[%_]/g, "")}%`;
-  const { data } = await sb
-    .from("profiles")
-    .select("wallet")
-    .or(`username.ilike.${like},display_name.ilike.${like}`)
-    .limit(limit);
-  return enrich(((data ?? []) as { wallet: string }[]).map((p) => p.wallet), viewer);
+  const [{ data }, platform] = await Promise.all([
+    sb
+      .from("profiles")
+      .select("wallet")
+      .or(`username.ilike.${like},display_name.ilike.${like}`)
+      .limit(limit + PLATFORM_LIMIT_PAD),
+    getPlatformWallets(),
+  ]);
+  const wallets = ((data ?? []) as { wallet: string }[]).map((p) => p.wallet).filter((w) => !platform.has(w)).slice(0, limit);
+  return enrich(wallets, viewer);
 }
 
 /** Wallets that follow `wallet` (newest first), enriched. */

@@ -45,7 +45,7 @@ type LogFilter = "all" | "ship" | "decision" | "escalation";
 export function ProfileView({ data }: { data: ProfileViewData }) {
   const wallet = useWallet();
   const router = useRouter();
-  const { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch } = data;
+  const { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch, isPlatformWallet } = data;
   const isOwner = wallet.connected && wallet.address === profile.wallet;
   const escalations = log.filter((l) => l.kind === "escalation").length;
 
@@ -117,7 +117,7 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
                       Edit profile
                     </button>
                   </div>
-                ) : (
+                ) : isPlatformWallet ? null : (
                   <div className="flex items-center gap-2">
                     {wallet.connected && (
                       <Link
@@ -143,6 +143,7 @@ export function ProfileView({ data }: { data: ProfileViewData }) {
             <div className="mt-3 min-w-0">
               <div className="flex items-center gap-[9px] flex-wrap">
                 <span className="font-display font-bold text-[22px] tracking-[-0.02em] leading-none break-all">{name}</span>
+                {isPlatformWallet && <PlatformWalletBadge />}
                 {profile.twitterHandle ? (
                   <a
                     href={`https://x.com/${profile.twitterHandle.replace(/^@/, "")}`}
@@ -623,6 +624,21 @@ function BadgeChip({ badge: b }: { badge: Badge }) {
     >
       <span className="text-[11px] leading-none">{BADGE_GLYPH[b.key] ?? "•"}</span>
       {b.label}
+    </span>
+  );
+}
+
+// Distinguishes infra wallets (a project's on-chain creator/treasury, e.g.
+// LOOP's 7kyek…) from real people — without it this wallet reads as "a
+// person named Loop" with a Follow/Message button, which it isn't.
+function PlatformWalletBadge() {
+  return (
+    <span
+      title="This wallet is Loop platform infrastructure (an on-chain project treasury/creator), not a person."
+      className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] inline-flex items-center gap-[4px] tracking-[0.01em] cursor-default bg-surface-2 text-muted border border-line-3"
+    >
+      <span className="text-[11px] leading-none">⚙</span>
+      Official platform wallet
     </span>
   );
 }

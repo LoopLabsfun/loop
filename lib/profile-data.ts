@@ -81,6 +81,10 @@ export interface ProfileView {
   log: CreatorLogItem[];
   /** This wallet's pre-launch project draft (the waitlist), or null if none. */
   prelaunch: PrelaunchSummary | null;
+  /** True when this wallet IS platform infrastructure (an official project's
+   *  creator/treasury wallet, e.g. 7kyek…) rather than a real person's wallet —
+   *  drives the "Official platform wallet" badge so it doesn't read as a person. */
+  isPlatformWallet: boolean;
 }
 
 const EMPTY = (wallet: string): Profile => ({
@@ -285,5 +289,8 @@ export async function getProfileView(wallet: string, viewer?: string | null): Pr
   const priced = positions.filter((p) => p.valueUsd != null);
   const portfolioUsd = priced.length > 0 ? priced.reduce((s, p) => s + (p.valueUsd as number), 0) : null;
   const badges = deriveBadges({ launched, positions, portfolioUsd, builder, follow, createdAt: profile.createdAt });
-  return { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch };
+  const isPlatformWallet = projects.some(
+    (p) => p.official && (p.creatorWallet === wallet || p.treasuryWallet === wallet)
+  );
+  return { profile, launched, positions, portfolioUsd, builder, badges, follow, followers, followingList, log, prelaunch, isPlatformWallet };
 }
