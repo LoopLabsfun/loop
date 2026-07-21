@@ -236,7 +236,7 @@ export function BrowserNode() {
       tokenRef.current = json.token;
       window.localStorage.setItem(`loop-compute-token:${solAddress}`, json.token);
       setHoodLinked(true);
-      say(`Hood payout linked — rewards can now pay in ETH too`);
+      say(`Hood payout linked — stored for when $LOOP is live on Hood`);
     } catch (e) {
       setLastError(e instanceof Error ? e.message : "hood link failed");
     } finally {
@@ -319,10 +319,10 @@ export function BrowserNode() {
                 disabled={linkingHood}
                 className="font-mono text-[11.5px] px-3 py-[6px] rounded-[9px] border border-line-3 text-muted hover:text-ink hover:border-line-hover transition-colors disabled:opacity-60"
               >
-                {linkingHood ? "Sign in both wallets…" : "+ Link Hood wallet (get paid in ETH too)"}
+                {linkingHood ? "Sign in both wallets…" : "+ Link Hood wallet (for $LOOP on Hood, coming)"}
               </button>
               <span className="font-mono text-[10.5px] text-faint">
-                optional — Solana-funded rewards work without it
+                optional — rewards pay in $LOOP on Solana today
               </span>
             </>
           )}

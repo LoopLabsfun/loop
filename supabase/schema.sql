@@ -925,6 +925,15 @@ create table if not exists public.compute_rewards (
   -- bigint: ERC20 base-unit amounts can exceed bigint range at 18 decimals.
   earned_loop_hood_units numeric(40,0) not null default 0,
   claimed_loop_hood_units numeric(40,0) not null default 0,
+  -- Claim-pull payout (lib/compute-claim.ts): the USER claims and pays their
+  -- own ATA rent + tx fee — the treasury only co-signs the token transfer.
+  -- One in-flight claim per device: a partially-signed tx is issued with these
+  -- fields set, and either confirmed (claimed += pending) or reconciled after
+  -- its blockhash expires (an expired tx can never land).
+  claim_pending_units bigint not null default 0,
+  claim_nonce text,
+  claim_expires_block bigint,
+  claim_requested_at timestamptz,
   updated_at timestamptz not null default now()
 );
 comment on table public.compute_rewards is 'Per-device compute-pool reward ledger, paid in $LOOP (never native SOL/ETH — never drains the operational treasury). Real payout execution: lib/compute-rewards-payout.ts, disarmed unless COMPUTE_REWARDS_PAY=1.';

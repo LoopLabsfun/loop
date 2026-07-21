@@ -6,6 +6,7 @@ import { useWallet } from "@/lib/wallet";
 import { NavUserActions } from "./NavUserActions";
 import { shortAge } from "@/lib/format";
 import { BrowserNode } from "./compute/BrowserNode";
+import { ClaimRewards } from "./compute/ClaimRewards";
 import type { ComputePoolStats } from "@/lib/device-assists";
 
 // The /compute page: Loop's device pool made visible. Consumer devices (Macs,
@@ -47,6 +48,9 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
 
         {/* The beta client — the browser is the node */}
         <BrowserNode />
+
+        {/* Self-serve claim: rewards in $LOOP on Solana, user pays own rent */}
+        <ClaimRewards />
 
         {/* Headline stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
@@ -120,6 +124,10 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
             A Mac or iPhone, idle and plugged in, prepares real backlog work for a project&apos;s
             agent — an analysis brief thought through on-device — and earns rewards in that
             project&apos;s token. Proofs are cross-checked across devices, so the pool polices itself.
+          </p>
+          <p className="font-mono text-[11.5px] text-faint mt-0 mb-3">
+            Rewards pay in $LOOP on Solana. You claim them yourself — one wallet signature, and
+            you cover only the small network rent for your own token account.
           </p>
           <div className="flex flex-wrap gap-2">
             <Link

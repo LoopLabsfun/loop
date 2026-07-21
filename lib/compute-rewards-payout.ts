@@ -1,6 +1,11 @@
 import "server-only";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NOTE: this treasury-PUSH path is the founder-run FALLBACK. The primary
+// payout is claim-PULL (lib/compute-claim.ts + /api/compute/claim): the user
+// signs the claim and pays their own ATA rent, so the treasury never spends
+// rent per recipient. Founder decision 2026-07-21.
+//
 // COMPUTE REWARDS — PAYOUT (the real-money half). Sends actual $LOOP (an SPL
 // token transfer, never native SOL) from the treasury's LOOP position to
 // compute-pool contributors' linked payout addresses, bounded by what
