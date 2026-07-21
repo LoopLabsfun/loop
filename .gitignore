@@ -72,4 +72,7 @@ workers/email-inbound/node_modules/
 .env*
 forge/
 supabase/.temp/
-docs/v2-plan.md
+
+# No markdown docs in the public repo — planning/marketing/launch/audit stay in loop-private-notes (founder rule)
+*.md
+CLAUDE.md
