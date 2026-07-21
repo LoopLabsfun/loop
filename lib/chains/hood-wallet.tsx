@@ -92,6 +92,8 @@ export interface HoodWalletState {
   /** eth_sendTransaction with pre-mapped params (Relay deposit — EVM leg of an
    *  in-app cross-chain swap). Resolves with the tx hash. */
   sendRawTx: (params: Record<string, string>) => Promise<string>;
+  /** EIP-191 personal_sign over `message` — no tx, no gas. */
+  signMessage: (message: string) => Promise<string>;
   /** Every EIP-6963-announced wallet extension found in this browser (for the picker). */
   providers: Eip6963ProviderDetail[];
   /** Connect to a specific detected provider (from `providers`), by its uuid. */
@@ -302,6 +304,24 @@ export function useHoodWallet(): HoodWalletState {
     [sendTx]
   );
 
+  // Sign an arbitrary message (EIP-191 personal_sign) — no transaction, no gas,
+  // used for proof-of-ownership flows (e.g. linking this address as a Loop
+  // Compute payout wallet). Returns the 0x…-prefixed 65-byte hex signature.
+  const signMessage = useCallback(
+    async (message: string): Promise<string> => {
+      const p = getProvider();
+      if (!p) throw new Error("No EVM wallet found.");
+      if (!address) throw new Error("Connect your wallet first.");
+      // personal_sign takes [data, address] — data must be UTF-8 hex-encoded.
+      const hexMessage = "0x" + Buffer.from(message, "utf8").toString("hex");
+      return (await p.request({
+        method: "personal_sign",
+        params: [hexMessage, address],
+      })) as string;
+    },
+    [address, getProvider]
+  );
+
   // Send a Relay deposit tx (already mapped to eth_sendTransaction params). The
   // `from` is forced to the connected account so a stale quote can't redirect it.
   const sendRawTx = useCallback(
@@ -333,6 +353,7 @@ export function useHoodWallet(): HoodWalletState {
       sell,
       createToken,
       sendRawTx,
+      signMessage,
       providers,
       connectWith,
     }),
@@ -349,6 +370,7 @@ export function useHoodWallet(): HoodWalletState {
       sell,
       createToken,
       sendRawTx,
+      signMessage,
       providers,
       connectWith,
     ]

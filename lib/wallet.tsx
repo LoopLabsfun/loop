@@ -38,7 +38,7 @@ import { buildLaunchMessage } from "./launch-message";
 import { buildAdminMessage } from "./admin-message";
 import { buildProfileMessage } from "./profile-message";
 import { buildWaitlistMessage } from "./waitlist-message";
-import { buildComputeEnrollMessage } from "./compute-message";
+import { buildComputeEnrollMessage, buildHoodLinkMessage } from "./compute-message";
 import { toBaseUnits, TOKEN_DECIMALS, buildChatMessage } from "./chat";
 import { buildDirectiveMessage } from "./directives";
 import { buildStakeMessage } from "./staking";
@@ -169,6 +169,11 @@ export interface WalletState {
   /** Sign the canonical compute-enroll message for `wallet` to join the device
    *  pool (the server also checks pubkey === wallet). null if unsupported. */
   signComputeEnrollProof: (wallet: string) => Promise<LaunchProof | null>;
+  /** Sign the canonical Hood-payout-link message binding this wallet to
+   *  `hoodAddress` at `ts` (the Hood wallet must sign the SAME text via
+   *  useHoodWallet().signMessage — see app/api/compute/link-hood). null if
+   *  unsupported. */
+  signHoodLinkProof: (hoodAddress: string, ts: number) => Promise<LaunchProof | null>;
   /**
    * Send `sol` SOL from the connected wallet to `to` on the active cluster
    * (a plain SystemProgram.transfer — used for project donations). Resolves
@@ -437,6 +442,13 @@ export function useWallet(): WalletState {
   const signComputeEnrollProof = (wallet: string): Promise<LaunchProof | null> =>
     signProof(buildComputeEnrollMessage(wallet, Date.now()));
 
+  // `ts` is caller-supplied (not Date.now() internally, unlike the other
+  // sign*Proof methods) because linking a Hood wallet needs BOTH this wallet
+  // AND the Hood wallet to sign the exact same message text — the caller
+  // generates one timestamp and passes it to both signers.
+  const signHoodLinkProof = (hoodAddress: string, ts: number): Promise<LaunchProof | null> =>
+    address ? signProof(buildHoodLinkMessage(address, hoodAddress, ts)) : Promise.resolve(null);
+
   return {
     connected,
     address,
@@ -452,6 +464,7 @@ export function useWallet(): WalletState {
     signProfileProof,
     signWaitlistProof,
     signComputeEnrollProof,
+    signHoodLinkProof,
     sendSol,
     sendSwapTx,
     sendInstructions,

@@ -16,6 +16,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 
 const PREFIX = "dt1";
+// v2 additionally embeds a linked Hood (EVM) payout address, verified once at
+// link time (lib/signature.ts verifyHoodLinkProof + verifyEvmPersonalSign) —
+// see docs on buildHoodLinkMessage. dt1 tokens keep working unchanged; a v1
+// holder just has no Hood address until they link one and get reissued a v2.
+const PREFIX_V2 = "dt2";
 
 function signingSecret(): string {
   return (
@@ -30,6 +35,12 @@ function hmac(secret: string, deviceId: string): string {
   return createHmac("sha256", secret).update(`${PREFIX}:device:${deviceId}`).digest("hex");
 }
 
+function hmacV2(secret: string, deviceId: string, hoodAddress: string): string {
+  return createHmac("sha256", secret)
+    .update(`${PREFIX_V2}:device:${deviceId}:hood:${hoodAddress}`)
+    .digest("hex");
+}
+
 /** Issue a token for a deviceId (server/CLI only). Null when unconfigured. */
 export function issueDeviceToken(deviceId: string): string | null {
   const secret = signingSecret();
@@ -38,21 +49,58 @@ export function issueDeviceToken(deviceId: string): string | null {
   return `${PREFIX}.${id}.${hmac(secret, id)}`;
 }
 
-/**
- * Verify a token; returns the embedded deviceId or null. Constant-time
- * comparison; malformed input never throws.
- */
-export function verifyDeviceToken(token: string | null | undefined): string | null {
+/** Issue a v2 token embedding a verified Hood payout address alongside the
+ *  device's Solana identity. Null when unconfigured or inputs are malformed. */
+export function issueDeviceTokenWithHood(deviceId: string, hoodAddress: string): string | null {
+  const secret = signingSecret();
+  const id = deviceId.trim();
+  const addr = hoodAddress.trim().toLowerCase();
+  if (!secret || !id || id.length > 128 || id.includes(".")) return null;
+  if (!/^0x[0-9a-f]{40}$/.test(addr)) return null;
+  return `${PREFIX_V2}.${id}.${addr}.${hmacV2(secret, id, addr)}`;
+}
+
+/** Full verification: returns the embedded deviceId + linked hoodAddress (null
+ *  for a v1 token or one with no link), or null if the token is invalid.
+ *  Constant-time comparison; malformed input never throws. */
+export function verifyDeviceTokenFull(
+  token: string | null | undefined
+): { deviceId: string; hoodAddress: string | null } | null {
   const secret = signingSecret();
   if (!secret || !token) return null;
   const parts = token.split(".");
-  if (parts.length !== 3 || parts[0] !== PREFIX) return null;
-  const [, deviceId, mac] = parts;
-  if (!deviceId || deviceId.length > 128 || !/^[0-9a-f]{64}$/i.test(mac)) return null;
-  const expected = Buffer.from(hmac(secret, deviceId), "hex");
-  const got = Buffer.from(mac, "hex");
-  if (expected.length !== got.length) return null;
-  return timingSafeEqual(expected, got) ? deviceId : null;
+  if (parts[0] === PREFIX && parts.length === 3) {
+    const [, deviceId, mac] = parts;
+    if (!deviceId || deviceId.length > 128 || !/^[0-9a-f]{64}$/i.test(mac)) return null;
+    const expected = Buffer.from(hmac(secret, deviceId), "hex");
+    const got = Buffer.from(mac, "hex");
+    if (expected.length !== got.length) return null;
+    return timingSafeEqual(expected, got) ? { deviceId, hoodAddress: null } : null;
+  }
+  if (parts[0] === PREFIX_V2 && parts.length === 4) {
+    const [, deviceId, hoodAddress, mac] = parts;
+    if (
+      !deviceId ||
+      deviceId.length > 128 ||
+      !/^0x[0-9a-f]{40}$/.test(hoodAddress) ||
+      !/^[0-9a-f]{64}$/i.test(mac)
+    )
+      return null;
+    const expected = Buffer.from(hmacV2(secret, deviceId, hoodAddress), "hex");
+    const got = Buffer.from(mac, "hex");
+    if (expected.length !== got.length) return null;
+    return timingSafeEqual(expected, got) ? { deviceId, hoodAddress } : null;
+  }
+  return null;
+}
+
+/**
+ * Verify a token; returns the embedded deviceId or null. Constant-time
+ * comparison; malformed input never throws. Thin wrapper over
+ * verifyDeviceTokenFull for callers that only need the deviceId.
+ */
+export function verifyDeviceToken(token: string | null | undefined): string | null {
+  return verifyDeviceTokenFull(token)?.deviceId ?? null;
 }
 
 /** Constant-time string compare — a plain === leaks the match length/timing. */
@@ -64,15 +112,16 @@ function secretsEqual(a: string, b: string): boolean {
 }
 
 export type ComputeAuth =
-  | { ok: true; kind: "secret"; deviceId: null }
-  | { ok: true; kind: "device-token"; deviceId: string }
-  | { ok: false; kind: null; deviceId: null };
+  | { ok: true; kind: "secret"; deviceId: null; hoodAddress: null }
+  | { ok: true; kind: "device-token"; deviceId: string; hoodAddress: string | null }
+  | { ok: false; kind: null; deviceId: null; hoodAddress: null };
 
 /**
  * Authorize a Loop Compute request. Accepts either the shared ingest secret
  * (founder devices, cron) or a per-device token in `x-device-token`. Returns
- * the authenticated deviceId when a token was used, so callers can bind the
- * write to that device and reject spoofed `deviceId` body fields.
+ * the authenticated deviceId (+ linked Hood payout address, if any) when a
+ * token was used, so callers can bind the write to that device and reject
+ * spoofed `deviceId`/payout fields.
  */
 export function authorizeCompute(req: Request): ComputeAuth {
   const secret =
@@ -82,9 +131,11 @@ export function authorizeCompute(req: Request): ComputeAuth {
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     "";
   if (secret && header && secretsEqual(header, secret)) {
-    return { ok: true, kind: "secret", deviceId: null };
+    return { ok: true, kind: "secret", deviceId: null, hoodAddress: null };
   }
-  const deviceId = verifyDeviceToken(req.headers.get("x-device-token"));
-  if (deviceId) return { ok: true, kind: "device-token", deviceId };
-  return { ok: false, kind: null, deviceId: null };
+  const verified = verifyDeviceTokenFull(req.headers.get("x-device-token"));
+  if (verified) {
+    return { ok: true, kind: "device-token", deviceId: verified.deviceId, hoodAddress: verified.hoodAddress };
+  }
+  return { ok: false, kind: null, deviceId: null, hoodAddress: null };
 }

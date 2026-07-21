@@ -806,6 +806,13 @@ create index if not exists device_assists_project_unread_idx
 alter table public.device_assists enable row level security;
 create policy "device_assists public read" on public.device_assists for select to anon, authenticated using (true);
 
+-- LOOP will soon have both a Solana AND a Hood treasury, so a compute
+-- contributor needs both a Solana payout address (payout_address above) and
+-- a Hood/EVM payout address, linked via app/api/compute/link-hood
+-- (lib/evm-signature.ts verifies the EIP-191 proof server-side).
+alter table public.device_assists add column if not exists payout_address_hood text;
+comment on column public.device_assists.payout_address_hood is 'Contributor EVM wallet, linked via app/api/compute/link-hood — pays ETH when the funding project''s treasury is on Hood rather than Solana.';
+
 -- Per-project LAST TICK ATTEMPT (written by the cron BEFORE the heavy E2B build).
 -- lastTickAt() (lib/agent-data) takes the later of this and the newest agent_tasks
 -- row, so a tick that times out (the heavy LOOP repo overruns the 300s function

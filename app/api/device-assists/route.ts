@@ -44,6 +44,7 @@ export async function POST(req: Request) {
     prepBrief?: string;
     resultHash?: string;
     payoutAddress?: string;
+    payoutAddressHood?: string;
   };
   try {
     body = await req.json();
@@ -67,6 +68,20 @@ export async function POST(req: Request) {
   // A device token binds the write to its own id; the shared secret trusts the
   // body. Prevents a public device from publishing under another's identity.
   const deviceId = auth.deviceId ?? (body.deviceId || "unknown").slice(0, 128);
+
+  // Payout addresses come from the AUTHENTICATED identity, never the client
+  // body, for token-auth submissions — otherwise any device could redirect
+  // future rewards to a wallet it doesn't own. A device's Solana identity IS
+  // its deviceId (computeDeviceId = "web-"+wallet, lib/compute-message.ts),
+  // so it's derivable rather than merely trusted; the Hood address comes from
+  // the verified v2 token (null until linked via /api/compute/link-hood).
+  // Secret-auth (founder devices/cron) keeps the body as-is — same trusted
+  // path as everything else on that side.
+  const solanaPayout =
+    auth.kind === "device-token"
+      ? deviceId.match(/^web-(.+)$/)?.[1]
+      : body.payoutAddress?.trim();
+  const hoodPayout = auth.kind === "device-token" ? auth.hoodAddress ?? undefined : body.payoutAddressHood?.trim();
 
   // Public (token-auth) submissions are VERIFIED, not trusted: the work unit is
   // deterministic, so the server recomputes it from the task row and rejects
@@ -93,7 +108,8 @@ export async function POST(req: Request) {
     deviceId,
     deviceName: body.deviceName?.slice(0, 128),
     complexity: verified?.complexity ?? body.complexity?.slice(0, 16),
-    payoutAddress: body.payoutAddress?.trim().slice(0, 64) || undefined,
+    payoutAddress: solanaPayout?.slice(0, 64) || undefined,
+    payoutAddressHood: hoodPayout?.slice(0, 64) || undefined,
     keywords: verified?.keywords ?? (Array.isArray(body.keywords) ? body.keywords.map(String).slice(0, 20) : []),
     prepBrief: prepBrief.slice(0, 12000),
     resultHash: body.resultHash?.slice(0, 128),

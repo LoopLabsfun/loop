@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@/lib/wallet";
+import { useHoodWallet } from "@/lib/chains/hood-wallet";
 import { runAssist } from "@/lib/compute-work";
-import { computeDeviceId, computeDeviceName } from "@/lib/compute-message";
+import { computeDeviceId, computeDeviceName, buildHoodLinkMessage } from "@/lib/compute-message";
 
 // The public beta Loop Compute client — the browser IS the node. Zero install:
 // connect a wallet, sign once (enrollment mints a device token bound to the
@@ -30,10 +31,13 @@ type NodeStatus = "off" | "enrolling" | "running" | "error";
 
 export function BrowserNode() {
   const wallet = useWallet();
+  const hood = useHoodWallet();
   const [status, setStatus] = useState<NodeStatus>("off");
   const [log, setLog] = useState<string[]>([]);
   const [jobsDone, setJobsDone] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [hoodLinked, setHoodLinked] = useState(false);
+  const [linkingHood, setLinkingHood] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -160,11 +164,49 @@ export function BrowserNode() {
       }
     }
     tokenRef.current = token;
+    setHoodLinked(token.startsWith("dt2."));
     setStatus("running");
     say(`node ${computeDeviceName(address)} online`);
     void pass();
     timerRef.current = setInterval(() => void pass(), POLL_MS);
   }, [wallet, say, pass]);
+
+  // Link a Hood (EVM) payout wallet alongside the Solana one this device
+  // already enrolled with — needed once a task can be funded from either
+  // chain's treasury (LOOP-Solana pays SOL, LOOP-Hood pays ETH). Both wallets
+  // sign the SAME message text; reissues the device token as v2 on success.
+  const linkHood = useCallback(async () => {
+    const solAddress = wallet.address;
+    if (!solAddress) return;
+    setLastError(null);
+    setLinkingHood(true);
+    try {
+      if (!hood.connected) await hood.connect();
+      const hoodAddress = hood.address;
+      if (!hoodAddress) throw new Error("connect an EVM wallet first");
+      const ts = Date.now();
+      const [proof, hoodSignature] = await Promise.all([
+        wallet.signHoodLinkProof(hoodAddress, ts),
+        hood.signMessage(buildHoodLinkMessage(solAddress, hoodAddress, ts)),
+      ]);
+      if (!proof) throw new Error("solana wallet can't sign messages");
+      const res = await fetch("/api/compute/link-hood", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet: solAddress, proof, hoodAddress, hoodSignature }),
+      });
+      const json = (await res.json().catch(() => null)) as { token?: string; error?: string } | null;
+      if (!res.ok || !json?.token) throw new Error(json?.error || "link failed");
+      tokenRef.current = json.token;
+      window.localStorage.setItem(`loop-compute-token:${solAddress}`, json.token);
+      setHoodLinked(true);
+      say(`Hood payout linked — rewards can now pay in ETH too`);
+    } catch (e) {
+      setLastError(e instanceof Error ? e.message : "hood link failed");
+    } finally {
+      setLinkingHood(false);
+    }
+  }, [wallet, hood, say]);
 
   // Stop cleanly if the wallet disconnects mid-run or the view unmounts.
   useEffect(() => {
@@ -224,6 +266,32 @@ export function BrowserNode() {
           {jobsDone > 0 ? `${jobsDone} assist${jobsDone > 1 ? "s" : ""} this session` : "prepping $LOOP backlog"}
         </span>
       </div>
+
+      {/* LOOP will soon be funded from two chains (Solana + Hood) — a task's
+          reward pays in whichever chain funded it, so a device needs both
+          payout wallets on file. Shown only once enrolled; optional. */}
+      {wallet.connected && status !== "off" && (
+        <div className="mt-3 pt-3 border-t border-line-4 flex items-center gap-3 flex-wrap">
+          {hoodLinked ? (
+            <span className="font-mono text-[11.5px] text-pos">
+              ✓ Hood payout linked ({hood.address ? `${hood.address.slice(0, 6)}…${hood.address.slice(-4)}` : "EVM wallet"})
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={() => void linkHood()}
+                disabled={linkingHood}
+                className="font-mono text-[11.5px] px-3 py-[6px] rounded-[9px] border border-line-3 text-muted hover:text-ink hover:border-line-hover transition-colors disabled:opacity-60"
+              >
+                {linkingHood ? "Sign in both wallets…" : "+ Link Hood wallet (get paid in ETH too)"}
+              </button>
+              <span className="font-mono text-[10.5px] text-faint">
+                optional — Solana-funded rewards work without it
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {lastError && (
         <p className="font-mono text-[11.5px] text-[var(--neg)] mt-2 mb-0">{lastError}</p>

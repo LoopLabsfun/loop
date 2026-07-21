@@ -7,7 +7,7 @@ import { buildStakeMessage } from "./staking";
 import { buildAdminMessage } from "./admin-message";
 import { buildProfileMessage } from "./profile-message";
 import { buildWaitlistMessage } from "./waitlist-message";
-import { buildComputeEnrollMessage } from "./compute-message";
+import { buildComputeEnrollMessage, buildHoodLinkMessage } from "./compute-message";
 
 // Wallet-signature ownership proof. The launcher signs a canonical message with
 // their wallet; the server verifies the ed25519 signature before crediting the
@@ -189,6 +189,26 @@ export function verifyComputeEnrollProof(
   const ts = Number(m[1]);
   if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
   if (proof.message !== buildComputeEnrollMessage(wallet, ts)) return false;
+  return verifyWalletSignature(proof);
+}
+
+/** Verify the SOLANA half of a Hood-payout-link proof: valid ed25519
+ *  signature, the canonical (wallet, hoodAddress) message, and recent. The
+ *  EVM half (verifyEvmPersonalSign over the same message text) is checked
+ *  separately by the caller — both must pass to link the wallet. */
+export function verifyHoodLinkProof(
+  proof: LaunchProof,
+  wallet: string,
+  hoodAddress: string,
+  opts: { maxAgeMs?: number; now?: number } = {}
+): boolean {
+  const maxAgeMs = opts.maxAgeMs ?? 5 * 60 * 1000;
+  const now = opts.now ?? Date.now();
+  const m = proof.message.match(/\nts:(\d+)$/);
+  if (!m) return false;
+  const ts = Number(m[1]);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) return false;
+  if (proof.message !== buildHoodLinkMessage(wallet, hoodAddress, ts)) return false;
   return verifyWalletSignature(proof);
 }
 

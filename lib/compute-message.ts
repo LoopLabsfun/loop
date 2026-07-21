@@ -18,3 +18,15 @@ export function computeDeviceId(wallet: string): string {
 export function computeDeviceName(wallet: string): string {
   return `web·${wallet.slice(0, 4)}…${wallet.slice(-4)}`;
 }
+
+// Linking a Hood (EVM) payout wallet alongside the Solana one that owns this
+// device — needed once LOOP has both a Solana AND a Hood treasury: a task
+// funded by the Solana side pays SOL, a Hood-funded one pays ETH, so a
+// contributor's device needs both destinations on file. BOTH wallets sign
+// this exact same message (ed25519 for the Solana side via verifyWalletSignature,
+// EIP-191 for the Hood side via verifyEvmPersonalSign) — a mutual proof that
+// neither wallet can produce alone, so a device can't link someone else's
+// payout address to itself.
+export function buildHoodLinkMessage(solanaWallet: string, hoodAddress: string, ts: number): string {
+  return `loop.fun compute\nlink hood payout ${hoodAddress.toLowerCase()} to wallet:${solanaWallet}\nts:${ts}`;
+}

@@ -143,8 +143,12 @@ export interface PublishDeviceAssistInput {
   keywords?: string[];
   prepBrief: string;
   resultHash?: string;
-  /** Contributor wallet that earns the reward for this assist. */
+  /** Contributor Solana wallet that earns the reward for this assist. */
   payoutAddress?: string;
+  /** Contributor Hood (EVM) wallet — pays ETH when the funding project's
+   *  treasury is on Hood rather than Solana. Null until linked (see
+   *  app/api/compute/link-hood). */
+  payoutAddressHood?: string;
 }
 
 /**
@@ -178,6 +182,7 @@ export async function publishDeviceAssist(
       result_hash: (input.resultHash ?? "").slice(0, 128),
       source: "loop-compute",
       payout_address: input.payoutAddress?.slice(0, 64) ?? null,
+      payout_address_hood: input.payoutAddressHood?.slice(0, 64) ?? null,
     },
     { onConflict: "project_key,job_id" }
   );

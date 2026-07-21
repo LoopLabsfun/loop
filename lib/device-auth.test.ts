@@ -50,6 +50,41 @@ describe("device tokens", () => {
   });
 });
 
+describe("v2 tokens (linked Hood payout address)", () => {
+  const HOOD_ADDR = "0x00000000000000000000000000000000000000ad";
+
+  it("round-trips: verifyDeviceTokenFull recovers deviceId + hoodAddress", async () => {
+    const { issueDeviceTokenWithHood, verifyDeviceTokenFull } = await load();
+    const token = issueDeviceTokenWithHood("web-abc123", HOOD_ADDR);
+    expect(token).toMatch(/^dt2\.web-abc123\.0x0+ad\.[0-9a-f]{64}$/);
+    expect(verifyDeviceTokenFull(token)).toEqual({ deviceId: "web-abc123", hoodAddress: HOOD_ADDR });
+  });
+
+  it("verifyDeviceToken (legacy shape) still recovers just the deviceId from a v2 token", async () => {
+    const { issueDeviceTokenWithHood, verifyDeviceToken } = await load();
+    const token = issueDeviceTokenWithHood("web-abc123", HOOD_ADDR);
+    expect(verifyDeviceToken(token)).toBe("web-abc123");
+  });
+
+  it("a v1 token has no hoodAddress", async () => {
+    const { issueDeviceToken, verifyDeviceTokenFull } = await load();
+    const token = issueDeviceToken("web-abc123");
+    expect(verifyDeviceTokenFull(token)).toEqual({ deviceId: "web-abc123", hoodAddress: null });
+  });
+
+  it("rejects a tampered hoodAddress (signature no longer matches)", async () => {
+    const { issueDeviceTokenWithHood, verifyDeviceTokenFull } = await load();
+    const token = issueDeviceTokenWithHood("web-abc123", HOOD_ADDR)!;
+    const forged = token.replace(HOOD_ADDR, "0x00000000000000000000000000000000000000ff");
+    expect(verifyDeviceTokenFull(forged)).toBeNull();
+  });
+
+  it("refuses to issue with a malformed EVM address", async () => {
+    const { issueDeviceTokenWithHood } = await load();
+    expect(issueDeviceTokenWithHood("web-abc123", "not-an-address")).toBeNull();
+  });
+});
+
 describe("authorizeCompute", () => {
   const req = (headers: Record<string, string>) =>
     new Request("https://x/api", { method: "POST", headers });
