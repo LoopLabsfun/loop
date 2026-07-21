@@ -14,15 +14,24 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Cross-chain swap/bridge quote proxy (Solana <-> Hood) over Relay.
+ * Universal swap/bridge quote proxy over Relay — ANY token to ANY token, same
+ * chain OR cross chain (Solana <-> Hood). Relay's /quote/v2 is a general
+ * aggregator, not a bridge-only API: verified live that origin==destination
+ * (e.g. USDC -> SOL, both Solana) returns a real "swap" step exactly like a
+ * cross-chain "deposit" step does — so there is no reason to require the two
+ * chains to differ. (An earlier version of this route wrongly rejected
+ * same-chain requests; fixed 2026-07-21.)
  *
  * Read-only, server-side: validates the request (chains, address shapes,
  * currency shapes, amount), forwards to Relay's public /quote/v2, and returns
  * BOTH a normalised quote AND the raw executable `steps` + `requestId` so the
- * swap runs IN-APP (the client signs the deposit in the user's own wallet — no
- * external handoff). Proxying keeps it same-origin, guards inputs before the
- * upstream (DoS-amplification hygiene like /api/swap), and stabilises the shape.
- * No funds move here — the deposit tx is signed client-side, non-custodially.
+ * swap runs IN-APP (the client signs the deposit/swap in the user's own
+ * wallet — no external handoff). Proxying keeps it same-origin, guards inputs
+ * before the upstream (DoS-amplification hygiene like /api/swap), and
+ * stabilises the shape. No funds move here — the tx is signed client-side,
+ * non-custodially. lib/relay-execute.ts's step reader already looks for the
+ * first SVM/EVM tx payload regardless of step id ("swap" vs "deposit"), so
+ * the execution path needs no change for same-chain routes.
  */
 
 const EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
@@ -52,9 +61,9 @@ export async function POST(req: Request) {
   }
 
   const { fromChain, toChain } = body;
-  if (!isBridgeChain(fromChain) || !isBridgeChain(toChain) || fromChain === toChain) {
+  if (!isBridgeChain(fromChain) || !isBridgeChain(toChain)) {
     return NextResponse.json(
-      { error: "fromChain and toChain must be distinct: 'solana' | 'hood'" },
+      { error: "fromChain and toChain must each be 'solana' | 'hood'" },
       { status: 400 }
     );
   }
@@ -64,6 +73,13 @@ export async function POST(req: Request) {
   const amount = String(body.amount ?? "").trim();
   const fromCurrency = body.fromCurrency ? String(body.fromCurrency).trim() : undefined;
   const toCurrency = body.toCurrency ? String(body.toCurrency).trim() : undefined;
+
+  // The only real no-op: same chain AND same token. Relay itself handles
+  // same-chain swaps (verified live), so same-chain with DIFFERENT tokens is
+  // a perfectly normal request — e.g. an xStock -> SOL, both on Solana.
+  if (fromChain === toChain && fromCurrency && toCurrency && fromCurrency === toCurrency) {
+    return NextResponse.json({ error: "fromCurrency and toCurrency must differ" }, { status: 400 });
+  }
   const slippageBps =
     typeof body.slippageBps === "number" && Number.isFinite(body.slippageBps)
       ? body.slippageBps
