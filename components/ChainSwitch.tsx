@@ -11,7 +11,15 @@ import { SolMark } from "./SolMark";
  * (lib/chains/chain-context.tsx): which projects the landing lists and which
  * chain launches target. Rendered in the landing Nav and the token-page nav.
  */
-export function ChainSwitch({ className = "" }: { className?: string }) {
+export function ChainSwitch({
+  className = "",
+  labels = "auto",
+}: {
+  className?: string;
+  /** "auto" = labels from sm up (legacy), "always" = labeled (menus/sheets),
+   *  "never" = icon-only (the demoted header pill). */
+  labels?: "auto" | "always" | "never";
+}) {
   const { chain, setChain } = useChain();
   return (
     <div
@@ -27,6 +35,7 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
             onClick={() => setChain(c)}
             aria-pressed={active}
             aria-label={`Switch to ${chainInfo(c).label}`}
+            title={labels === "never" ? `Switch to ${chainInfo(c).label}` : undefined}
             className={`inline-flex items-center gap-[5px] font-mono text-[11.5px] px-[10px] py-[5px] rounded-[8px] transition-colors whitespace-nowrap ${
               active
                 ? "bg-accent text-white"
@@ -34,9 +43,11 @@ export function ChainSwitch({ className = "" }: { className?: string }) {
             }`}
           >
             {c === "hood" ? <HoodMark size={12} /> : <SolMark size={12} />}
-            {/* Icon-only below sm so the switch fits the mobile nav — chains
-                must stay reachable on phones. */}
-            <span className="hidden sm:inline">{chainInfo(c).label}</span>
+            {labels !== "never" && (
+              <span className={labels === "auto" ? "hidden sm:inline" : ""}>
+                {chainInfo(c).label}
+              </span>
+            )}
           </button>
         );
       })}

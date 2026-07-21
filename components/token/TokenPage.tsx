@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { SiteHeader } from "../SiteHeader";
 import { LoopMark } from "../LoopMark";
-import { NavUserActions } from "../NavUserActions";
-import { ChainSwitch } from "../ChainSwitch";
-import { ChainWalletButton } from "../ChainWalletButton";
 import { HoodSwapCard } from "./HoodSwapCard";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
@@ -127,7 +125,7 @@ export function TokenPage({
   if (chainReady && activeChain !== projectChain) {
     return (
       <InspectorProvider project={p}>
-        <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
+        <SiteHeader context={p.ticker} actions={<ShareButton />} />
         <main>
           <ChainMismatchPanel
             project={p}
@@ -141,7 +139,7 @@ export function TokenPage({
 
   return (
     <InspectorProvider project={p}>
-      <TokenNav ticker={p.ticker} walletLabel={wallet.label} connected={wallet.connected} onToggle={wallet.toggle} />
+      <SiteHeader context={p.ticker} actions={<ShareButton />} />
 
       <main>
       <MergedHero
@@ -389,49 +387,6 @@ function ShareButton() {
         {copied ? "Copied" : "Share"}
       </span>
     </button>
-  );
-}
-
-function TokenNav({
-  ticker,
-  walletLabel,
-  connected,
-  onToggle,
-}: {
-  ticker: string;
-  walletLabel: string;
-  connected: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <nav className="sticky top-0 z-50 flex items-center justify-between gap-2 px-4 sm:px-8 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
-      <div className="flex items-center gap-[10px] sm:gap-[14px] min-w-0">
-        <Link href="/" className="flex items-center gap-[10px] text-ink flex-none">
-          <LoopMark width={30} height={18} />
-          {/* Wordmark yields to the chain switch on phones — mark + ticker
-              already identify the page. */}
-          <span className="hidden sm:inline font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
-        </Link>
-        <span className="hidden sm:inline text-line-hover">/</span>
-        <span className="font-mono text-[13px] text-accent-text truncate">{ticker}</span>
-      </div>
-      <div className="flex items-center gap-[8px] sm:gap-[10px] flex-none">
-        <ChainSwitch className="flex" />
-        <ShareButton />
-        <Link
-          href="/"
-          className="hidden sm:inline-block text-[13.5px] text-muted hover:text-ink transition-colors px-[14px] py-[9px]"
-        >
-          ← All projects
-        </Link>
-        <NavUserActions messagesHidden />
-        <ChainWalletButton
-          solConnected={connected}
-          solLabel={walletLabel}
-          onSolToggle={onToggle}
-        />
-      </div>
-    </nav>
   );
 }
 

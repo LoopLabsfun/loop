@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LoopMark } from "./LoopMark";
-import { useWallet } from "@/lib/wallet";
-import { NavUserActions } from "./NavUserActions";
+import { SiteHeader } from "./SiteHeader";
 import { shortAge } from "@/lib/format";
 import { BrowserNode } from "./compute/BrowserNode";
 import { ClaimRewards } from "./compute/ClaimRewards";
@@ -13,7 +11,6 @@ import type { ComputePoolStats } from "@/lib/device-assists";
 // iPhones) prepare backlog work for the agents and earn rewards. Honest empty
 // state — no invented devices — matching the rest of the product.
 export function ComputeView({ stats }: { stats: ComputePoolStats }) {
-  const wallet = useWallet();
   const lastAgo =
     stats.lastAssistAt != null
       ? shortAge((Date.now() - Date.parse(stats.lastAssistAt)) / 1000)
@@ -21,21 +18,7 @@ export function ComputeView({ stats }: { stats: ComputePoolStats }) {
 
   return (
     <div className="min-h-screen">
-      <nav className="border-b border-line max-w-[1280px] mx-auto px-6 sm:px-8 h-[60px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-[10px]">
-          <LoopMark width={24} height={15} stroke="var(--accent)" />
-          <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
-        </Link>
-        <div className="flex items-center gap-[8px]">
-          <NavUserActions messagesHidden />
-          <button
-            onClick={wallet.toggle}
-            className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors"
-          >
-            {wallet.label}
-          </button>
-        </div>
-      </nav>
+      <SiteHeader context="compute" />
 
       <main className="max-w-[680px] mx-auto px-6 sm:px-8 py-7">
         <div className="mb-5">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LoopMark } from "../LoopMark";
+import { SiteHeader } from "../SiteHeader";
 
 const SECTIONS = [
   { id: "what", label: "What is Loop" },
@@ -18,31 +18,7 @@ const SECTIONS = [
 export function DocsPage() {
   return (
     <>
-      {/* Header */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between gap-3 px-4 sm:px-10 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
-        <Link href="/" className="flex items-center gap-[10px] text-ink">
-          <LoopMark width={34} height={20} />
-          <span className="font-display font-bold text-[20px] tracking-[-0.02em]">
-            Loop
-          </span>
-          <span className="text-line-hover">/</span>
-          <span className="font-mono text-[13px] text-muted">docs</span>
-        </Link>
-        <div className="flex items-center gap-[10px]">
-          <Link
-            href="/token?p=loop"
-            className="font-mono text-[13px] text-accent-text hover:text-accent-d transition-colors hidden sm:inline"
-          >
-            $LOOP
-          </Link>
-          <Link
-            href="/"
-            className="font-display font-semibold text-[14px] px-[18px] py-[9px] rounded-[10px] bg-accent text-white hover:bg-accent-d transition-colors whitespace-nowrap"
-          >
-            Launch a Project
-          </Link>
-        </div>
-      </nav>
+      <SiteHeader context="docs" />
 
       <div className="max-w-[1100px] mx-auto px-6 sm:px-10 py-12 grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-12">
         {/* Sidebar TOC */}

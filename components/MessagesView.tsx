@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { LoopMark } from "./LoopMark";
-import { NavUserActions } from "./NavUserActions";
+import { SiteHeader } from "./SiteHeader";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
 import { apiEstablishSession } from "@/lib/social-client";
@@ -111,18 +110,7 @@ export function MessagesView() {
 
   return (
     <div className="min-h-screen">
-      <nav className="border-b border-line max-w-[1280px] mx-auto px-6 sm:px-8 h-[60px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-[10px]">
-          <LoopMark width={24} height={15} stroke="var(--accent)" />
-          <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
-        </Link>
-        <div className="flex items-center gap-[8px]">
-          <NavUserActions messagesHidden />
-          <button onClick={wallet.toggle} className="font-mono text-[12px] px-3 py-[7px] rounded-[10px] border border-line-3 hover:border-line-hover transition-colors">
-            {wallet.label}
-          </button>
-        </div>
-      </nav>
+      <SiteHeader context="messages" />
 
       <main className="max-w-[1000px] mx-auto px-4 sm:px-8 py-6">
         <h1 className="font-display font-bold text-[24px] tracking-[-0.02em] m-0 mb-4">Messages</h1>

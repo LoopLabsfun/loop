@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LoopMark } from "@/components/LoopMark";
+import { SiteHeader } from "@/components/SiteHeader";
 import { getProject } from "@/lib/queries";
 import { getAgentState } from "@/lib/agent-data";
 import { getRecentCommits } from "@/lib/commits";
@@ -28,20 +28,7 @@ export default async function LogPage() {
 
   return (
     <>
-      <nav className="sticky top-0 z-50 flex items-center justify-between gap-2 px-4 sm:px-8 py-[14px] bg-canvas/[0.88] backdrop-blur-md border-b border-line">
-        <Link href="/" className="flex items-center gap-[10px] text-ink">
-          <LoopMark width={30} height={18} />
-          <span className="font-display font-bold text-[19px] tracking-[-0.02em]">Loop</span>
-          <span className="text-line-hover">/</span>
-          <span className="font-mono text-[13px] text-accent-text">build log</span>
-        </Link>
-        <Link
-          href="/token?p=loop"
-          className="text-[13.5px] text-muted hover:text-ink transition-colors px-[14px] py-[9px]"
-        >
-          $LOOP →
-        </Link>
-      </nav>
+      <SiteHeader context="build log" />
 
       <main className="max-w-[760px] mx-auto px-6 sm:px-8 py-10">
         <header className="mb-9">

@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoopMark } from "@/components/LoopMark";
+import { SiteHeader } from "@/components/SiteHeader";
 import { useWallet } from "@/lib/wallet";
 
 // "My profile" — a thin client redirect to /u/<your wallet> once connected, so the
@@ -18,12 +17,7 @@ export default function MyProfile() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="border-b border-line max-w-[1280px] w-full mx-auto px-6 sm:px-8 h-[60px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-[10px]">
-          <LoopMark width={24} height={15} stroke="var(--accent)" />
-          <span className="font-display font-bold text-[16px] tracking-[-0.02em]">Loop</span>
-        </Link>
-      </nav>
+      <SiteHeader context="profile" />
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="bg-surface border border-line-2 rounded-[16px] px-6 py-8 text-center max-w-[420px]">
           <div className="font-display font-semibold text-[16px] mb-1">Your Loop profile</div>

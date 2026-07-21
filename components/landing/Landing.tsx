@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Nav } from "./Nav";
+import { useCallback, useEffect, useState } from "react";
+import { SiteHeader } from "@/components/SiteHeader";
 import { Hero } from "./Hero";
 import { LiveProjects } from "./LiveProjects";
 import { PrelaunchBoard } from "./PrelaunchBoard";
@@ -66,14 +66,16 @@ export function Landing({
   const openModal = useCallback(() => setModalOpen(true), []);
   const closeModal = useCallback(() => setModalOpen(false), []);
 
+  // Deep-link for the shared header's Launch CTA on other pages: /?launch=1
+  // opens the modal on arrival. Read off window (not useSearchParams) to skip
+  // the Suspense-boundary requirement.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("launch") === "1") setModalOpen(true);
+  }, []);
+
   const body = (
     <>
-      <Nav
-        onLaunch={openModal}
-        onScroll={scrollTo}
-        loopMint={loop?.mint}
-        loopNetwork={loop?.network}
-      />
+      <SiteHeader onLaunch={openModal} />
       <main>
         <Hero
           engine={engine}
