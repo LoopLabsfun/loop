@@ -72,3 +72,4 @@ workers/email-inbound/node_modules/
 .env*
 forge/
 supabase/.temp/
+docs/v2-plan.md
