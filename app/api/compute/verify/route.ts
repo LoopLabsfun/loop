@@ -30,7 +30,7 @@ async function handle(req: Request) {
   // Accrual (crediting the reward ledger) reads BOTH device_assists (just
   // flagged above) and treasury_checks (flagged inline at submission time) —
   // one pass covers whichever job type has newly-verified work. No-op
-  // (disarmed) unless COMPUTE_REWARD_LAMPORTS_PER_UNIT is set; never real
+  // (disarmed) unless COMPUTE_REWARD_LOOP_UNITS_PER_UNIT is set; never real
   // money — see lib/compute-rewards-payout.ts for the separate, more tightly
   // gated SOL-send step.
   const rewards = await accrueComputeRewards();

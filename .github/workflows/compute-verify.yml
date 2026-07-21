@@ -1,0 +1,38 @@
+# Drives the compute-pool verification loop: /api/compute/verify recomputes
+# k-redundancy consensus over device_assists, persists device trust, and runs
+# reward ACCRUAL (ledger credit — disarmed until COMPUTE_REWARD_LOOP_UNITS_PER_UNIT
+# is set; never real money — the $LOOP send is a separate, founder-armed step).
+#
+# Nothing scheduled this endpoint before, so consensus/accrual only ran when
+# poked manually. Same pattern as hood-buybot.yml: Vercel Hobby can't cron
+# sub-daily, so the recurring cadence lives in GitHub Actions (throttled to
+# ~5–30 min effective — fine, verification is idempotent and windowed).
+
+name: compute-verify
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # manual fire from the Actions tab
+
+concurrency:
+  group: compute-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run consensus + reward accrual
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET not set — skipping."
+            exit 0
+          fi
+          # Apex directly: www 308-redirects and curl drops the auth header
+          # across the host change (same gotcha as agent-cron).
+          curl -sS -m 120 -H "Authorization: Bearer $CRON_SECRET" \
+            -X POST "https://looplabs.fun/api/compute/verify" | head -c 800
