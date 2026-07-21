@@ -11,6 +11,7 @@ import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
+import { chainInfo } from "@/lib/chains/registry";
 import { ChainMismatchPanel } from "./ChainMismatchPanel";
 import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
@@ -62,6 +63,7 @@ export function TokenPage({
   compute,
   feeLedger,
   visitors,
+  siblingChainProject,
 }: {
   project: Project;
   market: LiveMarket;
@@ -78,6 +80,10 @@ export function TokenPage({
   feeLedger?: FeeLedger;
   /** Total Vercel visitors since launch, or null when unconfigured. */
   visitors?: number | null;
+  /** This project's counterpart on the other chain (same identity, separate
+   *  treasury/agent loop — docs/multichain-hood.md Phase 4), or null when it
+   *  hasn't launched there yet. */
+  siblingChainProject?: { key: string; chain: "solana" | "hood" } | null;
 }) {
   // Real commits from the repo only — no static sample (empty state otherwise).
   const commitFeed = commits;
@@ -152,6 +158,7 @@ export function TokenPage({
         shippedCount={shippedCount}
         computeSpentUsd={computeSpentUsd}
         onchainActions={onchainActions}
+        siblingChainProject={siblingChainProject}
       />
 
       {/* Main grid */}
@@ -449,6 +456,7 @@ function MergedHero({
   shippedCount,
   computeSpentUsd,
   onchainActions,
+  siblingChainProject,
 }: {
   p: Project;
   last: number;
@@ -463,6 +471,7 @@ function MergedHero({
   shippedCount: number;
   computeSpentUsd: number | null;
   onchainActions: number;
+  siblingChainProject?: { key: string; chain: "solana" | "hood" } | null;
 }) {
   return (
     <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5">
@@ -491,6 +500,14 @@ function MergedHero({
             )}
             {p.network === "devnet" && (
               <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">devnet</span>
+            )}
+            {siblingChainProject && (
+              <Link
+                href={`/token?p=${siblingChainProject.key}`}
+                className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-line-3 text-muted hover:border-line-hover hover:text-ink transition-colors"
+              >
+                also on {chainInfo(siblingChainProject.chain).label} →
+              </Link>
             )}
           </div>
 
