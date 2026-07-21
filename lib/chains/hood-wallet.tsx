@@ -8,7 +8,7 @@
 // useWallet() façade so the live Solana app is untouched; the Hood trading/launch
 // UI uses this hook directly. See docs/multichain-hood.md (Phase 2/3).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HOOD_CHAIN_ID,
   HOOD_DEFAULT_RPC,
@@ -24,6 +24,24 @@ interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
   on?(event: string, handler: (...args: unknown[]) => void): void;
   removeListener?(event: string, handler: (...args: unknown[]) => void): void;
+}
+
+// EIP-6963 ("Multi Injected Provider Discovery") lets every installed EVM
+// wallet extension announce itself independently, instead of all of them
+// fighting over the single `window.ethereum` slot — that's what makes a real
+// wallet-picker possible (Rabby AND MetaMask AND Robinhood Wallet, listed).
+export interface Eip6963ProviderInfo {
+  uuid: string;
+  name: string;
+  icon: string; // data: URI, supplied by the wallet itself
+  rdns: string;
+}
+export interface Eip6963ProviderDetail {
+  info: Eip6963ProviderInfo;
+  provider: Eip1193Provider;
+}
+interface Eip6963AnnounceEvent extends Event {
+  detail: Eip6963ProviderDetail;
 }
 
 function injected(): Eip1193Provider | null {
@@ -74,16 +92,42 @@ export interface HoodWalletState {
   /** eth_sendTransaction with pre-mapped params (Relay deposit — EVM leg of an
    *  in-app cross-chain swap). Resolves with the tx hash. */
   sendRawTx: (params: Record<string, string>) => Promise<string>;
+  /** Every EIP-6963-announced wallet extension found in this browser (for the picker). */
+  providers: Eip6963ProviderDetail[];
+  /** Connect to a specific detected provider (from `providers`), by its uuid. */
+  connectWith: (uuid: string) => Promise<void>;
 }
 
 export function useHoodWallet(): HoodWalletState {
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
-  const available = typeof window !== "undefined" && !!injected();
+  const [providers, setProviders] = useState<Eip6963ProviderDetail[]>([]);
+  // The provider the user actually picked (or the sole/legacy one) — every
+  // call after connect() goes through this, not always window.ethereum,
+  // otherwise a non-default wallet choice would silently be ignored.
+  const chosenProviderRef = useRef<Eip1193Provider | null>(null);
+  const getProvider = useCallback((): Eip1193Provider | null => chosenProviderRef.current ?? injected(), []);
+  const available = typeof window !== "undefined" && (!!injected() || providers.length > 0);
+
+  // EIP-6963 discovery: listen for every wallet extension's self-announcement,
+  // then ask them all to announce (covers ones that loaded before we listened).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const seen = new Map<string, Eip6963ProviderDetail>();
+    const onAnnounce = (e: Event) => {
+      const { detail } = e as Eip6963AnnounceEvent;
+      if (!detail?.info?.uuid || seen.has(detail.info.uuid)) return;
+      seen.set(detail.info.uuid, detail);
+      setProviders(Array.from(seen.values()));
+    };
+    window.addEventListener("eip6963:announceProvider", onAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    return () => window.removeEventListener("eip6963:announceProvider", onAnnounce);
+  }, []);
 
   // Reconcile from the injected wallet on mount + subscribe to account/chain changes.
   useEffect(() => {
-    const p = injected();
+    const p = getProvider();
     if (!p) return;
     let cancelled = false;
     void (async () => {
@@ -91,6 +135,10 @@ export function useHoodWallet(): HoodWalletState {
         const accts = (await p.request({ method: "eth_accounts" })) as string[];
         const cid = (await p.request({ method: "eth_chainId" })) as string;
         if (cancelled) return;
+        // Only adopt as "connected" if the wallet already has this site authorized —
+        // avoids silently claiming a legacy window.ethereum before the user has
+        // picked anything from the modal.
+        if (accts?.[0]) chosenProviderRef.current = p;
         setAddress(accts?.[0] ?? null);
         setChainId(cid ? parseInt(cid, 16) : null);
       } catch {
@@ -106,10 +154,10 @@ export function useHoodWallet(): HoodWalletState {
       p.removeListener?.("accountsChanged", onAccounts);
       p.removeListener?.("chainChanged", onChain);
     };
-  }, []);
+  }, [getProvider]);
 
   const switchToHood = useCallback(async () => {
-    const p = injected();
+    const p = getProvider();
     if (!p) throw new Error("No EVM wallet found. Install MetaMask or Rabby.");
     try {
       await p.request({
@@ -137,24 +185,43 @@ export function useHoodWallet(): HoodWalletState {
     }
   }, []);
 
+  const connectVia = useCallback(
+    async (p: Eip1193Provider) => {
+      chosenProviderRef.current = p;
+      const accts = (await p.request({ method: "eth_requestAccounts" })) as string[];
+      setAddress(accts?.[0] ?? null);
+      await switchToHood();
+      const cid = (await p.request({ method: "eth_chainId" })) as string;
+      setChainId(cid ? parseInt(cid, 16) : null);
+    },
+    [switchToHood]
+  );
+
+  // Default connect: only meaningful when there's a single/legacy provider —
+  // the picker modal calls connectWith() once >1 wallet is detected.
   const connect = useCallback(async () => {
     const p = injected();
     if (!p) throw new Error("No EVM wallet found. Install MetaMask or Rabby.");
-    const accts = (await p.request({ method: "eth_requestAccounts" })) as string[];
-    setAddress(accts?.[0] ?? null);
-    await switchToHood();
-    const cid = (await p.request({ method: "eth_chainId" })) as string;
-    setChainId(cid ? parseInt(cid, 16) : null);
-  }, [switchToHood]);
+    await connectVia(p);
+  }, [connectVia]);
+
+  const connectWith = useCallback(
+    async (uuid: string) => {
+      const detail = providers.find((d) => d.info.uuid === uuid);
+      if (!detail) throw new Error("That wallet is no longer available.");
+      await connectVia(detail.provider);
+    },
+    [providers, connectVia]
+  );
 
   const ethCall = useCallback(async (to: string, data: string): Promise<unknown> => {
-    const p = injected();
+    const p = getProvider();
     if (!p) return null;
     return p.request({ method: "eth_call", params: [{ to, data }, "latest"] });
-  }, []);
+  }, [getProvider]);
 
   const getEthBalance = useCallback(async (): Promise<number> => {
-    const p = injected();
+    const p = getProvider();
     if (!p || !address) return 0;
     try {
       const hex = (await p.request({ method: "eth_getBalance", params: [address, "latest"] })) as string;
@@ -193,14 +260,14 @@ export function useHoodWallet(): HoodWalletState {
 
   const sendTx = useCallback(
     async (to: string, data: string, valueWei = BigInt(0)): Promise<string> => {
-      const p = injected();
+      const p = getProvider();
       if (!p) throw new Error("No EVM wallet found.");
       if (!address) throw new Error("Connect your wallet first.");
       const tx: Record<string, string> = { from: address, to, data };
       if (valueWei > BigInt(0)) tx.value = toHexQty(valueWei);
       return (await p.request({ method: "eth_sendTransaction", params: [tx] })) as string;
     },
-    [address]
+    [address, getProvider]
   );
 
   const requireLauncher = (): string => {
@@ -239,7 +306,7 @@ export function useHoodWallet(): HoodWalletState {
   // `from` is forced to the connected account so a stale quote can't redirect it.
   const sendRawTx = useCallback(
     async (params: Record<string, string>): Promise<string> => {
-      const p = injected();
+      const p = getProvider();
       if (!p) throw new Error("No EVM wallet found.");
       if (!address) throw new Error("Connect your wallet first.");
       return (await p.request({
@@ -247,7 +314,7 @@ export function useHoodWallet(): HoodWalletState {
         params: [{ ...params, from: address }],
       })) as string;
     },
-    [address]
+    [address, getProvider]
   );
 
   return useMemo(
@@ -266,7 +333,24 @@ export function useHoodWallet(): HoodWalletState {
       sell,
       createToken,
       sendRawTx,
+      providers,
+      connectWith,
     }),
-    [available, address, chainId, connect, switchToHood, getEthBalance, quoteBuy, quoteSell, buy, sell, createToken, sendRawTx]
+    [
+      available,
+      address,
+      chainId,
+      connect,
+      switchToHood,
+      getEthBalance,
+      quoteBuy,
+      quoteSell,
+      buy,
+      sell,
+      createToken,
+      sendRawTx,
+      providers,
+      connectWith,
+    ]
   );
 }
