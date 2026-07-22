@@ -26,6 +26,36 @@ import {
 } from "./pons";
 import { privySendEvmTx } from "./hood-agent-wallet";
 
+/**
+ * keccak256("TokenLaunched(address,address,address,address,address,uint256,uint256,uint256,uint256,uint256)")
+ *
+ * `token`, `deployer` and `dexFactory` are INDEXED, so the token address lives
+ * in topics[1] — NOT in the data blob. Reading data word 0 instead yields
+ * `pairToken`, i.e. WETH: a launch would have been recorded with WETH as the
+ * project's own mint. Verified against a real on-chain launch before trusting.
+ */
+const TOKEN_LAUNCHED_TOPIC0 =
+  "0xdb51ea9ad51ab453a65a4cb7e60c3cb378c9501bb002609f8f97778fb6c4235a";
+
+/** Pull (token, pool) out of a TokenLaunched log. token = topics[1] (indexed);
+ *  pool = data word 1 (after pairToken). Null when the log isn't one. */
+function decodeTokenLaunched(log: {
+  address?: string;
+  topics?: string[];
+  data?: string;
+}): { token: string; pool: string | null } | null {
+  if (log.address?.toLowerCase() !== PONS_FACTORY.toLowerCase()) return null;
+  if (log.topics?.[0]?.toLowerCase() !== TOKEN_LAUNCHED_TOPIC0) return null;
+  const t = log.topics?.[1];
+  if (!t || t.length < 42) return null;
+  const token = "0x" + t.slice(-40);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(token) || /^0x0+$/.test(token)) return null;
+  const data = (log.data || "").replace(/^0x/, "");
+  const poolWord = data.slice(64, 128);
+  const pool = /^[0-9a-fA-F]{64}$/.test(poolWord) ? "0x" + poolWord.slice(24) : null;
+  return { token, pool: pool && !/^0x0+$/.test(pool) ? pool : null };
+}
+
 const RPC = process.env.HOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com";
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T | null> {
@@ -128,12 +158,9 @@ function randomSalt(): string {
 }
 
 /**
- * The deployed token address, taken from the receipt. Pons emits TokenDeployed
- * and TokenLaunched, both with the token as their FIRST non-indexed word, and
- * both from the factory — so rather than hardcoding a topic hash (one more
- * constant that can be wrong), we take the first log emitted by the factory and
- * read its first data word. Null when the receipt isn't available yet; the
- * caller can still recover the address from the transaction later.
+ * The deployed token address, taken from the receipt's TokenLaunched log.
+ * Null when the receipt isn't available yet; the caller can still recover the
+ * address from the transaction later.
  */
 export async function readLaunchedToken(txHash: string): Promise<string | null> {
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -143,11 +170,10 @@ export async function readLaunchedToken(txHash: string): Promise<string | null> 
     }>("eth_getTransactionReceipt", [txHash]);
     if (receipt) {
       if (receipt.status === "0x0") throw new Error(`Pons launch reverted on-chain (${txHash}).`);
-      const log = (receipt.logs ?? []).find(
-        (l) => l.address?.toLowerCase() === PONS_FACTORY.toLowerCase()
-      );
-      const word = log?.data?.slice(2, 66);
-      if (word && /^[0-9a-fA-F]{64}$/.test(word)) return "0x" + word.slice(24);
+      for (const log of receipt.logs ?? []) {
+        const decoded = decodeTokenLaunched(log);
+        if (decoded) return decoded.token;
+      }
       return null;
     }
     await new Promise((r) => setTimeout(r, 1500));
@@ -173,7 +199,7 @@ export async function readLaunchedToken(txHash: string): Promise<string | null> 
  */
 export async function verifyPonsLaunchTx(
   txHash: string
-): Promise<{ token: string; from: string } | null> {
+): Promise<{ token: string; pool: string | null; from: string } | null> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) return null;
   for (let attempt = 0; attempt < 10; attempt++) {
     const receipt = await rpc<{
@@ -189,14 +215,13 @@ export async function verifyPonsLaunchTx(
     }
     if (receipt.status !== "0x1") return null;
     if ((receipt.to ?? "").toLowerCase() !== PONS_FACTORY.toLowerCase()) return null;
-    const log = (receipt.logs ?? []).find(
-      (l) => l.address?.toLowerCase() === PONS_FACTORY.toLowerCase()
-    );
-    const word = log?.data?.slice(2, 66);
-    if (!word || !/^[0-9a-fA-F]{64}$/.test(word)) return null;
-    const token = "0x" + word.slice(24);
-    if (!/^0x[0-9a-fA-F]{40}$/.test(token) || /^0x0+$/.test(token)) return null;
-    return { token, from: (receipt.from ?? "").toLowerCase() };
+    for (const log of receipt.logs ?? []) {
+      const decoded = decodeTokenLaunched(log);
+      if (decoded) {
+        return { token: decoded.token, pool: decoded.pool, from: (receipt.from ?? "").toLowerCase() };
+      }
+    }
+    return null;
   }
   return null;
 }

@@ -5,11 +5,27 @@ import { PONS_FACTORY } from "./pons";
 // browser hands over a transaction hash and nothing else. These cover the ways
 // a caller could try to pass off something that isn't a Pons launch.
 const TOKEN = "0x1234567890abcdef1234567890abcdef12345678";
+const POOL = "0x85187610442415af3efd645ab6c55816cd1cd501";
+const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73";
+// Shape verified against a real on-chain launch (tx 0xf0bfbd92…f722c2):
+// token/deployer/dexFactory are INDEXED, so the token is topics[1]; data is
+// [pairToken, pool, dexId, …]. Reading data word 0 as the token yields WETH.
+const TOKEN_LAUNCHED_TOPIC0 =
+  "0xdb51ea9ad51ab453a65a4cb7e60c3cb378c9501bb002609f8f97778fb6c4235a";
+const launchedLog = () => ({
+  address: PONS_FACTORY,
+  topics: [TOKEN_LAUNCHED_TOPIC0, "0x" + "0".repeat(24) + TOKEN.slice(2), "0x", "0x"],
+  data:
+    "0x" +
+    "0".repeat(24) + WETH.slice(2) +
+    "0".repeat(24) + POOL.slice(2) +
+    "0".repeat(64 * 6),
+});
 const receipt = (over: Record<string, unknown> = {}) => ({
   status: "0x1",
   to: PONS_FACTORY,
   from: "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa",
-  logs: [{ address: PONS_FACTORY, data: "0x" + "0".repeat(24) + TOKEN.slice(2), topics: [] }],
+  logs: [launchedLog()],
   ...over,
 });
 
@@ -33,11 +49,17 @@ async function verify(hash: string) {
 const HASH = "0x" + "ab".repeat(32);
 
 describe("verifyPonsLaunchTx", () => {
-  it("accepts a successful launch and reads the token from the factory's log", async () => {
+  it("reads the token from topics[1] — NOT data word 0, which is WETH", async () => {
     mockRpc(receipt());
     const out = await verify(HASH);
     expect(out?.token.toLowerCase()).toBe(TOKEN.toLowerCase());
+    expect(out?.token.toLowerCase()).not.toBe(WETH);
     expect(out?.from).toBe("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  });
+
+  it("also extracts the pool address (data word 1) for the market reader", async () => {
+    mockRpc(receipt());
+    expect((await verify(HASH))?.pool?.toLowerCase()).toBe(POOL);
   });
 
   it("refuses a REVERTED transaction", async () => {
@@ -52,16 +74,17 @@ describe("verifyPonsLaunchTx", () => {
   });
 
   it("refuses when no log comes from the factory", async () => {
-    mockRpc(
-      receipt({
-        logs: [{ address: "0x000000000000000000000000000000000000dead", data: "0x" + "1".repeat(64), topics: [] }],
-      })
-    );
+    mockRpc(receipt({ logs: [{ ...launchedLog(), address: "0x000000000000000000000000000000000000dead" }] }));
+    expect(await verify(HASH)).toBeNull();
+  });
+
+  it("refuses a factory log that isn't TokenLaunched", async () => {
+    mockRpc(receipt({ logs: [{ ...launchedLog(), topics: ["0xdeadbeef", "0x" + "1".repeat(64)] }] }));
     expect(await verify(HASH)).toBeNull();
   });
 
   it("refuses a zero token address", async () => {
-    mockRpc(receipt({ logs: [{ address: PONS_FACTORY, data: "0x" + "0".repeat(64), topics: [] }] }));
+    mockRpc(receipt({ logs: [{ ...launchedLog(), topics: [TOKEN_LAUNCHED_TOPIC0, "0x" + "0".repeat(64)] }] }));
     expect(await verify(HASH)).toBeNull();
   });
 
