@@ -1,12 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import {
-  parseProvider,
-  parseCluster,
-  providerLaunchpad,
-  simulatedResult,
-  launchpadConfigured,
-  createToken,
-} from "./launchpad";
+import { parseProvider, parseCluster, providerLaunchpad, simulatedResult, launchpadConfigured, createToken, providerForChain } from "./launchpad";
 
 const ORIG = { ...process.env };
 afterEach(() => {
@@ -98,5 +91,43 @@ describe("createToken", () => {
     process.env.LAUNCH_CLUSTER = "devnet";
     const r = await createToken({ name: "X", ticker: "TST", prompt: "p" });
     expect(r.cluster).toBe("devnet");
+  });
+});
+
+describe("providerForChain — Solana and Hood arm independently", () => {
+  it("reads the Solana provider from LAUNCHPAD_PROVIDER", () => {
+    expect(providerForChain("solana", { LAUNCHPAD_PROVIDER: "pumpfun" })).toBe("pumpfun");
+  });
+
+  it("defaults Hood to pons even when nothing is set for it", () => {
+    expect(providerForChain("hood", {})).toBe("pons");
+  });
+
+  it("arming Solana does NOT disarm Hood (the whole point)", () => {
+    const env = { LAUNCHPAD_PROVIDER: "pumpfun" };
+    expect(providerForChain("solana", env)).toBe("pumpfun");
+    expect(providerForChain("hood", env)).toBe("pons");
+  });
+
+  it("arming Hood does NOT change Solana", () => {
+    const env = { LAUNCHPAD_PROVIDER: "pumpfun", LAUNCHPAD_PROVIDER_HOOD: "pons" };
+    expect(providerForChain("solana", env)).toBe("pumpfun");
+    expect(providerForChain("hood", env)).toBe("pons");
+  });
+
+  it("refuses a Solana provider for a Hood launch — never mints on the wrong chain", () => {
+    expect(providerForChain("hood", { LAUNCHPAD_PROVIDER_HOOD: "pumpfun" })).toBe("simulated");
+  });
+
+  it("refuses a Hood provider for a Solana launch", () => {
+    expect(providerForChain("solana", { LAUNCHPAD_PROVIDER: "pons" })).toBe("simulated");
+  });
+
+  it("unset Solana provider stays simulated (untouched by the Hood default)", () => {
+    expect(providerForChain("solana", {})).toBe("simulated");
+  });
+
+  it("an explicitly disabled Hood provider is simulated, not the pons default", () => {
+    expect(providerForChain("hood", { LAUNCHPAD_PROVIDER_HOOD: "simulated" })).toBe("simulated");
   });
 });

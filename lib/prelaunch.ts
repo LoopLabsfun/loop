@@ -4,7 +4,13 @@ import { supabaseAdmin } from "./supabase";
 import { getPrelaunch, normalizeTicker, NAME_MAX, PROMPT_MAX, REPO_MAX } from "./waitlist";
 import { makeSplit } from "./fees";
 import { getSolBalance } from "./solana";
-import { createToken, launchpadConfigured, parseCluster, type CreateTokenResult } from "./launchpad";
+import {
+  createToken,
+  launchpadConfigured,
+  parseCluster,
+  providerForChain,
+  type CreateTokenResult,
+} from "./launchpad";
 import { agentWalletConfigured, provisionAgentWallet, privySignAndSendSolanaTx } from "./agent-wallet";
 import { createOnPumpPortalWithPrivy } from "./pumpfun";
 import { parseSecretKeyJson } from "./vanity";
@@ -157,8 +163,10 @@ export async function prelaunchPreflight(plan: LaunchPlan): Promise<{ ready: boo
 
   checks.push({
     label: "Launchpad provider configured",
-    ok: launchpadConfigured(),
-    detail: process.env.LAUNCHPAD_PROVIDER || "simulated",
+    // Per CHAIN: Solana and Hood are armed independently, so a readiness check
+    // for a Solana draft must not pass because Hood happens to be configured.
+    ok: launchpadConfigured(plan.chain),
+    detail: providerForChain(plan.chain),
   });
   checks.push({
     label: "Agent-wallet custody (Privy) configured",
@@ -897,6 +905,7 @@ export async function approvePrelaunch(wallet: string): Promise<ApproveResult> {
         description,
         creator: wallet,
         cluster,
+        chain: plan.chain,
         devBuySol: plan.devBuySol,
         logo,
         links,

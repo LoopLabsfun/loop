@@ -1,4 +1,5 @@
 import type { Launchpad } from "./types";
+import type { Chain } from "./chains/types";
 
 // The launchpad seam: turns a validated launch into a real on-chain token.
 // Provider-agnostic + env-gated, mirroring the lib/solana.ts data seam.
@@ -27,6 +28,9 @@ export interface CreateTokenInput {
   creator?: string | null;
   /** Cluster override (from the UI switch); falls back to LAUNCH_CLUSTER env. */
   cluster?: LaunchCluster;
+  /** Which chain to launch on. Selects the provider independently per chain, so
+   *  Solana and Hood can be armed at the same time. Defaults to "solana". */
+  chain?: Chain;
   /** Seed dev-buy in SOL, executed atomically with create (first candle + seeds
    *  the treasury). 0/undefined = create only — the LOOP-launch bug we don't repeat. */
   devBuySol?: number;
@@ -64,11 +68,43 @@ export function providerLaunchpad(provider: LaunchpadProvider): Launchpad {
   return PROVIDER_LAUNCHPAD[provider];
 }
 
-/** Parse the LAUNCHPAD_PROVIDER env value, defaulting to "simulated". */
+/** Parse a provider env value, defaulting to "simulated". */
 export function parseProvider(raw: string | undefined): LaunchpadProvider {
   return raw === "spl" || raw === "pumpfun" || raw === "bags" || raw === "pons"
     ? raw
     : "simulated";
+}
+
+/** Providers that can actually mint on a given chain. A Solana provider can
+ *  never serve a Hood launch and vice versa — mixing them would "succeed" while
+ *  minting on the wrong chain entirely. */
+const CHAIN_PROVIDERS: Record<Chain, LaunchpadProvider[]> = {
+  solana: ["spl", "pumpfun", "bags"],
+  hood: ["pons"],
+};
+
+/**
+ * The provider for a chain. Launching on Solana and on Hood must be armable
+ * INDEPENDENTLY and simultaneously — a single global LAUNCHPAD_PROVIDER can
+ * only ever describe one chain, so setting it to `pumpfun` for Solana would
+ * silently disarm Hood (and vice versa). Each chain reads its own variable:
+ *
+ *   LAUNCHPAD_PROVIDER        → Solana (kept as-is; existing deploys unchanged)
+ *   LAUNCHPAD_PROVIDER_HOOD   → Hood   (defaults to "pons" when unset)
+ *
+ * A provider that doesn't belong to the requested chain is refused rather than
+ * used: the failure mode of getting this wrong is minting a token on the wrong
+ * chain, which cannot be undone.
+ */
+export function providerForChain(
+  chain: Chain,
+  env: Record<string, string | undefined> = process.env
+): LaunchpadProvider {
+  const raw = chain === "hood" ? env.LAUNCHPAD_PROVIDER_HOOD ?? "pons" : env.LAUNCHPAD_PROVIDER;
+  const provider = parseProvider(raw);
+  if (provider === "simulated") return "simulated";
+  // Wrong-chain provider ⇒ simulated (a no-op), never a mint on the wrong chain.
+  return CHAIN_PROVIDERS[chain].includes(provider) ? provider : "simulated";
 }
 
 /** Parse the launch cluster, defaulting to mainnet. */
@@ -91,8 +127,8 @@ export function simulatedResult(
   };
 }
 
-export function launchpadConfigured(): boolean {
-  return parseProvider(process.env.LAUNCHPAD_PROVIDER) !== "simulated";
+export function launchpadConfigured(chain: Chain = "solana"): boolean {
+  return providerForChain(chain) !== "simulated";
 }
 
 /**
@@ -104,10 +140,12 @@ export function launchpadConfigured(): boolean {
 export async function createToken(
   input: CreateTokenInput
 ): Promise<CreateTokenResult> {
-  const provider = parseProvider(process.env.LAUNCHPAD_PROVIDER);
+  const chain: Chain = input.chain ?? "solana";
+  const provider = providerForChain(chain);
   const cluster = input.cluster ?? parseCluster(process.env.LAUNCH_CLUSTER);
 
   if (provider === "simulated") return simulatedResult(provider, cluster);
+  if (provider === "pons") return createOnPons(input, cluster);
   if (provider === "spl") return createOnSpl(provider, cluster);
   if (provider === "pumpfun") return createOnPumpfun(input, cluster);
   return createOnBags(input, cluster);
@@ -173,6 +211,21 @@ async function createOnPumpfun(
     txSig: res.txSig,
     simulated: false,
   };
+}
+
+// Pons — Robinhood Chain's launchpad (its pump.fun). A Pons launch is performed
+// by the FOUNDER in Pons' own UI: an EVM wallet signature, no contract of ours
+// to deploy or audit. There is no server-side create API to call, so this path
+// refuses loudly instead of pretending — the result is recorded afterwards with
+// scripts/launch-on-hood.ts. Selecting it never mints anything by accident.
+async function createOnPons(
+  _input: CreateTokenInput,
+  _cluster: LaunchCluster
+): Promise<CreateTokenResult> {
+  throw new Error(
+    "Hood launches go through the Pons launchpad UI (an EVM wallet signature), not this server path. " +
+      "Launch there, then record it with scripts/launch-on-hood.ts <token> <treasury> [projectKey]."
+  );
 }
 
 async function createOnBags(
