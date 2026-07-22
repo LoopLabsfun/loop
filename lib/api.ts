@@ -40,6 +40,12 @@ export interface LaunchInput {
    * (lib/launchpad `providerForChain`), so both can be armed at once.
    */
   chain?: import("./chains/types").Chain;
+  /**
+   * Hash of the Pons `launchToken` transaction the creator sent from their own
+   * EVM wallet (Hood launches). Verified on-chain server-side and replay-guarded
+   * — the client's word for it is worth nothing.
+   */
+  hoodTxHash?: string | null;
 }
 
 export interface LaunchResult {

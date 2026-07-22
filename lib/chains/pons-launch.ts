@@ -154,3 +154,49 @@ export async function readLaunchedToken(txHash: string): Promise<string | null> 
   }
   return null;
 }
+
+/**
+ * Verify a Pons launch the USER already sent and paid for, and extract what it
+ * actually created.
+ *
+ * This is the trust boundary of the client-paid launch path. The browser hands
+ * us a transaction hash and nothing else — never a token address, never a
+ * "trust me it worked". Everything is re-derived from the chain:
+ *
+ *   • the transaction exists and SUCCEEDED (status 0x1);
+ *   • it was sent TO the Pons factory — otherwise any random transfer would
+ *     "prove" a launch;
+ *   • the token address comes from the factory's own log, not from the caller.
+ *
+ * Returns null when any of that fails, so the caller refuses the launch rather
+ * than persisting a project pointing at an address nobody verified.
+ */
+export async function verifyPonsLaunchTx(
+  txHash: string
+): Promise<{ token: string; from: string } | null> {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) return null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const receipt = await rpc<{
+      status?: string;
+      to?: string | null;
+      from?: string;
+      logs?: { address: string; data: string; topics: string[] }[];
+    }>("eth_getTransactionReceipt", [txHash]);
+    if (!receipt) {
+      // Not mined yet — the user sent it seconds ago. Wait rather than reject.
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
+    if (receipt.status !== "0x1") return null;
+    if ((receipt.to ?? "").toLowerCase() !== PONS_FACTORY.toLowerCase()) return null;
+    const log = (receipt.logs ?? []).find(
+      (l) => l.address?.toLowerCase() === PONS_FACTORY.toLowerCase()
+    );
+    const word = log?.data?.slice(2, 66);
+    if (!word || !/^[0-9a-fA-F]{64}$/.test(word)) return null;
+    const token = "0x" + word.slice(24);
+    if (!/^0x[0-9a-fA-F]{40}$/.test(token) || /^0x0+$/.test(token)) return null;
+    return { token, from: (receipt.from ?? "").toLowerCase() };
+  }
+  return null;
+}

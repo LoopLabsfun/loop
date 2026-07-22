@@ -31,6 +31,14 @@ export interface CreateTokenInput {
   /** Which chain to launch on. Selects the provider independently per chain, so
    *  Solana and Hood can be armed at the same time. Defaults to "solana". */
   chain?: Chain;
+  /**
+   * Hash of a Pons `launchToken` transaction the CREATOR already sent and paid
+   * for from their own EVM wallet. When present, the server verifies it on-chain
+   * and records the result instead of signing (and funding) a launch itself —
+   * which is what makes public Hood launches possible without the platform
+   * paying every stranger's protocol fee and dev buy.
+   */
+  hoodTxHash?: string | null;
   /** Seed dev-buy in SOL, executed atomically with create (first candle + seeds
    *  the treasury). 0/undefined = create only — the LOOP-launch bug we don't repeat. */
   devBuySol?: number;
@@ -222,6 +230,33 @@ async function createOnPons(
   input: CreateTokenInput,
   cluster: LaunchCluster
 ): Promise<CreateTokenResult> {
+  // CLIENT-PAID PATH (public launches). The creator already sent the
+  // launchToken transaction from their own wallet, so nothing here signs or
+  // spends; we verify their transaction on-chain and read the token address out
+  // of the factory's own log. The hash is the only thing we take from the
+  // browser, and it proves nothing until the chain confirms it.
+  if (input.hoodTxHash) {
+    const { verifyPonsLaunchTx } = await import("./chains/pons-launch");
+    const launched = await verifyPonsLaunchTx(input.hoodTxHash);
+    if (!launched) {
+      throw new Error(
+        "That Robinhood Chain transaction isn't a confirmed Pons launch. If it's still pending, wait for it to confirm and retry."
+      );
+    }
+    return {
+      launchpad: providerLaunchpad("pons"),
+      cluster,
+      mint: launched.token,
+      // The creator's own wallet is the treasury: they paid, they receive the
+      // dev buy, and the locker redirects trading fees there.
+      treasuryWallet: launched.from,
+      txSig: input.hoodTxHash,
+      simulated: false,
+    };
+  }
+
+  // PLATFORM-SIGNED PATH (the founder's own launches, via script). Spends the
+  // platform wallet, so it is never reachable from a public launch.
   const walletId = process.env.HOOD_LAUNCH_WALLET_ID;
   const walletAddress = process.env.HOOD_LAUNCH_WALLET_ADDRESS;
   if (!walletId || !walletAddress) {

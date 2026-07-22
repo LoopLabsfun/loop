@@ -5,6 +5,9 @@ import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { chainInfo } from "@/lib/chains/registry";
 import { useChain } from "@/lib/chains/chain-context";
+import { useHoodWallet } from "@/lib/chains/hood-wallet";
+import { encodeLaunchToken, launchValueWei, PONS_FACTORY } from "@/lib/chains/pons";
+import { fetchPonsFeeWei, randomSalt } from "@/lib/chains/pons-client";
 import { launchProjectAction } from "@/lib/actions";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "@/lib/launch-config";
 import { WaitlistForm } from "../WaitlistForm";
@@ -48,6 +51,7 @@ export function LaunchModal({
   onClose: () => void;
 }) {
   const wallet = useWallet();
+  const hood = useHoodWallet();
   const { network } = useNetwork();
   const { chain } = useChain();
   const [step, setStep] = useState<Step>("form");
@@ -71,12 +75,19 @@ export function LaunchModal({
     hoodReady: boolean;
   } | null>(null);
   const isHood = chain === "hood";
+  // The live Pons fee, shown before the user commits. Read from the chain (the
+  // owner can change it), not from a constant that could quietly go stale.
+  const [ponsFeeEth, setPonsFeeEth] = useState<string | null>(null);
   const hoodReady = Boolean(fee?.hoodReady);
   // A payment already made for THIS launch attempt. Kept so a launch that fails
   // AFTER payment (a validation error, a flaky RPC) can be retried without
   // paying twice — the server's replay guard only burns a signature once a
   // project actually exists, so reusing it here is both safe and necessary.
   const paidSigRef = useRef<string | null>(null);
+  // A Pons launchToken transaction the creator already sent and PAID FOR. Kept
+  // for the same reason as the Solana toll signature: if the server call fails
+  // afterwards, retrying must not charge them a second protocol fee + dev buy.
+  const hoodTxRef = useRef<string | null>(null);
 
   // Reset whenever it (re)opens.
   useEffect(() => {
@@ -131,6 +142,21 @@ export function LaunchModal({
 
   const summaryName = name.trim() || "Open Source Cursor";
   const summaryTicker = "$" + (ticker.trim() || "OSCUR");
+  useEffect(() => {
+    if (!isHood) return;
+    let alive = true;
+    fetchPonsFeeWei()
+      .then((wei) => {
+        if (alive) setPonsFeeEth(String(Number(wei) / 1e18));
+      })
+      .catch(() => {
+        /* unreadable ⇒ the panel shows "…"; the launch itself re-reads it */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isHood]);
+
   const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
   const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
 
@@ -155,9 +181,48 @@ export function LaunchModal({
       return;
     }
 
+    // HOOD: the creator launches on Pons from their OWN wallet, paying the
+    // protocol fee and their dev buy directly. The platform never fronts it.
+    // The server re-derives the token address from this transaction's receipt,
+    // so the hash is all we send.
+    if (isHood) {
+      if (!hoodTxRef.current) {
+        try {
+          setStep("deploying");
+          setDeployLog([`Launching on Pons · confirm in your EVM wallet`]);
+          const feeWei = await fetchPonsFeeWei();
+          hoodTxRef.current = await hood.sendTx(
+            PONS_FACTORY,
+            encodeLaunchToken(
+              {
+                name: name.trim(),
+                symbol: ticker.trim().toUpperCase(),
+                description: prompt.trim(),
+                // The creator's own wallet receives the dev buy and the locker's
+                // fee redirect — not whoever happens to relay the transaction.
+                feeWallet: hood.address ?? undefined,
+              },
+              { salt: randomSalt() }
+            ),
+            launchValueWei(feeWei, BigInt(0))
+          );
+        } catch (e) {
+          setLaunchError(
+            e instanceof Error && /reject|denied|cancel|User rejected/i.test(e.message)
+              ? "Launch transaction rejected — nothing was launched."
+              : e instanceof Error
+              ? e.message
+              : "The launch transaction failed. Nothing was launched."
+          );
+          setStep("stake");
+          return;
+        }
+      }
+    }
+
     // Pay the toll BEFORE deploying. The server verifies the payment on-chain
     // and replay-guards it, so this is a real cost, not a UI gesture.
-    if (fee?.required && fee.wallet) {
+    if (!isHood && fee?.required && fee.wallet) {
       if (!paidSigRef.current) {
         try {
           setStep("deploying");
@@ -202,6 +267,7 @@ export function LaunchModal({
         proof: proof ?? undefined,
         paymentSig: paidSigRef.current ?? undefined,
         chain,
+        hoodTxHash: hoodTxRef.current ?? undefined,
       });
       setResult(res);
     } catch (e) {
@@ -461,11 +527,22 @@ export function LaunchModal({
                   Pay to launch
                 </span>
                 <span className="font-mono text-[16px] text-accent-text">
-                  {fee?.required ? `${fee.sol} SOL` : "pump.fun curve"}
+                  {isHood
+                    ? `${ponsFeeEth ?? "…"} ETH`
+                    : fee?.required
+                    ? `${fee.sol} SOL`
+                    : "pump.fun curve"}
                 </span>
               </div>
               <p className="text-[12.5px] text-muted leading-[1.5] m-0">
-                {fee?.required ? (
+                {isHood ? (
+                  <>
+                    You launch on Pons from your own wallet and pay its protocol
+                    fee directly — Loop never fronts it. The token is created,
+                    paired against WETH and its liquidity locked in one
+                    transaction; trading fees route to your wallet.
+                  </>
+                ) : fee?.required ? (
                   <>
                     A {fee.sol} SOL launch fee is charged before deploying — one
                     wallet signature to pay, one to prove ownership. Your
@@ -483,7 +560,21 @@ export function LaunchModal({
                 )}
               </p>
             </div>
-            {!wallet.connected ? (
+            {isHood && !hood.address ? (
+              <button
+                onClick={() => void hood.connect()}
+                className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[12px] border border-line-3 bg-surface text-ink hover:border-line-hover transition-colors"
+              >
+                Connect an EVM wallet first
+              </button>
+            ) : isHood && hood.wrongChain ? (
+              <button
+                onClick={() => void hood.switchToHood()}
+                className="w-full font-display font-semibold text-[15px] py-[13px] rounded-[12px] border border-warn text-warn"
+              >
+                Switch to Robinhood Chain
+              </button>
+            ) : !isHood && !wallet.connected ? (
               <div className="flex flex-col gap-[10px]">
                 <button
                   onClick={wallet.connect}

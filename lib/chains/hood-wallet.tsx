@@ -92,6 +92,10 @@ export interface HoodWalletState {
   /** eth_sendTransaction with pre-mapped params (Relay deposit — EVM leg of an
    *  in-app cross-chain swap). Resolves with the tx hash. */
   sendRawTx: (params: Record<string, string>) => Promise<string>;
+  /** Send a contract call from the user's own wallet: `to` + calldata + value.
+   *  Used by the Pons launch, where the CREATOR pays the protocol fee and dev
+   *  buy rather than the platform. Resolves with the tx hash. */
+  sendTx: (to: string, data: string, valueWei?: bigint) => Promise<string>;
   /** EIP-191 personal_sign over `message` — no tx, no gas. */
   signMessage: (message: string) => Promise<string>;
   /** Every EIP-6963-announced wallet extension found in this browser (for the picker). */
@@ -353,6 +357,7 @@ export function useHoodWallet(): HoodWalletState {
       sell,
       createToken,
       sendRawTx,
+      sendTx,
       signMessage,
       providers,
       connectWith,
@@ -370,6 +375,7 @@ export function useHoodWallet(): HoodWalletState {
       sell,
       createToken,
       sendRawTx,
+      sendTx,
       signMessage,
       providers,
       connectWith,

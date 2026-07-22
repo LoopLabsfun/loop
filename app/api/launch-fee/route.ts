@@ -22,13 +22,11 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 export async function GET() {
   const lamports = launchFeeLamports();
   const tolled = launchFeeRequired();
-  // Whether THIS deployment can actually launch on Hood: a Pons provider armed
-  // for that chain, a wallet to send from, and the toll (see below — a Hood
-  // launch spends platform ETH, so it must not be free).
-  const hoodReady =
-    providerForChain("hood") === "pons" &&
-    Boolean(process.env.HOOD_LAUNCH_WALLET_ID && process.env.HOOD_LAUNCH_WALLET_ADDRESS) &&
-    tolled;
+  // Whether THIS deployment can launch on Hood. The creator pays Pons directly
+  // from their own EVM wallet, so this no longer depends on the platform having
+  // a funded wallet OR on the Solana toll — only on the Pons provider being the
+  // one armed for that chain.
+  const hoodReady = providerForChain("hood") === "pons";
   return NextResponse.json(
     {
       required: tolled,

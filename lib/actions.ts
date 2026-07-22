@@ -127,16 +127,27 @@ export async function launchProjectAction(
   // only if it's told which one.
   const chain: Chain = input.chain === "hood" ? "hood" : "solana";
 
-  // A public Hood launch pays Pons' protocol fee AND its dev buy from the
-  // PLATFORM's EVM wallet (lib/chains/pons-launch signs with HOOD_LAUNCH_WALLET_*),
-  // because there is no client-side EVM payment step yet. Untolled, that is a
-  // stranger spending our ETH, once per launch, with nothing collected back —
-  // so Hood stays closed to the public until the toll is armed. The founder's
-  // own launches go through the script, not this action, and are unaffected.
-  if (chain === "hood" && !launchFeeRequired()) {
-    throw new Error(
-      "Launching on Robinhood Chain isn't open yet. Switch the chain to Solana to launch today."
-    );
+  // A Hood launch must be PAID BY THE CREATOR, from their own EVM wallet: they
+  // send Pons' launchToken (protocol fee + dev buy) and pass us the hash, which
+  // we verify on-chain. Without one we would fall back to the platform-signed
+  // path and spend our own ETH on a stranger's launch — so refuse instead.
+  let hoodTxHash: string | null = null;
+  if (chain === "hood") {
+    hoodTxHash = (input.hoodTxHash ?? "").trim() || null;
+    if (!hoodTxHash) {
+      throw new Error("A Robinhood Chain launch transaction is required.");
+    }
+    // Replay guard: one launch transaction creates at most one project. Shares
+    // the `launch_payment_sig` unique index with the Solana toll — a Hood launch
+    // tx IS its payment, so the same column is exactly right.
+    if (supabaseAdmin) {
+      const { data: dupe } = await supabaseAdmin
+        .from("projects")
+        .select("key")
+        .eq("launch_payment_sig", hoodTxHash)
+        .maybeSingle();
+      if (dupe) throw new Error("That launch transaction has already been used.");
+    }
   }
 
   // Mint the token (no-op in simulated mode).
@@ -146,6 +157,7 @@ export async function launchProjectAction(
     prompt: clean.prompt,
     cluster,
     chain,
+    hoodTxHash,
   });
 
   const result: LaunchResult = {
@@ -210,7 +222,9 @@ export async function launchProjectAction(
     chain,
     creator_wallet: creatorWallet,
     // The verified launch-fee payment (null when untolled) — replay-guarded above.
-    launch_payment_sig: launchPaymentSig,
+    // The Solana toll signature, or (on Hood) the creator's launch transaction —
+    // either way, the on-chain payment this project was created by.
+    launch_payment_sig: launchPaymentSig ?? hoodTxHash,
     // Founder's creator-fee share (agent gets the rest after the 5% platform cut).
     fee_founder_pct: clean.feeFounderPct,
     // Deep steering: guardrails + content policy the agent rereads each cycle.
