@@ -131,3 +131,12 @@ describe("providerForChain — Solana and Hood arm independently", () => {
     expect(providerForChain("hood", { LAUNCHPAD_PROVIDER_HOOD: "simulated" })).toBe("simulated");
   });
 });
+
+describe("launchpadConfigured is per chain too", () => {
+  it("Solana unarmed + Hood defaulted still reports Hood as configured", () => {
+    // providerForChain drives it, so the readiness check can't claim a chain is
+    // ready because the OTHER one happens to be.
+    expect(providerForChain("solana", {})).toBe("simulated");
+    expect(providerForChain("hood", {})).toBe("pons");
+  });
+});

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { launchFeeLamports, launchFeeRequired, launchFeeWallet } from "@/lib/launch-fee";
+import { providerForChain } from "@/lib/launchpad";
 
 // What a launch costs, read from the SAME module that enforces it server-side
 // (lib/launch-fee).
@@ -20,12 +21,21 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export async function GET() {
   const lamports = launchFeeLamports();
+  const tolled = launchFeeRequired();
+  // Whether THIS deployment can actually launch on Hood: a Pons provider armed
+  // for that chain, a wallet to send from, and the toll (see below — a Hood
+  // launch spends platform ETH, so it must not be free).
+  const hoodReady =
+    providerForChain("hood") === "pons" &&
+    Boolean(process.env.HOOD_LAUNCH_WALLET_ID && process.env.HOOD_LAUNCH_WALLET_ADDRESS) &&
+    tolled;
   return NextResponse.json(
     {
-      required: launchFeeRequired(),
+      required: tolled,
       wallet: launchFeeWallet(),
       lamports: lamports.toString(),
       sol: Number(lamports) / LAMPORTS_PER_SOL,
+      hoodReady,
     },
     { headers: { "Cache-Control": "no-store" } }
   );

@@ -3,6 +3,7 @@
 import { supabase, supabaseAdmin } from "./supabase";
 import type { LaunchInput, LaunchResult } from "./api";
 import type { Project } from "./types";
+import type { Chain } from "./chains/types";
 import { sanitizeLaunch, slugify, DESCRIPTION_MAX } from "./launch";
 import { provisionPlan } from "./provisioning";
 import { createToken, parseCluster } from "./launchpad";
@@ -121,12 +122,30 @@ export async function launchProjectAction(
     launchPaymentSig = sig;
   }
 
+  // The chain the creator picked. Without passing it through, a Hood launch
+  // would silently mint on SOLANA — the provider seam resolves per chain, but
+  // only if it's told which one.
+  const chain: Chain = input.chain === "hood" ? "hood" : "solana";
+
+  // A public Hood launch pays Pons' protocol fee AND its dev buy from the
+  // PLATFORM's EVM wallet (lib/chains/pons-launch signs with HOOD_LAUNCH_WALLET_*),
+  // because there is no client-side EVM payment step yet. Untolled, that is a
+  // stranger spending our ETH, once per launch, with nothing collected back —
+  // so Hood stays closed to the public until the toll is armed. The founder's
+  // own launches go through the script, not this action, and are unaffected.
+  if (chain === "hood" && !launchFeeRequired()) {
+    throw new Error(
+      "Launching on Robinhood Chain isn't open yet. Switch the chain to Solana to launch today."
+    );
+  }
+
   // Mint the token (no-op in simulated mode).
   const token = await createToken({
     name: clean.name,
     ticker: clean.ticker,
     prompt: clean.prompt,
     cluster,
+    chain,
   });
 
   const result: LaunchResult = {
@@ -186,6 +205,9 @@ export async function launchProjectAction(
     mint: token.mint,
     treasury_wallet: token.treasuryWallet,
     network: token.cluster,
+    // The project's HOME chain. Without it every row would read as Solana and
+    // a Hood launch would render (and be read on-chain) against the wrong chain.
+    chain,
     creator_wallet: creatorWallet,
     // The verified launch-fee payment (null when untolled) — replay-guarded above.
     launch_payment_sig: launchPaymentSig,
@@ -195,6 +217,33 @@ export async function launchProjectAction(
     guardrails: clean.guardrails || null,
     content_policy: clean.contentPolicy || null,
   });
+
+  // Record the deployment in project_chains too — that table, not the flat
+  // columns, is what the resolver reads to know which chains a project is live
+  // on (lib/chains/deployments). Skipping it would leave a brand-new project
+  // invisible to its own chain's list. Best-effort + service-role only: the
+  // insert above already succeeded, and a project that exists with one missing
+  // side-table row is far better than a launch that reports failure after the
+  // token is already minted on-chain.
+  if (supabaseAdmin) {
+    try {
+      await supabaseAdmin.from("project_chains").upsert(
+        {
+          project_key: key,
+          chain,
+          mint: token.mint,
+          treasury_wallet: token.treasuryWallet,
+          launchpad: token.launchpad,
+          network: token.cluster,
+          launched_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "project_key,chain" }
+      );
+    } catch {
+      /* the projects row is the source of truth for the home chain */
+    }
+  }
 
   return result;
 }

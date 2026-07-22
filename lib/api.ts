@@ -34,6 +34,12 @@ export interface LaunchInput {
    * (lib/launch-fee `launchFeeRequired`); ignored in the untolled prototype.
    */
   paymentSig?: string | null;
+  /**
+   * Chain to launch on. "solana" (default) mints via the Solana provider;
+   * "hood" launches on Pons (Robinhood Chain). Providers are resolved PER CHAIN
+   * (lib/launchpad `providerForChain`), so both can be armed at once.
+   */
+  chain?: import("./chains/types").Chain;
 }
 
 export interface LaunchResult {

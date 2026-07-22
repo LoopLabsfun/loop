@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
+import { chainInfo } from "@/lib/chains/registry";
 import { useChain } from "@/lib/chains/chain-context";
 import { launchProjectAction } from "@/lib/actions";
 import { launchesOpen, LAUNCHES_CLOSED_MESSAGE } from "@/lib/launch-config";
@@ -63,7 +64,14 @@ export function LaunchModal({
   const [launchError, setLaunchError] = useState<string | null>(null);
   // The launch toll, asked of the server rather than mirrored into a public env
   // var — see /api/launch-fee for why a second copy is dangerous here.
-  const [fee, setFee] = useState<{ required: boolean; wallet: string | null; sol: number } | null>(null);
+  const [fee, setFee] = useState<{
+    required: boolean;
+    wallet: string | null;
+    sol: number;
+    hoodReady: boolean;
+  } | null>(null);
+  const isHood = chain === "hood";
+  const hoodReady = Boolean(fee?.hoodReady);
   // A payment already made for THIS launch attempt. Kept so a launch that fails
   // AFTER payment (a validation error, a flaky RPC) can be retried without
   // paying twice — the server's replay guard only burns a signature once a
@@ -116,7 +124,13 @@ export function LaunchModal({
     fetch("/api/launch-fee")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (alive && j) setFee({ required: !!j.required, wallet: j.wallet ?? null, sol: Number(j.sol) || 0 });
+        if (alive && j)
+          setFee({
+            required: !!j.required,
+            wallet: j.wallet ?? null,
+            sol: Number(j.sol) || 0,
+            hoodReady: !!j.hoodReady,
+          });
       })
       .catch(() => {
         /* toll unknown ⇒ treated as not required; the server still enforces */
@@ -183,6 +197,7 @@ export function LaunchModal({
         contentPolicy,
         proof: proof ?? undefined,
         paymentSig: paidSigRef.current ?? undefined,
+        chain,
       });
       setResult(res);
     } catch (e) {
@@ -225,18 +240,20 @@ export function LaunchModal({
         </div>
 
         <div className="overflow-y-auto px-[24px] sm:px-[30px] pb-[26px]">
-        {/* Hood launches wait on the Hood launcher contract going live
-            (docs/multichain-hood.md Phase 4) — until then, an honest gate. */}
-        {step === "form" && chain === "hood" && (
+        {/* Hood launches go through Pons (lib/chains/pons). Only gated when the
+            server has no Pons launch wallet configured — an honest reason, not
+            a blanket "coming soon" that outlived the thing it was waiting for. */}
+        {step === "form" && chain === "hood" && !hoodReady && (
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
-                Hood launches open soon
+                Hood launches aren&apos;t switched on here yet
               </div>
               <p className="text-[13.5px] text-muted leading-[1.55] m-0">
-                Launching on Hood (Robinhood Chain) opens when the Hood launcher
-                contract is live. Switch the chain to Solana in the nav to launch
-                today, or draft your project below to be first in line.
+                Launching on Robinhood Chain runs through Pons, and this
+                deployment doesn&apos;t have its launch wallet configured yet.
+                Switch the chain to Solana in the nav to launch today, or draft
+                your project below to be first in line.
               </p>
             </div>
             <WaitlistForm compact />
@@ -413,15 +430,21 @@ export function LaunchModal({
                 <span className="font-mono text-accent-text">{summaryTicker}</span>
               </Row>
               <Row label="Launchpad">
-                <span className="font-mono">Pump.fun</span>
+                <span className="font-mono">{isHood ? "Pons" : "Pump.fun"}</span>
               </Row>
-              <Row label="Network">
-                <span
-                  className={`font-mono ${network === "devnet" ? "text-warn" : "text-pos"}`}
-                >
-                  {network}
-                </span>
+              <Row label="Chain">
+                <span className="font-mono">{chainInfo(chain).label}</span>
               </Row>
+              {/* Hood is mainnet-only — showing a cluster there would be a lie. */}
+              {!isHood && (
+                <Row label="Network">
+                  <span
+                    className={`font-mono ${network === "devnet" ? "text-warn" : "text-pos"}`}
+                  >
+                    {network}
+                  </span>
+                </Row>
+              )}
               <Row label="Fee split">
                 <span className="font-mono" title="founder / agent / platform">
                   {splitLabel(split)}
