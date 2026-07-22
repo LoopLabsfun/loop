@@ -3,7 +3,9 @@ import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./
 import { getEthBalanceCached, getErc20BalanceCached } from "./chains/hood";
 import { chainOfAddress } from "./chains/registry";
 import type { Chain } from "./chains/types";
-import type { ChainDeployment } from "./chains/deployments";
+import { deploymentsOf, type ChainDeployment } from "./chains/deployments";
+import { crossChainTreasurySol } from "./budget";
+import { getSolUsd, getEthUsd } from "./price";
 import { withLiveMarket } from "./token-market";
 import { getPrelaunchProjectBySlug } from "./prelaunch-public";
 import { PROJECT_LIST, PROJECTS } from "./projects";
@@ -233,6 +235,29 @@ async function withLiveDeploymentBalances(projects: Project[]): Promise<Project[
   );
 }
 
+/**
+ * Sum every chain's treasury into `treasurySolTotal` (SOL-equivalent) for the
+ * multichain projects. This is what makes "one project, one agent, funded by any
+ * of its chains" true for the RUNWAY and not just the UI: without it the budget
+ * gate reads the home chain's balance alone, so funding the Hood treasury would
+ * leave the agent asleep. Rates are fetched once for the whole batch, and only
+ * when some project is actually multichain — single-chain deploys pay nothing.
+ */
+async function withCrossChainRunway(projects: Project[]): Promise<Project[]> {
+  const multi = projects.filter((p) => deploymentsOf(p).length > 1);
+  if (!multi.length) return projects;
+  const [solUsd, ethUsd] = await Promise.all([
+    getSolUsd().catch(() => 0),
+    getEthUsd().catch(() => 0),
+  ]);
+  const keys = new Set(multi.map((p) => p.key));
+  return projects.map((p) =>
+    keys.has(p.key)
+      ? { ...p, treasurySolTotal: crossChainTreasurySol(deploymentsOf(p), { solUsd, ethUsd }) }
+      : p
+  );
+}
+
 /** Overlay a live native-balance read (SOL or ETH — `treasurySol` holds native
  *  units per the project's chain) + token holding + history onto a project. */
 async function applyLiveBalance(
@@ -283,7 +308,9 @@ export async function getProjects(): Promise<Project[]> {
     .order("created_at", { ascending: false });
   if (error || !data?.length) return PROJECT_LIST;
   return withLiveMarket(
-    await withLiveDeploymentBalances(await withLiveBalances(await withDeployments(data.map(rowToProject))))
+    await withCrossChainRunway(
+      await withLiveDeploymentBalances(await withLiveBalances(await withDeployments(data.map(rowToProject))))
+    )
   );
 }
 
@@ -301,7 +328,9 @@ export async function getProject(key: string): Promise<Project | null> {
   // stored price (often 0), so the token page valued the treasury's token
   // holdings at $0. Both reads are best-effort + memoized.
   const [project] = await withLiveMarket(
-    await withLiveDeploymentBalances(await withLiveBalances(await withDeployments([rowToProject(data)])))
+    await withCrossChainRunway(
+      await withLiveDeploymentBalances(await withLiveBalances(await withDeployments([rowToProject(data)])))
+    )
   );
   return project;
 }

@@ -124,6 +124,15 @@ export interface Project {
    * lib/chains/deployments.ts swaps in another chain's deployment.
    */
   deployments?: ChainDeployment[];
+  /**
+   * Treasury across EVERY chain the project is deployed on, in SOL-equivalent —
+   * what the runway gate (lib/budget.canAffordTick) spends against, so funding
+   * ANY of a project's chains wakes its one agent. `treasurySol` stays the
+   * chain-specific balance the treasury card displays. Undefined for
+   * single-chain projects and for hand-built Projects; the gate then falls back
+   * to `treasurySol`.
+   */
+  treasurySolTotal?: number;
 }
 
 /** A live treasury reading. Animated client-side in the simulation. */
