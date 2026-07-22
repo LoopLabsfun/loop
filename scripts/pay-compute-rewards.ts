@@ -28,12 +28,12 @@ const EXECUTE = process.argv.includes("--execute");
   );
   const { data: rows, error } = await sb
     .from("compute_rewards")
-    .select("device_id, payout_address, earned_loop_units, claimed_loop_units");
+    .select("device_id, payout_address, earned_loop_units, claimed_loop_units, claim_pending_units");
   if (error) throw new Error(error.message);
 
-  type Row = { device_id: string; payout_address: string | null; earned_loop_units: number; claimed_loop_units: number };
+  type Row = { device_id: string; payout_address: string | null; earned_loop_units: number; claimed_loop_units: number; claim_pending_units: number | null };
   const candidates = ((rows ?? []) as Row[]).filter(
-    (r) => r.payout_address && claimableLoopUnits({ earnedLoopUnits: r.earned_loop_units, claimedLoopUnits: r.claimed_loop_units }) > 0
+    (r) => r.payout_address && claimableLoopUnits({ earnedLoopUnits: r.earned_loop_units, claimedLoopUnits: r.claimed_loop_units, pendingLoopUnits: Number(r.claim_pending_units ?? 0) }) > 0
   );
 
   console.log(`\n=== COMPUTE REWARDS PAYOUT ($LOOP, ${EXECUTE ? "EXECUTE" : "dry-run"}) ===`);
@@ -42,7 +42,7 @@ const EXECUTE = process.argv.includes("--execute");
     return;
   }
   for (const c of candidates) {
-    const loop = claimableLoopUnits({ earnedLoopUnits: c.earned_loop_units, claimedLoopUnits: c.claimed_loop_units }) / LOOP_DECIMALS_FACTOR;
+    const loop = claimableLoopUnits({ earnedLoopUnits: c.earned_loop_units, claimedLoopUnits: c.claimed_loop_units, pendingLoopUnits: Number(c.claim_pending_units ?? 0) }) / LOOP_DECIMALS_FACTOR;
     console.log(`  ${c.device_id}  →  ${c.payout_address}   ${loop.toLocaleString()} $LOOP claimable`);
   }
 

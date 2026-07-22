@@ -12,11 +12,20 @@
 export interface RewardLedgerRow {
   earnedLoopUnits: number;
   claimedLoopUnits: number;
+  /** Units locked in an in-flight claim-pull tx (lib/compute-claim.ts). Not yet
+   *  "claimed" — the ledger only moves on on-chain proof — but ALREADY signed
+   *  over to the user, so the treasury-push path must never re-send them. */
+  pendingLoopUnits?: number;
 }
 
-/** earned − claimed, clamped ≥ 0 — never negative even if the ledger drifts. */
+/** earned − claimed − pending, clamped ≥ 0 — never negative even if the ledger
+ *  drifts. Subtracting `pending` is what keeps the two payout paths (claim-pull
+ *  and treasury-push) from paying the same units twice. */
 export function claimableLoopUnits(row: RewardLedgerRow): number {
-  return Math.max(0, row.earnedLoopUnits - row.claimedLoopUnits);
+  return Math.max(
+    0,
+    row.earnedLoopUnits - row.claimedLoopUnits - (row.pendingLoopUnits ?? 0)
+  );
 }
 
 export interface VerifiedUnit {

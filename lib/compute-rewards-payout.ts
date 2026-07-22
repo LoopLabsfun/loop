@@ -80,14 +80,23 @@ export async function executeComputeRewardsPayout(
 
     const { data: rows } = await supabaseAdmin
       .from("compute_rewards")
-      .select("device_id, payout_address, earned_loop_units, claimed_loop_units");
-    type Row = { device_id: string; payout_address: string | null; earned_loop_units: number; claimed_loop_units: number };
+      .select("device_id, payout_address, earned_loop_units, claimed_loop_units, claim_pending_units");
+    type Row = {
+      device_id: string;
+      payout_address: string | null;
+      earned_loop_units: number;
+      claimed_loop_units: number;
+      claim_pending_units: number | null;
+    };
     const candidates = ((rows ?? []) as Row[])
       .map((r) => ({
         deviceId: r.device_id,
         payoutAddress: r.payout_address,
         earnedLoopUnits: Number(r.earned_loop_units),
         claimedLoopUnits: Number(r.claimed_loop_units),
+        // Units already signed over to the user in an in-flight claim — the
+        // push path must not re-send them (double-payout otherwise).
+        pendingLoopUnits: Number(r.claim_pending_units ?? 0),
       }))
       .filter((r) => r.payoutAddress && claimableLoopUnits(r) > 0);
     if (!candidates.length) return { ok: true, sent: [], skipped: [], note: "nothing claimable" };

@@ -11,6 +11,16 @@ describe("claimableLoopUnits", () => {
   it("zero balance is zero", () => {
     expect(claimableLoopUnits({ earnedLoopUnits: 0, claimedLoopUnits: 0 })).toBe(0);
   });
+  it("excludes units locked in an in-flight claim (no double payout)", () => {
+    expect(
+      claimableLoopUnits({ earnedLoopUnits: 100, claimedLoopUnits: 40, pendingLoopUnits: 60 })
+    ).toBe(0);
+  });
+  it("pending larger than the balance still clamps at zero", () => {
+    expect(
+      claimableLoopUnits({ earnedLoopUnits: 100, claimedLoopUnits: 40, pendingLoopUnits: 999 })
+    ).toBe(0);
+  });
 });
 
 describe("planAccrual", () => {

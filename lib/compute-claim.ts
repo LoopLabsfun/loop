@@ -150,7 +150,10 @@ async function reconcileExpired(row: LedgerRow): Promise<LedgerRow> {
       signer.publicKey
     );
     const memo = memoText(row.device_id, row.claim_nonce);
-    const sigs = await conn.getSignaturesForAddress(sourceAta, { limit: 25 }, "confirmed");
+    // Scan the RPC's full window (1000), not a token 25: clearing the lock
+    // WITHOUT finding a claim that actually landed would let the same units be
+    // claimed twice. At 25 the window is one busy hour of claims wide.
+    const sigs = await conn.getSignaturesForAddress(sourceAta, { limit: 1000 }, "confirmed");
     // getSignaturesForAddress surfaces the memo field directly — no need to
     // fetch each transaction.
     const landed = sigs.some((s) => s.memo?.includes(memo) && s.err === null);
