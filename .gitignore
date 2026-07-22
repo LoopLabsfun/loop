@@ -64,6 +64,9 @@ scripts/sweep-ploop-to-7kyek.ts
 scripts/claim-and-sweep-all-to-7kyek.ts
 scripts/set-project-key.ts
 scripts/force-sdk-tick.ts
+scripts/snapshot-holders.ts
+lib/snapshot.ts
+lib/snapshot.test.ts
 
 .env.local.bak
 
