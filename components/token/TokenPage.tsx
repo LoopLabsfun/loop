@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { SiteHeader } from "../SiteHeader";
 import { LoopMark } from "../LoopMark";
 import { HoodSwapCard } from "./HoodSwapCard";
+import { CrossChainBuySolPanel } from "./CrossChainBuySolPanel";
+import { useHoodWallet } from "@/lib/chains/hood-wallet";
 import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
@@ -815,8 +817,12 @@ function SwapCard({
   preLaunch?: boolean;
 }) {
   const wallet = useWallet();
+  const hood = useHoodWallet();
   const { network, setNetwork } = useNetwork();
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  // Which currency funds a BUY: SOL directly, or ETH on Hood bridged in. The
+  // mirror of HoodSwapCard's toggle — cross-chain works in both directions.
+  const [payWith, setPayWith] = useState<"sol" | "eth">("sol");
   const [amt, setAmt] = useState("1.0");
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
     "idle"
@@ -888,6 +894,10 @@ function SwapCard({
     );
   }
 
+  // Price in SOL per token — what the cross-chain panel needs to turn bridged
+  // SOL into a token estimate. Null when either side of the ratio is missing.
+  const priceNativeSol = lastPrice > 0 && solUsd > 0 ? lastPrice / solUsd : null;
+
   const est = buy
     ? Math.round((amtN * solUsd) / lastPrice).toLocaleString("en-US") + " " + sym
     : ((amtN * lastPrice) / solUsd).toFixed(3) + " SOL";
@@ -939,6 +949,7 @@ function SwapCard({
         <button
           onClick={() => {
             setSide("sell");
+            setPayWith("sol");
             setAmt("10000");
           }}
           className={`font-display font-semibold text-[14px] py-[9px] rounded-[8px] transition-colors ${
@@ -949,6 +960,33 @@ function SwapCard({
         </button>
       </div>
 
+      {/* Pay with SOL or with ETH on Hood — a Hood holder can buy a Solana
+          token without ever touching a Solana on-ramp. Buy side only. */}
+      {buy && (
+        <div className="grid grid-cols-2 gap-1 bg-surface-2 rounded-[9px] p-[3px] mb-[14px]">
+          {(["sol", "eth"] as const).map((pw) => (
+            <button
+              key={pw}
+              onClick={() => setPayWith(pw)}
+              className={`font-mono text-[12px] py-[7px] rounded-[7px] transition-colors ${
+                payWith === pw ? "bg-surface text-ink shadow-sm" : "text-faint"
+              }`}
+            >
+              {pw === "sol" ? "Pay SOL" : "Pay ETH (Hood)"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {buy && payWith === "eth" ? (
+        <CrossChainBuySolPanel
+          tokenSymbol={sym}
+          priceNativeSol={priceNativeSol}
+          sol={wallet}
+          hood={hood}
+        />
+      ) : (
+      <>
       <div className="flex items-baseline justify-between mb-[6px]">
         <label className="text-[12px] text-muted">
           {buy ? "Amount in SOL" : `Amount in ${sym}`}
@@ -1053,6 +1091,8 @@ function SwapCard({
         >
           or trade on pump.fun ↗
         </a>
+      )}
+      </>
       )}
     </div>
   );

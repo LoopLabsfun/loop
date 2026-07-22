@@ -98,6 +98,13 @@ export function isMultichain(p: Project): boolean {
  * Live-read overlays (`treasuryLive`, `treasuryTokenUi`, `treasuryHistory`) are
  * dropped when the chain actually changes: they were read against the home
  * chain's treasury and would be a lie about the other one.
+ *
+ * So is the stored MARKET snapshot (price/mcap/liquidity/holders/volume/curve),
+ * for the same reason and a sharper one: those columns describe the home
+ * chain's market, and the live-market overlay is best-effort ("missing pieces
+ * keep the snapshot"). Carried over, a failed Hood read would silently display
+ * Solana's market cap under a Hood header. Zeroed here, the UI shows its honest
+ * empty state until the real read lands.
  */
 export function projectOnChain(p: Project, chain: Chain): Project {
   const d = deploymentOn(p, chain);
@@ -111,6 +118,13 @@ export function projectOnChain(p: Project, chain: Chain): Project {
     treasurySol: d.treasuryNative,
     earnedSol: d.earnedNative,
     network: d.network,
+    // Home-chain market snapshot — not this chain's. See above.
+    price: 0,
+    marketCap: "$0",
+    liquidity: "$0",
+    holders: "0",
+    volume24h: "0",
+    curve: 0,
   };
   if (d.launchpad) next.launchpad = d.launchpad;
   delete next.treasuryLive;

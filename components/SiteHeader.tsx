@@ -47,6 +47,8 @@ const NAV_LINKS: { href: string; label: string }[] = [
 interface LoopTicker {
   /** undefined = not fetched yet (render nothing), null = pre-launch. */
   mint: string | null | undefined;
+  /** The CA per chain — $LOOP is one project deployed on several. */
+  mints?: { solana: string | null; hood: string | null };
   network: Network;
   priceUsd: number | null;
   change24h: number | null;
@@ -110,9 +112,13 @@ export function SiteHeader({
   const [menuOpen, setMenuOpen] = useState(false);
 
   // The header CA follows the active chain: the $LOOP mint on Solana, the
-  // relaunched ERC-20 on Hood (null until launched → "coming to Hood").
+  // ERC-20 on Hood. Both come from the project's DB deployments, so recording a
+  // launch lights the CA up without a redeploy; the env var stays as a manual
+  // override. Null ⇒ "coming to Hood".
   const caMint =
-    chain === "hood" ? process.env.NEXT_PUBLIC_HOOD_LOOP_MINT || null : ticker.mint;
+    chain === "hood"
+      ? ticker.mints?.hood ?? process.env.NEXT_PUBLIC_HOOD_LOOP_MINT ?? null
+      : ticker.mints?.solana ?? ticker.mint;
   // Price is the Solana market's; hide it in Hood mode rather than mislead.
   const showPrice = chain !== "hood" && ticker.priceUsd != null;
 

@@ -144,6 +144,29 @@ describe("projectOnChain", () => {
     expect(onHood.treasuryHistory).toBeUndefined();
   });
 
+  it("zeroes the home market snapshot so it can't be shown as the other chain's", () => {
+    // The live-market overlay is best-effort ("missing pieces keep the
+    // snapshot"), so carrying these over would print Solana's market cap under
+    // a Hood header whenever the Hood read fails.
+    const priced: Project = {
+      ...dualChain,
+      price: 0.0000042,
+      marketCap: "$1.8K",
+      liquidity: "$3.2K",
+      holders: "412",
+      volume24h: "$92",
+      curve: 1,
+    };
+    const onHood = projectOnChain(priced, "hood");
+    expect(onHood.price).toBe(0);
+    expect(onHood.marketCap).toBe("$0");
+    expect(onHood.liquidity).toBe("$0");
+    expect(onHood.holders).toBe("0");
+    expect(onHood.curve).toBe(0);
+    // …and the home view is of course untouched.
+    expect(projectOnChain(priced, "solana").marketCap).toBe("$1.8K");
+  });
+
   it("keeps the home launchpad when the deployment doesn't name one", () => {
     expect(projectOnChain(dualChain, "hood").launchpad).toBe("Pump.fun");
     const viaPons: Project = {

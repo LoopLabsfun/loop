@@ -24,6 +24,47 @@ export interface CrossChainBuyQuote {
   ready: boolean;
 }
 
+/** Lamports per SOL — the bridge reports Solana amounts in base units. */
+const SOL_DECIMALS = 9;
+
+/**
+ * The MIRROR of combineCrossChainBuy: pay ETH on Hood, receive a SOLANA token.
+ *   A) bridge ETH (Hood) -> SOL (real now, via /api/bridge/quote), then
+ *   B) buy the SPL token with that SOL.
+ * Leg B has no on-chain quoter to call the way the Hood launcher does, so it is
+ * priced off the token's live SOL price (`priceNative`, SOL per token) — an
+ * ESTIMATE, and labelled as one in the UI. A null/zero price (pre-launch, or a
+ * market read that failed) leaves the token leg null and `ready = false`, the
+ * same shape the Hood direction uses before its launcher is live.
+ */
+export function combineCrossChainBuyToSolana(
+  paySymbol: string,
+  bridge: NormalizedBridgeQuote,
+  priceNativeSol: number | null,
+  tokenSymbol: string
+): CrossChainBuyQuote {
+  const lamports = safeBigInt(bridge.out.amount);
+  const solOut = Number(lamports) / 10 ** SOL_DECIMALS;
+  const priced = priceNativeSol != null && priceNativeSol > 0 && solOut > 0;
+  return {
+    pay: { amount: bridge.in.formatted, symbol: bridge.in.symbol || paySymbol },
+    bridged: {
+      amount: bridge.out.formatted,
+      symbol: bridge.out.symbol || "SOL",
+      wei: lamports,
+    },
+    token: priced
+      ? {
+          amount: Math.floor(solOut / priceNativeSol!).toLocaleString("en-US"),
+          symbol: tokenSymbol,
+        }
+      : null,
+    bridgeFeesUsd: bridge.totalFeesUsd,
+    etaSeconds: bridge.etaSeconds,
+    ready: priced,
+  };
+}
+
 function safeBigInt(s: string): bigint {
   try {
     return BigInt(s);
