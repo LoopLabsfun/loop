@@ -104,21 +104,10 @@ export function LaunchModal({
 
   // All hooks must run on every render — keep useMemo above the early return,
   // or toggling `open` changes the hook count ("rendered more hooks…").
-  const summaryName = name.trim() || "Open Source Cursor";
-  const summaryTicker = "$" + (ticker.trim() || "OSCUR");
-  const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
-  const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
-
-  if (!open) return null;
-
-  const goStake = () => {
-    if (!name.trim() || !ticker.trim()) {
-      setError(true);
-      return;
-    }
-    setStep("stake");
-  };
-
+  // The launch toll, asked of the server rather than mirrored into a public env
+  // var (see /api/launch-fee). MUST stay above `if (!open) return null` with the
+  // other hooks: putting it below changed the hook count between closed and open
+  // and crashed the modal in production with React #310.
   useEffect(() => {
     let alive = true;
     fetch("/api/launch-fee")
@@ -139,6 +128,21 @@ export function LaunchModal({
       alive = false;
     };
   }, []);
+
+  const summaryName = name.trim() || "Open Source Cursor";
+  const summaryTicker = "$" + (ticker.trim() || "OSCUR");
+  const readiness = useMemo(() => scoreReadiness({ prompt, repo }), [prompt, repo]);
+  const split = useMemo(() => makeSplit(feeFounderPct), [feeFounderPct]);
+
+  if (!open) return null;
+
+  const goStake = () => {
+    if (!name.trim() || !ticker.trim()) {
+      setError(true);
+      return;
+    }
+    setStep("stake");
+  };
 
   const startDeploy = async () => {
     // Ask the wallet to sign an ownership proof first. Rejection cancels the
