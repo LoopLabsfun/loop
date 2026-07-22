@@ -75,6 +75,10 @@ export function LaunchModal({
     hoodReady: boolean;
   } | null>(null);
   const isHood = chain === "hood";
+  // Hood readiness is only KNOWN once /api/launch-fee answers. Until then we
+  // render a checking line rather than guessing: guessing "blocked" flashes a
+  // wrong message, guessing "ready" flashes a form that may not be usable.
+  const hoodStatusKnown = !isHood || fee !== null;
   // The live Pons fee, shown before the user commits. Read from the chain (the
   // owner can change it), not from a constant that could quietly go stale.
   const [ponsFeeEth, setPonsFeeEth] = useState<string | null>(null);
@@ -313,7 +317,10 @@ export function LaunchModal({
         {/* Hood launches go through Pons (lib/chains/pons). Only gated when the
             server has no Pons launch wallet configured — an honest reason, not
             a blanket "coming soon" that outlived the thing it was waiting for. */}
-        {step === "form" && chain === "hood" && !hoodReady && (
+        {step === "form" && isHood && !hoodStatusKnown && (
+          <div className="py-6 text-center text-[13px] text-faint">Checking Robinhood Chain…</div>
+        )}
+        {step === "form" && isHood && hoodStatusKnown && !hoodReady && (
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
@@ -329,7 +336,7 @@ export function LaunchModal({
             <WaitlistForm compact />
           </div>
         )}
-        {step === "form" && chain !== "hood" && !launchesOpen() && (
+        {step === "form" && hoodStatusKnown && !(isHood && !hoodReady) && !launchesOpen() && (
           <div className="flex flex-col gap-4 py-1">
             <div className="rounded-[12px] border border-line-3 bg-surface-2 px-4 py-4">
               <div className="font-display font-semibold text-[15px] text-ink mb-1">
@@ -355,7 +362,7 @@ export function LaunchModal({
           </div>
         )}
 
-        {step === "form" && chain !== "hood" && launchesOpen() && (
+        {step === "form" && hoodStatusKnown && !(isHood && !hoodReady) && launchesOpen() && (
           <div className="flex flex-col gap-[14px]">
             <Field label="Project name">
               <input
