@@ -15,7 +15,14 @@ import { apiClearSession, apiSessionWallet, sessionWallet } from "@/lib/social-c
 // We confirm against the SERVER (apiSessionWallet) rather than trusting the
 // localStorage hint alone: a session minted before that hint existed (or after
 // localStorage was cleared) would otherwise go undetected and keep acting as the
-// old wallet. Renders nothing.
+// old wallet.
+//
+// It only ever acts while a SOLANA wallet is connected. A session opened from
+// the EVM side resolves to a Solana wallet the user may not have connected here
+// at all — checking "cookie wallet ≠ connected wallet" in that state would clear
+// a perfectly good session on every render and lock the user out of their own
+// DMs. No connected Solana wallet ⇒ nothing to contradict, so nothing to do.
+// Renders nothing.
 export function SessionSync() {
   const wallet = useWallet();
   useEffect(() => {

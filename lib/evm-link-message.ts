@@ -24,6 +24,22 @@
  *  is worthless. */
 export const EVM_LINK_MAX_AGE_MS = 5 * 60 * 1000;
 
+/**
+ * Sign-in from the EVM side. A SEPARATE namespace from the link message on
+ * purpose: a signature collected for one action must never authorize the other.
+ * Linking says "this address is mine"; signing in says "let me act as the Loop
+ * identity this address is already linked to" — and if they shared a namespace,
+ * a link signature harvested from a log or a support screenshot would be a
+ * ready-made session token.
+ *
+ * Note there is no Solana wallet in this message: the signer doesn't know it
+ * yet. The server resolves it from the proven link, which is what makes the
+ * EVM address a *credential for* an identity rather than an identity itself.
+ */
+export function buildEvmSignInMessage(evmAddress: string, ts: number): string {
+  return `looplabs.fun sign in\nevm:${evmAddress.toLowerCase()}\nts:${ts}`;
+}
+
 export function buildEvmLinkMessage(wallet: string, evmAddress: string, ts: number): string {
   // Lowercased so the signed text can't differ from the stored value by
   // checksum casing alone (wallets render EIP-55 mixed case; users paste both).
@@ -48,6 +64,23 @@ export function isFreshLinkTs(ts: number, now: number = Date.now()): boolean {
   const age = now - ts;
   // Reject the future beyond a small clock-skew allowance, and anything stale.
   return age >= -60_000 && age <= EVM_LINK_MAX_AGE_MS;
+}
+
+/** Everything that must hold for an EVM sign-in proof, minus the cryptography.
+ *  Same shape checks as a link proof, but the message carries no Solana wallet
+ *  (the server resolves it), so it is validated against its own namespace. */
+export function signInProofProblems(
+  proof: EvmLinkProof,
+  message: string,
+  now: number = Date.now()
+): string | null {
+  if (!isEvmAddress(proof.address)) return "invalid EVM address";
+  if (typeof proof.signature !== "string" || !proof.signature) return "missing signature";
+  if (!isFreshLinkTs(proof.ts, now)) return "proof expired — sign again";
+  if (message !== buildEvmSignInMessage(proof.address, proof.ts)) {
+    return "signed message does not match this address";
+  }
+  return null;
 }
 
 export interface EvmLinkProof {

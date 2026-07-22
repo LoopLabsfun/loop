@@ -48,6 +48,31 @@ export async function apiEstablishSession(wallet: string, proof: LaunchProof): P
   return r.ok;
 }
 
+/**
+ * Establish the same 7-day session from an EVM signature instead. The server
+ * resolves which Loop identity the address belongs to (via the proven profile
+ * link) and mints a session for THAT wallet — so a user who only has their EVM
+ * wallet to hand is still recognised as themselves.
+ * Returns the resolved Solana wallet, or null with the reason.
+ */
+export async function apiEstablishSessionFromEvm(evm: {
+  address: string;
+  signature: string;
+  ts: number;
+}): Promise<{ wallet: string } | { error: string }> {
+  const r = await fetch("/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ evm }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return { error: j.error || "sign-in failed" };
+  // Remember the RESOLVED wallet, not the EVM address — SessionSync compares
+  // this against the connected Solana wallet.
+  rememberSessionWallet(j.wallet);
+  return { wallet: j.wallet };
+}
+
 /** Clear the user session (cookie + remembered wallet). Called on wallet switch. */
 export async function apiClearSession(): Promise<void> {
   try {

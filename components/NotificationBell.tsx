@@ -5,7 +5,8 @@ import Link from "next/link";
 import { BellIcon } from "./AuthIcons";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
-import { apiEstablishSession, apiLoadNotifications, apiMarkNotificationsRead } from "@/lib/social-client";
+import { apiLoadNotifications, apiMarkNotificationsRead } from "@/lib/social-client";
+import { useEnsureSession } from "@/lib/use-session";
 import type { Notification } from "@/lib/social";
 
 // The notification bell: a wallet-gated dropdown over the PRIVATE notification
@@ -24,6 +25,7 @@ function rel(iso: string): string {
 
 export function NotificationBell() {
   const wallet = useWallet();
+  const establish = useEnsureSession();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -70,12 +72,11 @@ export function NotificationBell() {
     setOpen(next);
     if (!next) return;
     if (needsSession) {
-      // First open without a session — one signature opens a 7-day session.
-      if (!wallet.address) return;
+      // First open without a session — one signature (from EITHER wallet)
+      // opens a 7-day session.
       setBusy(true);
       try {
-        const proof = await wallet.signProfileProof(wallet.address);
-        if (proof && (await apiEstablishSession(wallet.address, proof))) await load();
+        if ((await establish()).ok) await load();
       } finally {
         setBusy(false);
       }

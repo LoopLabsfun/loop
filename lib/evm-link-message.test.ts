@@ -6,6 +6,8 @@ import {
   isFreshLinkTs,
   linkProofProblems,
   normalizeEvmAddress,
+  buildEvmSignInMessage,
+  signInProofProblems,
 } from "./evm-link-message";
 
 const WALLET = "7kyekHMcBuyMTz7xobZimbSrxNKJhJTZzWApri2tcmm9";
@@ -114,5 +116,49 @@ describe("linkProofProblems", () => {
     expect(linkProofProblems(WALLET, { ...proof, signature: "" }, msg, NOW)).toBe(
       "missing signature"
     );
+  });
+});
+
+describe("buildEvmSignInMessage", () => {
+  it("uses a namespace DISTINCT from linking — one signature can't do both", () => {
+    const link = buildEvmLinkMessage(WALLET, EVM, NOW);
+    const signIn = buildEvmSignInMessage(EVM, NOW);
+    expect(signIn).not.toBe(link);
+    expect(signIn.startsWith("looplabs.fun sign in")).toBe(true);
+    expect(link.startsWith("looplabs.fun link evm")).toBe(true);
+  });
+
+  it("carries no Solana wallet — the server resolves it from the proven link", () => {
+    expect(buildEvmSignInMessage(EVM, NOW)).toBe(
+      `looplabs.fun sign in\nevm:${EVM.toLowerCase()}\nts:${NOW}`
+    );
+  });
+});
+
+describe("signInProofProblems", () => {
+  const proof = { address: EVM, signature: "0x" + "ab".repeat(65), ts: NOW };
+
+  it("passes a fresh, well-formed proof", () => {
+    expect(signInProofProblems(proof, buildEvmSignInMessage(EVM, NOW), NOW)).toBeNull();
+  });
+
+  it("refuses a LINK signature replayed as a sign-in", () => {
+    const linkMsg = buildEvmLinkMessage(WALLET, EVM, NOW);
+    expect(signInProofProblems(proof, linkMsg, NOW)).toBe(
+      "signed message does not match this address"
+    );
+  });
+
+  it("refuses a proof minted for a different address", () => {
+    const other = "0x000000000000000000000000000000000000dead";
+    expect(signInProofProblems({ ...proof, address: other }, buildEvmSignInMessage(EVM, NOW), NOW)).toBe(
+      "signed message does not match this address"
+    );
+  });
+
+  it("refuses an expired proof", () => {
+    expect(
+      signInProofProblems(proof, buildEvmSignInMessage(EVM, NOW), NOW + EVM_LINK_MAX_AGE_MS + 1)
+    ).toBe("proof expired — sign again");
   });
 });

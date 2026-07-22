@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useWallet } from "@/lib/wallet";
-import { apiFollow, apiEstablishSession, apiFollowState } from "@/lib/social-client";
+import { apiFollow, apiFollowState } from "@/lib/social-client";
+import { useEnsureSession } from "@/lib/use-session";
 
 // Reusable follow/unfollow control. Optimistic; on a 401 (no session) it asks the
 // wallet to sign ONE profile proof to open a 7-day session, then retries — so
@@ -27,6 +28,7 @@ export function FollowButton({
   onChange?: (now: boolean) => void;
 }) {
   const wallet = useWallet();
+  const establish = useEnsureSession();
   const [following, setFollowing] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [hover, setHover] = useState(false);
@@ -54,8 +56,7 @@ export function FollowButton({
     } catch (err) {
       if (err instanceof Error && err.message === "no-session") {
         try {
-          const proof = await wallet.signProfileProof(wallet.address);
-          if (proof && (await apiEstablishSession(wallet.address, proof))) {
+          if ((await establish()).ok) {
             await apiFollow(target, next ? "follow" : "unfollow", wallet.address);
           } else {
             setFollowing(!next);

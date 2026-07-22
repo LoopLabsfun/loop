@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { SiteHeader } from "./SiteHeader";
 import { useWallet } from "@/lib/wallet";
 import { shortAddr } from "@/lib/format";
-import { apiEstablishSession } from "@/lib/social-client";
+import { useEnsureSession } from "@/lib/use-session";
 import { apiDmConversations, apiDmThread, apiDmSend } from "@/lib/dm-client";
 import type { Conversation, DmMessage } from "@/lib/dm";
 
@@ -31,11 +31,11 @@ export function MessagesView() {
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Either wallet opens the same session (lib/use-session).
+  const establish = useEnsureSession();
   const ensureSession = useCallback(async (): Promise<boolean> => {
-    if (!wallet.address) return false;
-    const proof = await wallet.signProfileProof(wallet.address);
-    return Boolean(proof && (await apiEstablishSession(wallet.address, proof)));
-  }, [wallet]);
+    return (await establish()).ok;
+  }, [establish]);
 
   const loadConvos = useCallback(async () => {
     try {
