@@ -9,6 +9,8 @@ import { anthropicComputeSummary } from "@/lib/anthropic-cost";
 import { getComputeLedger } from "@/lib/compute-ledger-store";
 import { getFeeLedger } from "@/lib/fee-ledger-store";
 import { getVercelVisitorsTotal } from "@/lib/vercel-analytics";
+import { chainsOf, homeChain, isLiveOn, projectOnChain } from "@/lib/chains/deployments";
+import { isChain, type Chain } from "@/lib/chains/types";
 
 // Shared server-side data load + render for the public token page (/token).
 
@@ -16,23 +18,33 @@ import { getVercelVisitorsTotal } from "@/lib/vercel-analytics";
 // the LOOP token's creation day; overridable so other deployments can retarget.
 const SINCE_ISO = process.env.ANTHROPIC_COST_SINCE || "2026-06-16T00:00:00Z";
 
-// LOOP's two chain-native rows cross-link to each other (docs/multichain-hood.md
-// Phase 4: "Solana $LOOP row stays live; the token page can cross-link the
-// two") — same project, same repo, independent treasuries/agent loops per
-// chain (see lib/repo-lock.ts). Convention-based, not a DB column: no sibling
-// row existing yet (the common case before the Hood relaunch) resolves to
-// null and the UI simply omits the chip.
-const SIBLING_KEY: Record<string, string> = { loop: "loop-hood", "loop-hood": "loop" };
-
-export async function TokenPageView({ projectKey }: { projectKey: string }) {
+/**
+ * A project is ONE thing under ONE slug — one agent, one backlog, one repo —
+ * that can be funded on several chains. `chain` selects WHICH deployment's
+ * market side to render (token, treasury, chart, trades, swap); everything
+ * identity-shaped (agent state, chat, commits, fee ledger) is read from the
+ * project itself and is the same whichever chain you're viewing. An unknown
+ * chain, or one the project isn't deployed on, falls back to its home chain.
+ */
+export async function TokenPageView({
+  projectKey,
+  chain,
+}: {
+  projectKey: string;
+  chain?: string;
+}) {
   const base = (await getProject(projectKey)) ?? (await getProject("loop"));
   if (!base) notFound();
-  const siblingKey = SIBLING_KEY[base.key];
+  const requested = isChain(chain) ? chain : null;
+  const viewChain: Chain = requested && isLiveOn(base, requested) ? requested : homeChain(base);
+  // The project AS SEEN FROM the viewed chain: market side swapped, identity
+  // untouched. Identity-shaped reads below deliberately keep using `base`.
+  const onChain = projectOnChain(base, viewChain);
   // Compute (Claude spend) is org-wide and visitors are site-wide, so both are
   // only meaningful on the official project; fetch them only there.
-  const [view, solUsd, commitsAll, agentState, chat, computeApi, computeLedger, feeLedger, visitors, sibling] =
+  const [view, solUsd, commitsAll, agentState, chat, computeApi, computeLedger, feeLedger, visitors] =
     await Promise.all([
-      getTokenView(base),
+      getTokenView(onChain),
       getSolUsd(),
       getRecentCommits(base.repo, 30),
       getAgentState(base),
@@ -41,7 +53,6 @@ export async function TokenPageView({ projectKey }: { projectKey: string }) {
       base.official ? getComputeLedger(base.key) : Promise.resolve(null),
       getFeeLedger(base.key),
       base.official ? getVercelVisitorsTotal(SINCE_ISO) : Promise.resolve(null),
-      siblingKey ? getProject(siblingKey) : Promise.resolve(null),
     ]);
   // Prefer the Admin Cost API; fall back to the metered compute_ledger row.
   const compute =
@@ -74,7 +85,8 @@ export async function TokenPageView({ projectKey }: { projectKey: string }) {
       compute={compute}
       feeLedger={feeLedger}
       visitors={visitors}
-      siblingChainProject={sibling ? { key: sibling.key, chain: sibling.chain ?? "solana" } : null}
+      viewChain={viewChain}
+      deployedChains={chainsOf(base)}
     />
   );
 }

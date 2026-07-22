@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams: { p?: string };
+  searchParams: { p?: string; chain?: string };
 }): Promise<Metadata> {
   // Mirror the route's fallback so the tab title matches what renders.
   const project =
@@ -33,10 +33,16 @@ export async function generateMetadata({
 // Public token page — the hero (identity + contract + price + Buy on the left,
 // the live agent on the right) surfaces what the project's agent is actually
 // doing (building now, last ship, self-funding proof).
+// `chain` selects which of a project's chain deployments to show the market
+// side of — the SAME slug on every chain (one project, one agent, one backlog;
+// each chain is just another way to fund it). The header's chain switch writes
+// this param; an absent/unknown value falls back to the project's home chain.
 export default async function TokenRoute({
   searchParams,
 }: {
-  searchParams: { p?: string };
+  searchParams: { p?: string; chain?: string };
 }) {
-  return <TokenPageView projectKey={searchParams.p ?? "loop"} />;
+  return (
+    <TokenPageView projectKey={searchParams.p ?? "loop"} chain={searchParams.chain} />
+  );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { SiteHeader } from "../SiteHeader";
 import { LoopMark } from "../LoopMark";
 import { HoodSwapCard } from "./HoodSwapCard";
@@ -9,6 +10,7 @@ import { Chart } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
+import { isChain, type Chain } from "@/lib/chains/types";
 import { chainInfo } from "@/lib/chains/registry";
 import { ChainMismatchPanel } from "./ChainMismatchPanel";
 import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
@@ -61,7 +63,8 @@ export function TokenPage({
   compute,
   feeLedger,
   visitors,
-  siblingChainProject,
+  viewChain,
+  deployedChains,
 }: {
   project: Project;
   market: LiveMarket;
@@ -78,14 +81,18 @@ export function TokenPage({
   feeLedger?: FeeLedger;
   /** Total Vercel visitors since launch, or null when unconfigured. */
   visitors?: number | null;
-  /** This project's counterpart on the other chain (same identity, separate
-   *  treasury/agent loop — docs/multichain-hood.md Phase 4), or null when it
-   *  hasn't launched there yet. */
-  siblingChainProject?: { key: string; chain: "solana" | "hood" } | null;
+  /** Which chain's market side the server rendered (`?chain=`). */
+  viewChain?: Chain;
+  /** Every chain this project is deployed on — one slug, several funding
+   *  sources. More than one ⇒ the hero shows chain pills. */
+  deployedChains?: Chain[];
 }) {
   // Real commits from the repo only — no static sample (empty state otherwise).
   const commitFeed = commits;
   const wallet = useWallet();
+  const { chain: activeChain, setChain, ready: chainReady } = useChain();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch } =
     useLiveMarket(p.mint, {
       stats: market.stats,
@@ -116,13 +123,39 @@ export function TokenPage({
   // task started, else when the next item was queued). undefined ⇒ omit.
   const heroTaskAt = heroTask?.at;
 
-  // Header chain switch vs. this project's chain: a Solana chart/trades under a
-  // "Hood" header would read as live Hood data. When they diverge, render an
-  // honest chain state instead of the market panels ("coming soon" for official
-  // LOOP pre-relaunch; a switch-back path for everything else).
-  const { chain: activeChain, setChain, ready: chainReady } = useChain();
-  const projectChain = p.chain ?? "solana";
-  if (chainReady && activeChain !== projectChain) {
+  // ── The chain switch ──────────────────────────────────────────────────────
+  // Same project, same slug, same agent and backlog on every chain — only the
+  // MARKET side (token, treasury, chart, trades, swap) is per-chain. Switching
+  // the header rewrites `?chain=` on this very URL so the server re-renders
+  // that chain's market; the page never becomes a different project.
+  const chains = deployedChains?.length ? deployedChains : [p.chain ?? "solana"];
+  const rendered: Chain = viewChain ?? p.chain ?? "solana";
+  const deployedHere = chains.includes(activeChain);
+  // A shared /token?p=…&chain=hood link must open on Hood even if this browser's
+  // header is set to Solana — the link wins once, then the header takes over.
+  // Without this the effect below would immediately rewrite the URL back and the
+  // link would silently land on the wrong market.
+  const urlChain = searchParams?.get("chain");
+  const adopted = useRef(false);
+  useEffect(() => {
+    if (adopted.current || !chainReady) return;
+    adopted.current = true;
+    if (isChain(urlChain) && urlChain !== activeChain && chains.includes(urlChain)) {
+      setChain(urlChain);
+    }
+  }, [chainReady, urlChain, activeChain, chains, setChain]);
+  useEffect(() => {
+    if (!chainReady || activeChain === rendered || !deployedHere) return;
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("p", p.key);
+    params.set("chain", activeChain);
+    router.replace(`/token?${params.toString()}`, { scroll: false });
+  }, [chainReady, activeChain, rendered, deployedHere, p.key, router, searchParams]);
+
+  // Switched to a chain this project hasn't launched on: rendering the other
+  // chain's chart/trades under that header would read as live data for a market
+  // that doesn't exist. Show an honest state instead of the market panels.
+  if (chainReady && !deployedHere) {
     return (
       <InspectorProvider project={p}>
         <SiteHeader context={p.ticker} actions={<ShareButton />} />
@@ -130,7 +163,7 @@ export function TokenPage({
           <ChainMismatchPanel
             project={p}
             activeChain={activeChain}
-            onSwitchBack={() => setChain(projectChain)}
+            onSwitchBack={() => setChain(rendered)}
           />
         </main>
       </InspectorProvider>
@@ -156,7 +189,9 @@ export function TokenPage({
         shippedCount={shippedCount}
         computeSpentUsd={computeSpentUsd}
         onchainActions={onchainActions}
-        siblingChainProject={siblingChainProject}
+        chains={chains}
+        activeChain={activeChain}
+        onSelectChain={setChain}
       />
 
       {/* Main grid */}
@@ -411,7 +446,9 @@ function MergedHero({
   shippedCount,
   computeSpentUsd,
   onchainActions,
-  siblingChainProject,
+  chains,
+  activeChain,
+  onSelectChain,
 }: {
   p: Project;
   last: number;
@@ -426,7 +463,10 @@ function MergedHero({
   shippedCount: number;
   computeSpentUsd: number | null;
   onchainActions: number;
-  siblingChainProject?: { key: string; chain: "solana" | "hood" } | null;
+  /** Chains this project is deployed on — >1 renders the chain pills. */
+  chains: Chain[];
+  activeChain: Chain;
+  onSelectChain: (c: Chain) => void;
 }) {
   return (
     <section className="max-w-[1280px] mx-auto px-8 pt-7 pb-5">
@@ -456,13 +496,25 @@ function MergedHero({
             {p.network === "devnet" && (
               <span className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-warn text-warn">devnet</span>
             )}
-            {siblingChainProject && (
-              <Link
-                href={`/token?p=${siblingChainProject.key}`}
-                className="font-mono text-[10.5px] px-2 py-[3px] rounded-[6px] border border-line-3 text-muted hover:border-line-hover hover:text-ink transition-colors"
-              >
-                also on {chainInfo(siblingChainProject.chain).label} →
-              </Link>
+            {/* One project, several funding chains — these switch which market
+                you're looking at, NOT which project. Same slug either way. */}
+            {chains.length > 1 && (
+              <span className="inline-flex items-center gap-[2px] p-[2px] rounded-[7px] border border-line-3">
+                {chains.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => onSelectChain(c)}
+                    aria-pressed={c === activeChain}
+                    className={`font-mono text-[10.5px] px-2 py-[2px] rounded-[5px] transition-colors ${
+                      c === activeChain
+                        ? "bg-accent text-white"
+                        : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    {chainInfo(c).label}
+                  </button>
+                ))}
+              </span>
             )}
           </div>
 

@@ -7,11 +7,13 @@ import { chainInfo } from "@/lib/chains/registry";
 import type { Chain } from "@/lib/chains/types";
 import type { Project } from "@/lib/types";
 
-// Rendered by TokenPage when the header's active chain ≠ the project's chain,
-// INSTEAD of the market panels — a Solana chart/trades under a "Hood" header
-// would read as live Hood data, which it isn't. Official LOOP on Hood gets the
-// pre-relaunch "coming soon" framing (mirrors the landing card); every other
-// mismatch gets an honest "this project lives on X" with a one-click way back.
+// Rendered by TokenPage when the project has NO deployment on the header's
+// active chain, INSTEAD of the market panels — a Solana chart/trades under a
+// "Hood" header would read as live Hood data, which it isn't. Note this is now
+// about a missing DEPLOYMENT, not a different project: a project live on both
+// chains never lands here, it just swaps its market side (lib/chains/deployments).
+// Official LOOP on Hood gets the pre-relaunch "coming soon" framing (mirrors the
+// landing card); everything else gets an honest "this project lives on X".
 export function ChainMismatchPanel({
   project: p,
   activeChain,
@@ -24,8 +26,9 @@ export function ChainMismatchPanel({
   const projectChain: Chain = p.chain ?? "solana";
   const active = chainInfo(activeChain);
   const home = chainInfo(projectChain);
-  const hoodLoopMint = process.env.NEXT_PUBLIC_HOOD_LOOP_MINT;
-  const loopComingToHood = p.key === "loop" && activeChain === "hood" && !hoodLoopMint;
+  // No env gate needed any more: this panel only renders when the project has
+  // no deployment on `activeChain` at all, so "coming soon" is simply true.
+  const loopComingToHood = p.key === "loop" && activeChain === "hood";
 
   return (
     <section className="max-w-[640px] mx-auto px-8 py-16">

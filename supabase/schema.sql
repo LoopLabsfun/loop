@@ -58,7 +58,60 @@ comment on column public.projects.network is 'mainnet | devnet — which cluster
 alter table public.projects
   add column if not exists chain text not null default 'solana'
     check (chain in ('solana', 'hood'));
-comment on column public.projects.chain is 'solana | hood — which chain the token/treasury live on. hood = Robinhood Chain (EVM, id 4663).';
+comment on column public.projects.chain is 'solana | hood — which chain the token/treasury live on. hood = Robinhood Chain (EVM, id 4663). Now the HOME chain: a project can be deployed on several (see project_chains).';
+
+-- ── project_chains — one project, N chain deployments ───────────────────────
+-- The `projects` row keeps IDENTITY (slug, name, ticker, repo, prompt, backlog,
+-- agent, socials); this table carries everything PER-CHAIN, so a project can be
+-- funded by Solana AND Hood while staying ONE project under ONE slug, with ONE
+-- agent and one backlog. Supersedes the earlier "second project row per chain"
+-- approach (which meant two agents on the same repo, duplicating Claude spend).
+-- The flat projects.mint/treasury_wallet/… columns stay as the HOME deployment
+-- and are kept in step, so every existing read path keeps working.
+create table if not exists public.project_chains (
+  project_key     text not null references public.projects(key) on delete cascade,
+  chain           text not null check (chain in ('solana', 'hood')),
+  mint            text,
+  treasury_wallet text,
+  agent_wallet    text,
+  treasury_native double precision not null default 0,
+  earned_native   double precision not null default 0,
+  launchpad       text,
+  network         text not null default 'mainnet',
+  launched_at     timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  primary key (project_key, chain)
+);
+comment on table public.project_chains is 'Per-chain deployment of a project: its token, treasury, agent wallet and native balances on that chain. One project = one slug = one agent, funded by any of its chains.';
+comment on column public.project_chains.treasury_native is 'Native-unit treasury snapshot on this chain (SOL or ETH) — the per-chain counterpart of projects.treasury_sol.';
+comment on column public.project_chains.network is 'mainnet | devnet — solana only; hood rows stay mainnet.';
+create index if not exists project_chains_chain_idx on public.project_chains (chain);
+create index if not exists project_chains_mint_idx on public.project_chains (mint);
+alter table public.project_chains enable row level security;
+create policy "project_chains are publicly readable"
+  on public.project_chains for select using (true);
+-- No anon insert/update/delete ON PURPOSE: a deployment row carries a mint and a
+-- treasury address — exactly the fields the hardened projects INSERT policy
+-- refuses to let anon set. Service-role only (launch scripts / server actions).
+
+-- Backfill for an existing database: every project becomes its own home
+-- deployment, so the resolver has a row for every project from day one.
+insert into public.project_chains (
+  project_key, chain, mint, treasury_wallet, agent_wallet,
+  treasury_native, earned_native, launchpad, network, launched_at
+)
+select
+  p.key,
+  case
+    when p.chain in ('solana', 'hood') then p.chain
+    when coalesce(p.treasury_wallet, p.mint) like '0x%' then 'hood'
+    else 'solana'
+  end,
+  p.mint, p.treasury_wallet, p.agent_wallet,
+  p.treasury_sol, p.earned_sol, p.launchpad, p.network, p.created_at
+from public.projects p
+on conflict (project_key, chain) do nothing;
 
 -- creator wallet (signature proof)
 alter table public.projects add column if not exists creator_wallet text;

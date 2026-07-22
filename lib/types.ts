@@ -4,8 +4,11 @@
 // touching the UI components.
 
 import type { Chain } from "./chains/types";
+import type { ChainDeployment } from "./chains/deployments";
 
-export type Launchpad = "Pump.fun" | "Bags.fun";
+// "Pons" is the Robinhood Chain launchpad — the Hood-side counterpart of
+// pump.fun (form + wallet signature, fixed supply, graduation to a WETH pair).
+export type Launchpad = "Pump.fun" | "Bags.fun" | "Pons";
 
 /** Solana cluster a project / the session targets. */
 export type Network = "mainnet" | "devnet";
@@ -112,6 +115,15 @@ export interface Project {
    * treasury sparkline (event-spaced; every value is a real balance level).
    */
   treasuryHistory?: { t: number; sol: number }[] | null;
+  /**
+   * Every chain this project is deployed on (`project_chains`). A project is
+   * ONE thing — one slug, one agent, one backlog; only the market side (token,
+   * treasury, agent wallet, balances) differs per chain, so being live on Hood
+   * as well as Solana is a second FUNDING SOURCE, not a second project.
+   * The flat fields above describe the HOME chain; `projectOnChain()` in
+   * lib/chains/deployments.ts swaps in another chain's deployment.
+   */
+  deployments?: ChainDeployment[];
 }
 
 /** A live treasury reading. Animated client-side in the simulation. */

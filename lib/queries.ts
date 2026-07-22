@@ -3,6 +3,7 @@ import { getSolBalanceCached, getSplBalanceCached, getTreasuryHistory } from "./
 import { getEthBalanceCached, getErc20BalanceCached } from "./chains/hood";
 import { chainOfAddress } from "./chains/registry";
 import type { Chain } from "./chains/types";
+import type { ChainDeployment } from "./chains/deployments";
 import { withLiveMarket } from "./token-market";
 import { getPrelaunchProjectBySlug } from "./prelaunch-public";
 import { PROJECT_LIST, PROJECTS } from "./projects";
@@ -52,12 +53,72 @@ interface ProjectRow {
   domain: string | null;
 }
 
+/** Shape of a `public.project_chains` row — a project's deployment on one chain. */
+interface ProjectChainRow {
+  project_key: string;
+  chain: string;
+  mint: string | null;
+  treasury_wallet: string | null;
+  agent_wallet: string | null;
+  treasury_native: number;
+  earned_native: number;
+  launchpad: string | null;
+  network: string;
+}
+
 /** The row's chain: explicit column first, then address-shape inference for
  *  rows that predate the column (an 0x… treasury/mint can only be Hood). */
 function rowChain(r: ProjectRow): Chain {
   if (r.chain === "hood" || r.chain === "solana") return r.chain;
   const addr = r.treasury_wallet ?? r.mint;
   return addr && chainOfAddress(addr) === "hood" ? "hood" : "solana";
+}
+
+function rowToDeployment(r: ProjectChainRow): ChainDeployment {
+  return {
+    chain: r.chain === "hood" ? "hood" : "solana",
+    mint: r.mint,
+    treasuryWallet: r.treasury_wallet,
+    agentWallet: r.agent_wallet,
+    treasuryNative: Number(r.treasury_native ?? 0),
+    earnedNative: Number(r.earned_native ?? 0),
+    launchpad: (r.launchpad as Launchpad | null) ?? null,
+    network: r.network === "devnet" ? "devnet" : "mainnet",
+  };
+}
+
+/**
+ * Attach each project's `project_chains` deployments — what makes a project one
+ * slug across several chains instead of one row per chain. Best-effort by
+ * design: a missing table (schema not yet applied) or a failed read just leaves
+ * every project single-chain on its home deployment, exactly as before.
+ */
+async function withDeployments(projects: Project[]): Promise<Project[]> {
+  if (!supabase || !projects.length) return projects;
+  try {
+    const { data, error } = await supabase
+      .from("project_chains")
+      .select(
+        "project_key, chain, mint, treasury_wallet, agent_wallet, treasury_native, earned_native, launchpad, network"
+      )
+      .in(
+        "project_key",
+        projects.map((p) => p.key)
+      );
+    if (error || !data?.length) return projects;
+    const byKey = new Map<string, ChainDeployment[]>();
+    for (const row of data as ProjectChainRow[]) {
+      const list = byKey.get(row.project_key) ?? [];
+      list.push(rowToDeployment(row));
+      byKey.set(row.project_key, list);
+    }
+    return projects.map((p) => {
+      const deployments = byKey.get(p.key);
+      return deployments?.length ? { ...p, deployments } : p;
+    });
+  } catch {
+    return projects;
+  }
 }
 
 function rowToProject(r: ProjectRow): Project {
@@ -140,6 +201,38 @@ async function withLiveBalances(projects: Project[]): Promise<Project[]> {
   );
 }
 
+/**
+ * Live native balances for the NON-home deployments (the home chain is already
+ * covered by withLiveBalances, which also writes the snapshot back). Without
+ * this, switching the header to Hood would show $LOOP's stored ETH snapshot
+ * while Solana showed a live number — the same treasury card telling two
+ * different kinds of truth. Best-effort and parallel: a failed read keeps the
+ * snapshot.
+ */
+async function withLiveDeploymentBalances(projects: Project[]): Promise<Project[]> {
+  return Promise.all(
+    projects.map(async (p) => {
+      const home = p.chain ?? "solana";
+      const others = (p.deployments ?? []).filter((d) => d.chain !== home && d.treasuryWallet);
+      if (!others.length) return p;
+      const refreshed = await Promise.all(
+        others.map(async (d) => {
+          const live =
+            d.chain === "hood"
+              ? await getEthBalanceCached(d.treasuryWallet!)
+              : await getSolBalanceCached(d.treasuryWallet!, d.network);
+          return live === null ? d : { ...d, treasuryNative: live };
+        })
+      );
+      const byChain = new Map(refreshed.map((d) => [d.chain, d]));
+      return {
+        ...p,
+        deployments: (p.deployments ?? []).map((d) => byChain.get(d.chain) ?? d),
+      };
+    })
+  );
+}
+
 /** Overlay a live native-balance read (SOL or ETH — `treasurySol` holds native
  *  units per the project's chain) + token holding + history onto a project. */
 async function applyLiveBalance(
@@ -189,7 +282,9 @@ export async function getProjects(): Promise<Project[]> {
     .order("official", { ascending: false })
     .order("created_at", { ascending: false });
   if (error || !data?.length) return PROJECT_LIST;
-  return withLiveMarket(await withLiveBalances(data.map(rowToProject)));
+  return withLiveMarket(
+    await withLiveDeploymentBalances(await withLiveBalances(await withDeployments(data.map(rowToProject))))
+  );
 }
 
 /** A single project by key, with the same fallback behaviour. */
@@ -205,7 +300,9 @@ export async function getProject(key: string): Promise<Project | null> {
   // (price/mcap). Without withLiveMarket the single-project path kept the stale
   // stored price (often 0), so the token page valued the treasury's token
   // holdings at $0. Both reads are best-effort + memoized.
-  const [project] = await withLiveMarket(await withLiveBalances([rowToProject(data)]));
+  const [project] = await withLiveMarket(
+    await withLiveDeploymentBalances(await withLiveBalances(await withDeployments([rowToProject(data)])))
+  );
   return project;
 }
 

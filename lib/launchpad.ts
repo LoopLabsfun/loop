@@ -13,7 +13,7 @@ import type { Launchpad } from "./types";
 // Intended for server-side use only (imported by lib/actions.ts). Secret env
 // vars have no NEXT_PUBLIC_ prefix, so they are never exposed to the browser.
 
-export type LaunchpadProvider = "simulated" | "spl" | "pumpfun" | "bags";
+export type LaunchpadProvider = "simulated" | "spl" | "pumpfun" | "bags" | "pons";
 export type LaunchCluster = "mainnet" | "devnet";
 
 export interface CreateTokenInput {
@@ -53,6 +53,10 @@ const PROVIDER_LAUNCHPAD: Record<LaunchpadProvider, Launchpad> = {
   spl: "Pump.fun",
   pumpfun: "Pump.fun",
   bags: "Bags.fun",
+  // Robinhood Chain's launchpad — what pump.fun is to Solana. A Pons launch is
+  // performed by the founder in Pons' own UI (an EVM wallet signature, no
+  // contract of ours), then recorded here via scripts/launch-on-hood.ts.
+  pons: "Pons",
 };
 
 /** The display launchpad for a provider. */
@@ -62,7 +66,7 @@ export function providerLaunchpad(provider: LaunchpadProvider): Launchpad {
 
 /** Parse the LAUNCHPAD_PROVIDER env value, defaulting to "simulated". */
 export function parseProvider(raw: string | undefined): LaunchpadProvider {
-  return raw === "spl" || raw === "pumpfun" || raw === "bags"
+  return raw === "spl" || raw === "pumpfun" || raw === "bags" || raw === "pons"
     ? raw
     : "simulated";
 }
