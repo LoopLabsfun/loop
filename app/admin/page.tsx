@@ -1891,6 +1891,11 @@ function TreasuryPanel({ activeKey }: { activeKey: string }) {
     } finally {
       setLoading(false);
     }
+    // `refreshTick` is deliberately a dependency it doesn't read: bumping it
+    // (after a treasury move lands, line ~1869) recreates this callback, which
+    // re-runs the effect below and re-reads the balances. Removing it, as the
+    // rule suggests, would silently stop that refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, refreshTick]);
 
   useEffect(() => {

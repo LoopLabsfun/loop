@@ -248,6 +248,9 @@ export function BrowserNode() {
   useEffect(() => {
     if (status === "running" && !wallet.connected) stop();
     return stop;
+    // `status` is read but MUST NOT be a dependency: the cleanup is `stop`, so
+    // re-running this effect on every status change would stop the node the
+    // instant it starts. Only the wallet-disconnect transition should trigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.connected]);
 

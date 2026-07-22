@@ -862,6 +862,9 @@ function SwapCard({
     return () => {
       cancelled = true;
     };
+    // `wallet` itself is omitted: the adapter façade is rebuilt on every render,
+    // so depending on it would re-read the balance in a loop. The identity bits
+    // that actually change what we'd read are listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.connected, wallet.address, buy, wrongNet, p.mint, status]);
 
@@ -1304,6 +1307,9 @@ function BoostTierCard({
     return () => {
       cancelled = true;
     };
+    // `wallet` itself is omitted: the adapter façade is rebuilt on every render,
+    // so depending on it would re-read the balance in a loop. The identity bits
+    // that actually change what we'd read are listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.connected, wallet.address, wrongNet, p.mint]);
 

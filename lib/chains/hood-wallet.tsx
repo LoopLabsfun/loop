@@ -189,7 +189,9 @@ export function useHoodWallet(): HoodWalletState {
         throw e;
       }
     }
-  }, []);
+    // getProvider is a useCallback([]) — a stable reference for the lifetime of
+    // the hook — so listing it is honest without changing when this recreates.
+  }, [getProvider]);
 
   const connectVia = useCallback(
     async (p: Eip1193Provider) => {
@@ -236,7 +238,7 @@ export function useHoodWallet(): HoodWalletState {
     } catch {
       return 0;
     }
-  }, [address]);
+  }, [address, getProvider]);
 
   const quoteBuy = useCallback(
     async (token: string, ethInWei: bigint): Promise<bigint | null> => {

@@ -183,6 +183,10 @@ export function SwapWidget({ extraTokens = [] }: { extraTokens?: SwapToken[] }) 
     if (status === "executing" || status === "polling") return;
     const t = setTimeout(() => void fetchQuote(), 450);
     return () => clearTimeout(t);
+    // `fetchQuote` and `status` are omitted on purpose. fetchQuote is rebuilt
+    // every render, so depending on it would restart the debounce timer
+    // continuously and never actually fire; `status` is read as a guard only —
+    // depending on it would re-quote the moment a swap finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amount, fromToken, toToken, fromChain, toChain, userAddr, recipientAddr]);
 

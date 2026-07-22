@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { FollowButton } from "../FollowButton";
 import { RichText } from "../RichText";
@@ -104,7 +104,9 @@ const ACTION_LABEL: Record<WalletAction["kind"], string> = {
 export function InspectorDrawer() {
   const ctx = useInspectorContext();
   const item = ctx?.item ?? null;
-  const close = ctx?.close ?? (() => {});
+  // Memoized: the `?? (() => {})` fallback minted a new function every render,
+  // so the ESC listener below tore down and re-subscribed on each one.
+  const close = useMemo(() => ctx?.close ?? (() => {}), [ctx?.close]);
 
   // ESC closes the drawer.
   useEffect(() => {

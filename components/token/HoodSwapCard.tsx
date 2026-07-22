@@ -57,6 +57,11 @@ export function HoodSwapCard({ project: p }: { project: Project }) {
     return () => {
       cancelled = true;
     };
+    // Deliberately narrow: `w` (the wallet hook's memoized object) and
+    // `amountWei` are omitted. `w` changes identity on every chain/account
+    // event, and requoting the curve on each one would hammer the RPC for a
+    // number that hasn't changed. The inputs that actually move a quote are
+    // listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amt, side, payWith, token, deployed, w.address]);
 

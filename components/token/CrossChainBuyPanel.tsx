@@ -90,7 +90,10 @@ export function CrossChainBuyPanel({
     } finally {
       if (mine === seq.current) setLoading(false);
     }
-  }, [amount, deployed, token, tokenSymbol, sol.address, hood.address, hood]);
+    // `hood` covers `hood.address`: the wallet hook returns a memoized object
+    // that changes identity whenever the address does, so listing both was
+    // redundant, not safer.
+  }, [amount, deployed, token, tokenSymbol, sol.address, hood]);
 
   useEffect(() => {
     const t = setTimeout(() => void refresh(), 400);
