@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { LoopMark } from "../LoopMark";
 import { useWallet } from "@/lib/wallet";
@@ -61,6 +61,14 @@ export function LaunchModal({
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [result, setResult] = useState<LaunchResult | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  // The launch toll, asked of the server rather than mirrored into a public env
+  // var — see /api/launch-fee for why a second copy is dangerous here.
+  const [fee, setFee] = useState<{ required: boolean; wallet: string | null; sol: number } | null>(null);
+  // A payment already made for THIS launch attempt. Kept so a launch that fails
+  // AFTER payment (a validation error, a flaky RPC) can be retried without
+  // paying twice — the server's replay guard only burns a signature once a
+  // project actually exists, so reusing it here is both safe and necessary.
+  const paidSigRef = useRef<string | null>(null);
 
   // Reset whenever it (re)opens.
   useEffect(() => {
@@ -103,6 +111,21 @@ export function LaunchModal({
     setStep("stake");
   };
 
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/launch-fee")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (alive && j) setFee({ required: !!j.required, wallet: j.wallet ?? null, sol: Number(j.sol) || 0 });
+      })
+      .catch(() => {
+        /* toll unknown ⇒ treated as not required; the server still enforces */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const startDeploy = async () => {
     // Ask the wallet to sign an ownership proof first. Rejection cancels the
     // launch; a wallet that can't signMessage returns null and proceeds.
@@ -114,9 +137,30 @@ export function LaunchModal({
       return;
     }
 
+    // Pay the toll BEFORE deploying. The server verifies the payment on-chain
+    // and replay-guards it, so this is a real cost, not a UI gesture.
+    if (fee?.required && fee.wallet) {
+      if (!paidSigRef.current) {
+        try {
+          setStep("deploying");
+          setDeployLog([`Paying the ${fee.sol} SOL launch fee · ${wallet.label}`]);
+          paidSigRef.current = await wallet.sendSol(fee.wallet, fee.sol);
+        } catch (e) {
+          setLaunchError(
+            e instanceof Error && /reject|denied|cancel/i.test(e.message)
+              ? "Launch fee payment rejected — launch cancelled."
+              : "Launch fee payment failed. Nothing was launched; you can try again."
+          );
+          setStep("stake");
+          return;
+        }
+      }
+    }
+
     setStep("deploying");
     setDeployLog([
       proof ? `Ownership verified · ${wallet.label}` : `Launching · ${wallet.label}`,
+      ...(paidSigRef.current ? [`Launch fee paid · ${fee?.sol} SOL`] : []),
     ]);
     const lines = [
       `Token ${summaryTicker.toUpperCase()} deployed on Pump.fun`,
@@ -138,12 +182,19 @@ export function LaunchModal({
         guardrails,
         contentPolicy,
         proof: proof ?? undefined,
+        paymentSig: paidSigRef.current ?? undefined,
       });
       setResult(res);
     } catch (e) {
-      // Surface a validation/server error and return to the stake step.
+      // Surface a validation/server error and return to the stake step. When the
+      // toll was already paid, say so loudly: the signature is kept and reused
+      // on retry (the server only burns it once a project exists), but closing
+      // this modal loses it and the next attempt would charge again.
+      const base = e instanceof Error ? e.message : "Launch failed. Please try again.";
       setLaunchError(
-        e instanceof Error ? e.message : "Launch failed. Please try again."
+        paidSigRef.current
+          ? `${base} — your ${fee?.sol} SOL fee is already paid and will be reused, so retry here rather than closing this window.`
+          : base
       );
       setStep("stake");
       return;
@@ -383,13 +434,26 @@ export function LaunchModal({
                   Pay to launch
                 </span>
                 <span className="font-mono text-[16px] text-accent-text">
-                  pump.fun curve
+                  {fee?.required ? `${fee.sol} SOL` : "pump.fun curve"}
                 </span>
               </div>
               <p className="text-[12.5px] text-muted leading-[1.5] m-0">
-                No stake, no toll — open to anyone. Your bonding-curve buy seeds
-                the project treasury; 5% of creator rewards route to the Loop
-                treasury. Hold $LOOP for governance + a stronger default agent.
+                {fee?.required ? (
+                  <>
+                    A {fee.sol} SOL launch fee is charged before deploying — one
+                    wallet signature to pay, one to prove ownership. Your
+                    bonding-curve buy then seeds the project treasury; 5% of
+                    creator rewards route to the Loop treasury. Hold $LOOP for
+                    governance + a stronger default agent.
+                  </>
+                ) : (
+                  <>
+                    No stake, no toll — open to anyone. Your bonding-curve buy
+                    seeds the project treasury; 5% of creator rewards route to
+                    the Loop treasury. Hold $LOOP for governance + a stronger
+                    default agent.
+                  </>
+                )}
               </p>
             </div>
             {!wallet.connected ? (
