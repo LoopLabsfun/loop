@@ -257,8 +257,8 @@ export default function AdminPage() {
         <div className="bg-surface border border-line-2 rounded-[16px] px-6 py-8 text-center">
           <div className="font-display font-semibold text-[16px] mb-1">Founder sign-in</div>
           <p className="text-[13px] text-muted max-w-[420px] mx-auto mb-5">
-            This console is private. Prove you're the founder by signing a message with the
-            project's creator wallet — it moves no funds and just opens a 2-hour session.
+            This console is private. Prove you&apos;re the founder by signing a message with the
+            project&apos;s creator wallet — it moves no funds and just opens a 2-hour session.
           </p>
           {!wallet.connected ? (
             <button
@@ -278,7 +278,7 @@ export default function AdminPage() {
           )}
           {checked && (
             <p className="text-[11px] text-faint mt-4">
-              The signer must equal this project's creator_wallet, or sign-in is rejected.
+              The signer must equal this project&apos;s creator_wallet, or sign-in is rejected.
             </p>
           )}
         </div>

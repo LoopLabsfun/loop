@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SiteHeader } from "../SiteHeader";
 import { LoopMark } from "../LoopMark";
@@ -130,7 +130,13 @@ export function TokenPage({
   // MARKET side (token, treasury, chart, trades, swap) is per-chain. Switching
   // the header rewrites `?chain=` on this very URL so the server re-renders
   // that chain's market; the page never becomes a different project.
-  const chains = deployedChains?.length ? deployedChains : [p.chain ?? "solana"];
+  // Memoized: a fresh array each render would re-run the effects below on every
+  // render (the chain-adoption one would fight the URL). Flagged by
+  // react-hooks/exhaustive-deps.
+  const chains = useMemo(
+    () => (deployedChains?.length ? deployedChains : [p.chain ?? "solana"]),
+    [deployedChains, p.chain]
+  );
   const rendered: Chain = viewChain ?? p.chain ?? "solana";
   const deployedHere = chains.includes(activeChain);
   // A shared /token?p=…&chain=hood link must open on Hood even if this browser's

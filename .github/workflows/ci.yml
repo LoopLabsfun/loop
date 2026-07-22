@@ -1,7 +1,13 @@
-# Test + typecheck gate. The Vercel deploy already runs `next build` (which type-
-# checks + bundles), but NOTHING ran the unit tests on push — so a broken test could
-# land silently. This runs tsc + vitest on every push to main and every PR, on the
-# pinned Node (.nvmrc = 20). Pure checks, no secrets: vitest + tsc need no backend.
+# Lint + test + typecheck gate. The Vercel deploy already runs `next build` (which
+# type-checks + bundles), but NOTHING ran the unit tests on push — so a broken test
+# could land silently. This runs eslint + tsc + vitest on every push to main and
+# every PR, on the pinned Node (.nvmrc = 20). Pure checks, no secrets.
+#
+# LINT IS NOT COSMETIC HERE. On 2026-07-22 a useEffect placed below an early return
+# shipped to production and crashed the launch modal for every visitor (React #310).
+# tsc, 1275 tests and `next build` all passed — none of them model hook order. Only
+# react-hooks/rules-of-hooks catches that, and it wasn't installed. It is now, and it
+# runs here so nobody has to remember to run it.
 #
 # Note: the suite must run on Node ≥18 (vitest 2 / vite need globalThis.crypto, which
 # Node 16 lacks) — hence node-version-file: .nvmrc. A shell on Node 16 fails at vite
@@ -29,6 +35,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Tests

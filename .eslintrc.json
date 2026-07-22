@@ -1,0 +1,15 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "plugins": ["@typescript-eslint"],
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn"
+  },
+  "ignorePatterns": [
+    ".next/",
+    "node_modules/",
+    "out/",
+    "build/",
+    "workers/*/node_modules/"
+  ]
+}
