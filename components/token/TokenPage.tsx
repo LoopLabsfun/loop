@@ -1979,9 +1979,16 @@ function TopHolders({
   preLaunch?: boolean;
 }) {
   const { inspect } = useInspector();
-  // Concentration of the shown top holders — the fraction of supply they hold
-  // combined. A quick read on how distributed (or whale-heavy) the token is.
-  const topShare = holders.reduce((s, h) => s + Math.max(0, h.share), 0);
+  // Concentration of the shown top holders — how whale-heavy the token is.
+  //
+  // Liquidity pools are EXCLUDED. Post-graduation the AMM holds most of the
+  // supply, so counting it made every graduated token read ~99% concentrated:
+  // a well-spread token and one held by three whales scored the same, and the
+  // number answered nothing. Pool supply is surfaced separately instead, since
+  // "most of it is in liquidity" is itself worth knowing.
+  const walletHolders = holders.filter((h) => !h.pool);
+  const topShare = walletHolders.reduce((s, h) => s + Math.max(0, h.share), 0);
+  const poolShare = holders.reduce((s, h) => s + (h.pool ? Math.max(0, h.share) : 0), 0);
   return (
     <div className="bg-surface border border-line-2 rounded-[16px] p-[18px]">
       <div className="font-display font-semibold text-[14.5px] mb-3">Top Holders</div>
@@ -1997,7 +2004,7 @@ function TopHolders({
           <div className="mb-1">
             <div className="flex items-baseline justify-between mb-[7px]">
               <span className="text-[12px] text-muted">
-                Top {holders.length} concentration
+                Top {walletHolders.length} wallet{walletHolders.length === 1 ? "" : "s"}
               </span>
               <span className="font-mono text-[12.5px] tabular-nums">
                 {(topShare * 100).toFixed(1)}%
@@ -2005,18 +2012,31 @@ function TopHolders({
             </div>
             <div
               className="flex h-[7px] rounded-full overflow-hidden bg-[#F0EEF3]"
-              title={`Top ${holders.length} hold ${(topShare * 100).toFixed(1)}% of supply`}
+              title={
+                poolShare > 0
+                  ? `Top wallets hold ${(topShare * 100).toFixed(1)}% · ${(poolShare * 100).toFixed(1)}% sits in liquidity`
+                  : `Top ${holders.length} hold ${(topShare * 100).toFixed(1)}% of supply`
+              }
             >
               {holders.map((h, i) => (
                 <div
                   key={h.address}
                   style={{
                     width: `${Math.max(0, h.share) * 100}%`,
-                    background: `oklch(${0.47 + i * 0.03} 0.21 285)`,
+                    // Pools are shown but visibly not a holder — same bar, so the
+                    // supply still adds up, without pretending it's someone's bag.
+                    // line-3 is a literal in tailwind.config, not a CSS var — using
+                    // var(--line-3) here would render transparent.
+                    background: h.pool ? "#D6D2DC" : `oklch(${0.47 + i * 0.03} 0.21 285)`,
                   }}
                 />
               ))}
             </div>
+            {poolShare > 0 && (
+              <div className="mt-[6px] font-mono text-[11px] text-faint">
+                + {(poolShare * 100).toFixed(1)}% in liquidity (not a holder)
+              </div>
+            )}
           </div>
           {holders.map((h) => (
             <button
@@ -2043,6 +2063,11 @@ function TopHolders({
                   <span className="text-ink truncate">{h.name}</span>
                 ) : (
                   <span className="text-muted truncate">{shortAddr(h.address)}</span>
+                )}
+                {h.pool && (
+                  <span className="font-mono text-[10px] px-[5px] py-[1px] rounded-[5px] border border-line-3 text-faint flex-none">
+                    {h.poolLabel ?? "pool"}
+                  </span>
                 )}
               </span>
               <span className="tabular-nums flex-none">{(h.share * 100).toFixed(2)}%</span>

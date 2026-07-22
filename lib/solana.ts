@@ -81,6 +81,17 @@ async function rpc<T>(net: Network, method: string, params: unknown): Promise<T 
  * each token account's owner via getMultipleAccounts (jsonParsed) → divides by
  * total supply. Best-effort: any missing piece drops that holder.
  */
+/** A wallet is owned by the System Program; anything else is a program account. */
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+
+/** Program owners worth naming when they show up in a holder list. */
+const PROGRAM_OWNER_NAMES: Record<string, string> = {
+  pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA: "pump.fun AMM pool",
+  "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "Raydium pool",
+  "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun bonding curve",
+  TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA: "token program account",
+};
+
 export async function getTopHolders(
   mint: string,
   net: Network = DEFAULT_NETWORK,
@@ -106,13 +117,35 @@ export async function getTopHolders(
     value: ({ data?: { parsed?: { info?: { owner?: string } } } } | null)[];
   }>(net, "getMultipleAccounts", [top.map((a) => a.address), { encoding: "jsonParsed" }]);
 
-  return top
+  const holders = top
     .map((a, i) => {
       const owner = owners?.value?.[i]?.data?.parsed?.info?.owner ?? a.address;
       const amount = a.uiAmount ?? 0;
-      return { address: owner, share: amount / total } satisfies Holder;
+      return { address: owner, share: amount / total } as Holder;
     })
     .filter((h) => h.share > 0);
+
+  // Which of these are actually PEOPLE? An address owned by anything other than
+  // the System Program is a program-owned account — a pool, a vault, an escrow.
+  // One extra batched read; failure just leaves everything unlabelled, which is
+  // the behaviour we had before.
+  try {
+    const infos = await rpc<{ value: ({ owner?: string } | null)[] }>(
+      net,
+      "getMultipleAccounts",
+      [holders.map((h) => h.address), { encoding: "jsonParsed" }]
+    );
+    (infos?.value ?? []).forEach((info, i) => {
+      const prog = info?.owner;
+      if (!prog || prog === SYSTEM_PROGRAM) return;
+      holders[i].pool = true;
+      holders[i].poolLabel = PROGRAM_OWNER_NAMES[prog] ?? "pool / contract";
+    });
+  } catch {
+    /* labels are a nicety — never lose the holder list over them */
+  }
+
+  return holders;
 }
 
 /**

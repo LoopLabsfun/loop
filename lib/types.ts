@@ -212,6 +212,16 @@ export interface MarketStats {
 export interface Holder {
   address: string;
   share: number;
+  /**
+   * True when this "holder" is a program-owned account — a liquidity pool, a
+   * vault, an escrow — rather than a person's wallet. Post-graduation the AMM
+   * pool holds most of the supply, so counting it as a holder makes every
+   * graduated token look ~99% concentrated and the metric stops meaning
+   * anything.
+   */
+  pool?: boolean;
+  /** Friendly name for a known program-owned account ("pump.fun AMM pool"). */
+  poolLabel?: string | null;
   /** Primary Solana Name Service (.sol) name for `address`, if any (else null). */
   name?: string | null;
   /** Loop profile display name for `address`, if the wallet set one (else null). */
