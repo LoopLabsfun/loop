@@ -6,6 +6,7 @@ import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
 import { chainInfo } from "@/lib/chains/registry";
 import type { Chain } from "@/lib/chains/types";
+import { isLiveOn, projectOnChain } from "@/lib/chains/deployments";
 import { compactUsd } from "@/lib/format";
 import type { Network, Project } from "@/lib/types";
 
@@ -29,15 +30,15 @@ export function LiveProjects({
   const { network } = useNetwork();
   const { chain } = useChain();
 
-  // Show only the projects living on the active chain (and, on Solana, the
-  // active cluster — Hood is mainnet-only). The first client render uses the
-  // same env default the server rendered with, so this stays hydration-safe;
-  // it re-filters once the persisted choice is reconciled.
-  const visible = projects.filter(
-    (p) =>
-      projectChain(p) === chain &&
-      (chain === "hood" || projectNetwork(p) === network)
-  );
+  // Show the projects DEPLOYED on the active chain (and, on Solana, the active
+  // cluster — Hood is mainnet-only). A project live on several chains appears in
+  // both lists, showing that chain's market/treasury — one project, N chains
+  // (lib/chains/deployments.ts), not one row per chain. The first client render
+  // uses the same env default the server rendered with, so this stays
+  // hydration-safe; it re-filters once the persisted choice is reconciled.
+  const visible = projects
+    .filter((p) => isLiveOn(p, chain) && (chain === "hood" || projectNetwork(p) === network))
+    .map((p) => projectOnChain(p, chain));
   const placeLabel = chain === "hood" ? chainInfo("hood").label : network;
 
   return (
@@ -63,8 +64,10 @@ export function LiveProjects({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* On Hood, LOOP is the flagship — surfaced as an official "coming
-              soon" card until it relaunches there (non-launched). */}
-          {chain === "hood" && (
+              soon" card until it launches there. Once it has a Hood deployment
+              it appears in `visible` like any other project, so this placeholder
+              must step aside or the page would show LOOP twice. */}
+          {chain === "hood" && !visible.some((p) => p.key === "loop") && (
             <HoodLoopComingSoon
               description={projects.find((p) => p.key === "loop")?.description}
             />
