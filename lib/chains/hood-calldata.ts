@@ -38,7 +38,7 @@ function utf8Padded(s: string): { byteLen: number; hex: string } {
 }
 
 /** The dynamic `bytes`/`string` tail: length word + padded data. */
-function encodeStringTail(s: string): { size: number; hex: string } {
+export function encodeStringTail(s: string): { size: number; hex: string } {
   const { byteLen, hex } = utf8Padded(s);
   return { size: 32 + hex.length / 2, hex: encodeUint(BigInt(byteLen)) + hex };
 }

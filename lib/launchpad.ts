@@ -213,19 +213,52 @@ async function createOnPumpfun(
   };
 }
 
-// Pons — Robinhood Chain's launchpad (its pump.fun). A Pons launch is performed
-// by the FOUNDER in Pons' own UI: an EVM wallet signature, no contract of ours
-// to deploy or audit. There is no server-side create API to call, so this path
-// refuses loudly instead of pretending — the result is recorded afterwards with
-// scripts/launch-on-hood.ts. Selecting it never mints anything by accident.
+// Pons — Robinhood Chain's launchpad (its pump.fun). Called DIRECTLY: launchToken
+// is a public payable function on a verified contract, so a Hood launch is one
+// transaction from our own flow, not a human filling in a form on their site.
+// Signed by the project's Privy EVM wallet, like every other Hood write.
+// Encoder + verified constants: lib/chains/pons.ts.
 async function createOnPons(
-  _input: CreateTokenInput,
-  _cluster: LaunchCluster
+  input: CreateTokenInput,
+  cluster: LaunchCluster
 ): Promise<CreateTokenResult> {
-  throw new Error(
-    "Hood launches go through the Pons launchpad UI (an EVM wallet signature), not this server path. " +
-      "Launch there, then record it with scripts/launch-on-hood.ts <token> <treasury> [projectKey]."
-  );
+  const walletId = process.env.HOOD_LAUNCH_WALLET_ID;
+  const walletAddress = process.env.HOOD_LAUNCH_WALLET_ADDRESS;
+  if (!walletId || !walletAddress) {
+    throw new Error(
+      "Pons launch is selected but HOOD_LAUNCH_WALLET_ID / HOOD_LAUNCH_WALLET_ADDRESS are not set."
+    );
+  }
+  const { launchOnPons } = await import("./chains/pons-launch");
+  // The dev buy is denominated in the chain's native unit — here ETH, not SOL.
+  // `devBuySol` is the seam's generic "seed the first candle" amount.
+  const devBuyWei = BigInt(Math.round((input.devBuySol ?? 0) * 1e18));
+  const res = await launchOnPons({
+    walletId,
+    walletAddress,
+    devBuyWei,
+    params: {
+      name: input.name,
+      symbol: input.ticker,
+      description: input.description ?? input.prompt,
+      socials: {
+        twitter: input.links?.twitter,
+        telegram: input.links?.telegram,
+        website: input.links?.website,
+      },
+      // Routes the dev buy AND the locker's fee redirect to the project
+      // treasury rather than to whichever wallet sent the transaction.
+      feeWallet: walletAddress,
+    },
+  });
+  return {
+    launchpad: providerLaunchpad("pons"),
+    cluster,
+    mint: res.token,
+    treasuryWallet: walletAddress,
+    txSig: res.txHash,
+    simulated: false,
+  };
 }
 
 async function createOnBags(
