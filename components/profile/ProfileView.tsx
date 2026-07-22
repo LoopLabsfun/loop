@@ -18,6 +18,8 @@ import type { SocialUser } from "@/lib/social";
 // loads on demand only when an owner opens the edit modal with Privy enabled.
 const PRIVY_ON = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
 const TwitterLink = dynamic(() => import("./TwitterLink").then((m) => m.TwitterLink), { ssr: false });
+// Injected-wallet hooks touch window.ethereum ⇒ client-only, like TwitterLink.
+const EvmLink = dynamic(() => import("./EvmLink").then((m) => m.EvmLink), { ssr: false });
 
 // User profile page (Lot 1): identity + on-chain positions + launched projects +
 // the creator's agent log/decisions. Read-only for visitors; the owner (connected
@@ -543,6 +545,17 @@ function EditModal({
         <input className="loop-input mb-3" value={avatarUrl} maxLength={400} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="or paste an image URL" />
         <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-1">Bio</label>
         <textarea className="loop-input mb-4" value={bio} maxLength={160} rows={3} onChange={(e) => setBio(e.target.value)} placeholder="What you're building on Loop." />
+        <div className="border-t border-line-4 pt-4 mb-4">
+          <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-2">
+            Robinhood Chain address
+          </label>
+          <EvmLink
+            wallet={profile.wallet}
+            currentAddress={profile.evmAddress ?? null}
+            onLinked={onSaved}
+            ensureProof={() => wallet.signProfileProof(profile.wallet)}
+          />
+        </div>
         <div className="border-t border-line-4 pt-4 mb-4">
           <label className="block text-[11px] text-faint font-mono uppercase tracking-[0.04em] mb-2">X / Twitter</label>
           {PRIVY_ON ? (

@@ -239,4 +239,7 @@ export interface Profile {
   twitterHandle: string | null;
   twitterVerified: boolean;
   createdAt?: string | null;
+  /** Robinhood Chain (EVM) address this wallet proved control of, lowercase;
+   *  null when unlinked. The destination for anything paid out EVM-side. */
+  evmAddress?: string | null;
 }

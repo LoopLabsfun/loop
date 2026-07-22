@@ -187,6 +187,27 @@ alter table public.profiles
   add constraint profiles_username_format
   check (username is null or username ~ '^[a-z0-9_]{3,20}$') not valid;
 comment on table public.profiles is 'User profiles on Loop, keyed by wallet pubkey. Writes go through the service role after a signed loop.fun profile proof; anon can only read.';
+
+-- A user's EVM (Robinhood Chain) address, stored WITH its proof: the address is
+-- a payout destination, so the signature that authorized it must stay
+-- inspectable. The proof is an EIP-191 personal_sign over
+-- `looplabs.fun link evm\nwallet:…\nevm:…\nts:…` (lib/evm-link-message.ts),
+-- which binds the address to THIS Solana wallet, so a signature captured
+-- elsewhere can't repoint another profile.
+alter table public.profiles
+  add column if not exists evm_address text,
+  add column if not exists evm_proof_sig text,
+  add column if not exists evm_proof_ts bigint,
+  add column if not exists evm_linked_at timestamptz;
+comment on column public.profiles.evm_address is 'Lowercase 0x… address on Robinhood Chain, proven by an EIP-191 signature from that address. Payout/receive destination for anything EVM-side.';
+comment on column public.profiles.evm_proof_sig is 'The personal_sign signature that proved control of evm_address — kept for audit, never re-broadcast.';
+comment on column public.profiles.evm_proof_ts is 'Millisecond timestamp inside the signed message (anti-replay).';
+-- Deliberately NOT unique: one person may link the same EVM address from several
+-- Solana wallets, which is normal and must not be blocked.
+create index if not exists profiles_evm_address_idx on public.profiles (evm_address);
+alter table public.profiles
+  add constraint profiles_evm_address_format
+  check (evm_address is null or evm_address ~ '^0x[0-9a-f]{40}$') not valid;
 alter table public.profiles enable row level security;
 create policy "profiles are publicly readable" on public.profiles for select using (true);
 

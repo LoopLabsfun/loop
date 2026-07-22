@@ -96,6 +96,7 @@ const EMPTY = (wallet: string): Profile => ({
   twitterHandle: null,
   twitterVerified: false,
   createdAt: null,
+  evmAddress: null,
 });
 
 interface ProfileRow {
@@ -107,9 +108,11 @@ interface ProfileRow {
   twitter_handle: string | null;
   twitter_verified: boolean | null;
   created_at: string | null;
+  evm_address: string | null;
 }
 
-const PROFILE_COLS = "wallet,username,display_name,bio,avatar_url,twitter_handle,twitter_verified,created_at";
+const PROFILE_COLS =
+  "wallet,username,display_name,bio,avatar_url,twitter_handle,twitter_verified,created_at,evm_address";
 
 function rowToProfile(r: ProfileRow): Profile {
   return {
@@ -121,6 +124,7 @@ function rowToProfile(r: ProfileRow): Profile {
     twitterHandle: r.twitter_handle,
     twitterVerified: Boolean(r.twitter_verified),
     createdAt: r.created_at,
+    evmAddress: r.evm_address ?? null,
   };
 }
 
