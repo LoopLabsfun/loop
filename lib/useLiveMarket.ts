@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Candle, MarketStats, Trade } from "./types";
 
-export type Timeframe = "1H" | "4H" | "1D";
+export type Timeframe = "1H" | "4H" | "1D" | "ALL";
 export type ChartMode = "candles" | "line";
 
 export interface LiveMarketSeed {

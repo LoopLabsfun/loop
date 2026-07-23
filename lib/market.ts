@@ -183,13 +183,18 @@ const TF: Record<string, { resolution: "minute" | "hour" | "day"; aggregate: num
   "1H": { resolution: "minute", aggregate: 15 }, // 15-min candles across ~12h
   "4H": { resolution: "hour", aggregate: 1 },
   "1D": { resolution: "hour", aggregate: 4 },
+  ALL: { resolution: "day", aggregate: 1 }, // daily candles since launch
 };
+
+// ALL wants the full life of the token, not the last 60 buckets — Gecko caps
+// a single OHLCV call at 1000 rows, and densify caps filler the same way.
+const TF_LIMIT: Record<string, number> = { ALL: 365 };
 
 /**
  * OHLCV candles for a pool, oldest→newest, mapped to the chart's Candle shape.
  * `tf` is the app timeframe ("1H" | "4H" | "1D"); USD prices. Empty on failure.
  */
-export function getCandles(pair: string, tf: string, limit = 60): Promise<Candle[]> {
+export function getCandles(pair: string, tf: string, limit = TF_LIMIT[tf] ?? 60): Promise<Candle[]> {
   // Memoize the whole cascade, not just each grain: the cascade can hit Gecko
   // up to 4x per call, and the 20s poll would trip the ~30 req/min limit —
   // which then 429s every grain and blanks the chart entirely.

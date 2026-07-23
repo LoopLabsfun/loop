@@ -251,7 +251,7 @@ export function TokenPage({
                   <Segmented<Timeframe>
                     value={tf}
                     onChange={changeTf}
-                    options={["1H", "4H", "1D"]}
+                    options={["1H", "4H", "1D", "ALL"]}
                   />
                   <Segmented
                     value={mode}
@@ -2086,7 +2086,8 @@ function TopHolders({
  * honest label comes from the data itself: the smallest gap between candles.
  */
 function candleGrainLabel(candles: Candle[], tf: string): string {
-  const fallback = tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : "4h candles";
+  const fallback =
+    tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : tf === "1D" ? "4h candles" : "daily candles";
   const ts = candles.map((c) => c.t).filter((t): t is number => t != null);
   if (ts.length < 2) return fallback;
   let step = Infinity;
