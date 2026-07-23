@@ -15,6 +15,7 @@ import { useChain } from "@/lib/chains/chain-context";
 import { isChain, type Chain } from "@/lib/chains/types";
 import { chainInfo } from "@/lib/chains/registry";
 import { ChainMismatchPanel } from "./ChainMismatchPanel";
+import { CollectHoodFees } from "./CollectHoodFees";
 import { useLiveMarket, type Timeframe } from "@/lib/useLiveMarket";
 import { useLiveTreasury } from "@/lib/useLiveTreasury";
 import { buildSwapTx } from "@/lib/pump";
@@ -95,7 +96,7 @@ export function TokenPage({
   const { chain: activeChain, setChain, ready: chainReady } = useChain();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch } =
+  const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch, livePrice } =
     useLiveMarket(p.mint, {
       stats: market.stats,
       candles: market.candles,
@@ -103,9 +104,9 @@ export function TokenPage({
     });
 
   // Pre-launch (no mint) ⇒ no market: render honest "no market yet" states.
-  // Live price + 24h change come straight from the market stats; the candle
-  // series drives only the chart.
-  const last = stats?.priceUsd ?? 0;
+  // The 5s live tick beats the 20s stats refresh, so prefer it for the headline
+  // price — the number the chart's last candle is already drawn at.
+  const last = livePrice ?? stats?.priceUsd ?? 0;
   const change = stats?.priceChange24h ?? 0;
 
   // Hero summary of the live agent: what it's building now (or the next queued
@@ -1716,6 +1717,9 @@ function TreasuryStats({
           </div>
         )}
       </div>
+      {/* Hood LP fees — self-renders only for the treasury wallet on a Pons
+          project, so it's invisible to everyone else. */}
+      {(p.chain ?? "solana") === "hood" && <CollectHoodFees projectKey={p.key} />}
     </div>
   );
 }

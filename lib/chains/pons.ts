@@ -47,6 +47,13 @@ export const PONS_SELECTORS = {
   launchToken: "686399cb",
   launchFee: "cf3cf573",
   launchEnabled: "236a4afb",
+  // Locker (not the factory): pulls the LP position's accrued fees and splits
+  // them — protocol share to Pons, the rest to the launch's fee recipient
+  // (our treasury, wired via feeWallet at launch). Callable by the deployer,
+  // the recipient, the owner, or an allow-listed collector.
+  collectFees: "a480ca79",
+  protocolFeeShare: "960b26a2",
+  feeRedirects: "dce780c2",
 } as const;
 
 /** Every selector above is re-derived from these signatures in the tests, so a
@@ -57,6 +64,9 @@ export const PONS_SIGNATURES = {
     "launchToken((string,string,string,string,(string,string,string,string,string),address),uint256,uint256,bytes32)",
   launchFee: "launchFee()",
   launchEnabled: "launchEnabled()",
+  collectFees: "collectFees(address)",
+  protocolFeeShare: "protocolFeeShare()",
+  feeRedirects: "feeRedirects(address)",
 } as const;
 
 export interface PonsSocials {
