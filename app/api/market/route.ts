@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getMarketStats, getCandles, getRecentTrades } from "@/lib/market";
+import { getMarketStats, getCandles, getRecentTrades, resolveTradingPool } from "@/lib/market";
 import { isSolanaAddress } from "@/lib/api-guards";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +22,12 @@ export async function GET(req: Request) {
   if (!stats) {
     return NextResponse.json({ stats: null, candles: [], trades: [] });
   }
+  // Chart the deepest live pool, not stats.pairAddress — for a graduated token
+  // that field can be the dead bonding curve (see resolveTradingPool).
+  const pool = await resolveTradingPool(mint, stats.pairAddress);
   const [candles, trades] = await Promise.all([
-    getCandles(stats.pairAddress, tf),
-    getRecentTrades(stats.pairAddress, 10, mint),
+    getCandles(pool, tf),
+    getRecentTrades(pool, 10, mint),
   ]);
   return NextResponse.json({ stats, candles, trades });
 }

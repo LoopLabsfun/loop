@@ -32,9 +32,18 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
   const hasVol = candles.some((c) => (c.v ?? 0) > 0);
   const H = T + PRICE_H + (hasVol ? GAP + VOL_H : 0) + (hasTime ? AXIS_H : 0) + 4;
 
-  const min = Math.min(...candles.map((c) => c.l));
-  const max = Math.max(...candles.map((c) => c.h));
-  const span = max - min || 1;
+  let min = Math.min(...candles.map((c) => c.l));
+  let max = Math.max(...candles.map((c) => c.h));
+  if (max === min) {
+    // A perfectly flat series (quiet token, gap-filled candles) must not fall
+    // back to a $1 span — on a $0.000002 token that draws a $1.00 axis with
+    // the price crushed onto the baseline. Pad ±5% of the price instead so the
+    // flat line sits centered on a sane scale.
+    const pad = max * 0.05 || 0.5;
+    min -= pad;
+    max += pad;
+  }
+  const span = max - min;
   const cw = (W - R) / candles.length;
   const x = useCallback((i: number) => i * cw + cw / 2, [cw]);
   const y = useCallback(

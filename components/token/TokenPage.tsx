@@ -263,7 +263,7 @@ export function TokenPage({
                 <Chart candles={candles} mode={mode} />
                 <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
                   <span>
-                    {tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : "4h candles"}
+                    {candleGrainLabel(candles, tf)}
                   </span>
                   <span className="inline-flex items-center gap-[6px]">
                     <span className="w-[6px] h-[6px] rounded-full bg-pos-bright animate-pulseFast" />
@@ -2077,4 +2077,22 @@ function TopHolders({
       )}
     </div>
   );
+}
+
+/**
+ * The caption under the chart names the candle grain. It used to be derived
+ * from the timeframe toggle alone, but getCandles now cascades to whichever
+ * grain actually has trades (a quiet token's 15-min window is empty), so the
+ * honest label comes from the data itself: the smallest gap between candles.
+ */
+function candleGrainLabel(candles: Candle[], tf: string): string {
+  const fallback = tf === "1H" ? "15m candles" : tf === "4H" ? "hourly candles" : "4h candles";
+  const ts = candles.map((c) => c.t).filter((t): t is number => t != null);
+  if (ts.length < 2) return fallback;
+  let step = Infinity;
+  for (let i = 1; i < ts.length; i++) step = Math.min(step, ts[i] - ts[i - 1]);
+  if (!Number.isFinite(step) || step <= 0) return fallback;
+  if (step < 3600) return `${Math.round(step / 60)}m candles`;
+  if (step < 86400) return step === 3600 ? "hourly candles" : `${Math.round(step / 3600)}h candles`;
+  return step === 86400 ? "daily candles" : `${Math.round(step / 86400)}d candles`;
 }

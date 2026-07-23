@@ -5,6 +5,7 @@ import {
   getMarketStats,
   getCandles,
   getRecentTrades,
+  resolveTradingPool,
   type MarketStats,
 } from "./market";
 import { getTopHoldersCached, getHolderCountCached, getTokenSupplyUiCached, getSolBalanceCached } from "./solana";
@@ -55,9 +56,12 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   }
 
   const stats = await getMarketStats(mint);
+  // Chart the deepest live pool — stats.pairAddress can be the dead bonding
+  // curve on a graduated token (see resolveTradingPool in lib/market.ts).
+  const pool = stats ? await resolveTradingPool(mint, stats.pairAddress) : null;
   const [candles, trades, holders, holderCount, supply, agentSol] = await Promise.all([
-    stats ? getCandles(stats.pairAddress, tf) : Promise.resolve<Candle[]>([]),
-    stats ? getRecentTrades(stats.pairAddress, 10, mint) : Promise.resolve<Trade[]>([]),
+    pool ? getCandles(pool, tf) : Promise.resolve<Candle[]>([]),
+    pool ? getRecentTrades(pool, 10, mint) : Promise.resolve<Trade[]>([]),
     getTopHoldersCached(mint, net),
     getHolderCountCached(mint, net),
     getTokenSupplyUiCached(mint, net),

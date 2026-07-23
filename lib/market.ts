@@ -61,6 +61,42 @@ export function getMarketStats(mint: string): Promise<MarketStats | null> {
   return memoized(`stats:${mint}`, (v) => v !== null, () => fetchMarketStats(mint));
 }
 
+/**
+ * The pool candles/trades should be read from. `stats.pairAddress` is NOT it
+ * for a graduated token whose stats came from the pump.fun fallback: that field
+ * is the *bonding curve*, which goes dead at graduation — charting it renders
+ * launch-day data forever at a price ~14x off the live one (confirmed on LOOP).
+ * Ask GeckoTerminal for every pool holding this mint and pick the deepest by
+ * reserve — the same "canonical market" rule pump.fun's own UI applies. Falls
+ * back to `stats.pairAddress` when the listing fails.
+ */
+export async function resolveTradingPool(mint: string, fallback: string): Promise<string> {
+  const best = await memoized<string | null>(`pool:${mint}`, (v) => v !== null, async () => {
+    try {
+      const res = await fetch(`${GECKO}/tokens/${mint}/pools`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const json = (await res.json()) as {
+        data?: { id?: string; attributes?: { reserve_in_usd?: string } }[];
+      };
+      const top = (json.data ?? [])
+        .map((p) => ({
+          // Gecko pool ids are "solana_<address>".
+          addr: (p.id ?? "").replace(/^solana_/, ""),
+          reserve: num(p.attributes?.reserve_in_usd),
+        }))
+        .filter((p) => p.addr)
+        .sort((a, b) => b.reserve - a.reserve)[0];
+      return top?.addr || null;
+    } catch {
+      return null;
+    }
+  });
+  return best ?? fallback;
+}
+
 async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
   const fromDexScreener = await fetchDexScreenerStats(mint);
   return fromDexScreener ?? fetchPumpFunStats(mint);
@@ -153,17 +189,41 @@ const TF: Record<string, { resolution: "minute" | "hour" | "day"; aggregate: num
  * OHLCV candles for a pool, oldest→newest, mapped to the chart's Candle shape.
  * `tf` is the app timeframe ("1H" | "4H" | "1D"); USD prices. Empty on failure.
  */
-export async function getCandles(pair: string, tf: string, limit = 60): Promise<Candle[]> {
+export function getCandles(pair: string, tf: string, limit = 60): Promise<Candle[]> {
+  // Memoize the whole cascade, not just each grain: the cascade can hit Gecko
+  // up to 4x per call, and the 20s poll would trip the ~30 req/min limit —
+  // which then 429s every grain and blanks the chart entirely.
+  // Empty results are cached too (unlike the per-grain memo): an empty cascade
+  // means every grain failed or is quiet, and retrying 4 upstream calls on each
+  // 20s poll while 429'd only digs the hole deeper. 15s later it retries anyway.
+  return memoized(`candles:${pair}:${tf}:${limit}`, () => true, () =>
+    fetchCandlesCascade(pair, tf, limit)
+  );
+}
+
+async function fetchCandlesCascade(pair: string, tf: string, limit: number): Promise<Candle[]> {
   const t = TF[tf] ?? TF["1D"];
-  const candles = await fetchOhlcv(pair, t.resolution, t.aggregate, limit);
-  // A freshly-launched pool often has no hour/day aggregates yet (only minute
-  // data exists), which would leave 4H/1D blank. Fall back to the finest grain
-  // (15-min) so every timeframe shows real price action from launch — never an
-  // empty chart while trades exist.
-  if (candles.length === 0 && !(t.resolution === "minute" && t.aggregate === 15)) {
-    return fetchOhlcv(pair, "minute", 15, limit);
+  // Cascade through grains until one has real data. Both directions matter:
+  // a fresh pool only has minute data (hour/day aggregates lag), while a quiet
+  // pool's 15-min window is pure flat filler — real trades only appear at
+  // hour/day grain. "Real" = at least one candle actually traded (v > 0);
+  // a window of nothing but densify-filler misrepresents a dead stretch as
+  // the whole market, so it loses to any grain with genuine price action.
+  const grains = [
+    [t.resolution, t.aggregate] as const,
+    ["minute", 15] as const,
+    ["hour", 4] as const,
+    ["day", 1] as const,
+  ].filter(
+    ([res, agg], i) => i === 0 || res !== t.resolution || agg !== t.aggregate
+  );
+  let firstNonEmpty: Candle[] = [];
+  for (const [resolution, aggregate] of grains) {
+    const candles = await fetchOhlcv(pair, resolution, aggregate, limit);
+    if (candles.some((c) => (c.v ?? 0) > 0)) return candles;
+    if (!firstNonEmpty.length) firstNonEmpty = candles;
   }
-  return candles;
+  return firstNonEmpty;
 }
 
 /** One GeckoTerminal OHLCV fetch → chronological Candle[], or [] on failure. Memoized. */
@@ -274,15 +334,28 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
       // Pool sends tokens to the user → BUY; user sends tokens to the pool → SELL.
       const buy = move.fromUserAccount === pair;
       const user = (buy ? move.toUserAccount : move.fromUserAccount) ?? "";
-      // SOL leg: lamports crossing the pool boundary in the opposite direction.
+      // SOL leg, opposite direction across the pool boundary. On a graduated
+      // AMM pool (PumpSwap/Raydium) the SOL side is a *wrapped* SOL token
+      // transfer, not a native one — only the bonding curve moves lamports
+      // directly. Take the WSOL leg when present; summing every native
+      // transfer in the tx also caught unrelated routing legs (a 0.67 SOL
+      // buy showed as 10 SOL), so native is the curve-era fallback only.
+      const wsol = (tx.tokenTransfers ?? [])
+        .filter(
+          (x) =>
+            x.mint === SOL_MINT &&
+            (buy ? x.toUserAccount === pair : x.fromUserAccount === pair)
+        )
+        .reduce((s, x) => s + (x.tokenAmount ?? 0), 0);
       const lamports = (tx.nativeTransfers ?? [])
         .filter((x) => (buy ? x.toUserAccount === pair : x.fromUserAccount === pair))
         .reduce((s, x) => s + (x.amount ?? 0), 0);
+      const solAmount = wsol > 0 ? wsol : lamports / 1e9;
       out.push({
         addr: shortAddr(user),
         fullAddr: user || undefined,
         side: buy ? "BUY" : "SELL",
-        sol: fmtSolAmount(lamports / 1e9),
+        sol: fmtSolAmount(solAmount),
         tokens: Math.round(move.tokenAmount ?? 0).toLocaleString("en-US"),
         ageSeconds: Math.max(0, Math.round(now - (tx.timestamp ?? now))),
         sig: tx.signature,
