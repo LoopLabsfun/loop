@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AreaSeries,
   CandlestickSeries,
@@ -10,6 +10,7 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  type MouseEventParams,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type Time,
@@ -62,6 +63,12 @@ export function TradingChart({
   // Tick granularity, derived from the series' own range: a hardcoded minMove
   // is either far too coarse (every tick collapses to "$0.00") or far too fine.
   const minMoveRef = useRef(0.00000001);
+  // The hovered bar, or the latest one when the pointer is away — the legend is
+  // always populated, the way an exchange chart reads.
+  const [legend, setLegend] = useState<LegendBar | null>(null);
+  // True while the crosshair is on a bar: the legend then belongs to the
+  // pointer, and a data refresh must not yank it back to the latest bar.
+  const hoveringRef = useRef(false);
 
   // Market cap is price × supply — the same series rescaled, so everything
   // below is unit-agnostic and only the formatter changes.
@@ -101,6 +108,11 @@ export function TradingChart({
     return Math.max(10 ** -(zeros + 3), 1e-12);
   }, [data, scale]);
   minMoveRef.current = minMove;
+  // The crosshair subscription closes over these; refs keep it reading the
+  // current series without resubscribing on every refresh.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
 
   const volumes = useMemo(
     () =>
@@ -113,6 +125,9 @@ export function TradingChart({
         })),
     [candles]
   );
+
+  const volumesRef = useRef(volumes);
+  volumesRef.current = volumes;
 
   // Create the chart once. useLayoutEffect so the container is measured before
   // paint — createChart on a zero-width node renders an empty canvas.
@@ -147,7 +162,9 @@ export function TradingChart({
         secondsVisible: false,
       },
       crosshair: {
-        mode: CrosshairMode.Normal,
+        // Magnet: the crosshair snaps to the bar the legend is describing, so
+        // its axis labels and the legend can't disagree about which bar it is.
+        mode: CrosshairMode.Magnet,
         vertLine: { color: LABEL, width: 1, style: LineStyle.Dashed, labelBackgroundColor: ACCENT },
         horzLine: { color: LABEL, width: 1, style: LineStyle.Dashed, labelBackgroundColor: ACCENT },
       },
@@ -256,6 +273,50 @@ export function TradingChart({
     }
   }, [data, volumes, mode, fmt, minMove]);
 
+  // Floating OHLC legend. subscribeCrosshairMove fires with the hovered bar's
+  // values; leaving the chart (no time in the param) falls back to the last bar
+  // so the legend never blanks out.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = priceRef.current;
+    if (!chart || !series) return;
+    const latest = (): LegendBar | null => {
+      const d = dataRef.current;
+      return d.length ? { ...d[d.length - 1], volume: volumeAt(volumesRef.current, d[d.length - 1].time) } : null;
+    };
+    const onMove = (param: MouseEventParams) => {
+      hoveringRef.current = param.time != null;
+      if (!param.time) return setLegend(latest());
+      const bar = param.seriesData.get(series) as
+        | { open?: number; high?: number; low?: number; close?: number; value?: number }
+        | undefined;
+      if (!bar) return setLegend(latest());
+      // The area series only carries `value`; fill the OHLC from it so the
+      // legend keeps the same shape in both modes.
+      const close = bar.close ?? bar.value ?? 0;
+      setLegend({
+        time: param.time as UTCTimestamp,
+        open: bar.open ?? close,
+        high: bar.high ?? close,
+        low: bar.low ?? close,
+        close,
+        volume: volumeAt(volumesRef.current, param.time as UTCTimestamp),
+      });
+    };
+    setLegend(latest());
+    chart.subscribeCrosshairMove(onMove);
+    return () => chart.unsubscribeCrosshairMove(onMove);
+  }, [mode, fmt]);
+
+  // Keep the idle legend on the latest bar. The subscription above only fires
+  // on pointer movement, so without this the legend stays empty until the first
+  // hover — and the first data arrives after mount, when it was still empty.
+  useEffect(() => {
+    if (hoveringRef.current || !data.length) return;
+    const bar = data[data.length - 1];
+    setLegend({ ...bar, volume: volumeAt(volumes, bar.time) });
+  }, [data, volumes]);
+
   // Recent fills, on the candle each landed in (same bucketing as the SVG chart).
   useEffect(() => {
     const plugin = markersRef.current;
@@ -272,5 +333,69 @@ export function TradingChart({
     );
   }, [candles, trades]);
 
-  return <div ref={boxRef} style={{ height }} className="w-full" />;
+  return (
+    <div className="relative">
+      <div ref={boxRef} style={{ height }} className="w-full" />
+      {legend && (
+        <div className="absolute top-1 left-1 right-[72px] pointer-events-none font-mono text-[11px] leading-[1.6] flex flex-wrap gap-x-3 gap-y-0.5 z-10">
+          <span className="text-faint">{legendTime(legend.time)}</span>
+          <Ohlc label="O" value={fmt(legend.open)} />
+          <Ohlc label="H" value={fmt(legend.high)} />
+          <Ohlc label="L" value={fmt(legend.low)} />
+          <Ohlc
+            label="C"
+            value={fmt(legend.close)}
+            color={legend.close >= legend.open ? UP : DOWN}
+          />
+          <span style={{ color: legend.close >= legend.open ? UP : DOWN }}>
+            {pct(legend.open, legend.close)}
+          </span>
+          {legend.volume > 0 && <Ohlc label="Vol" value={compactUsd(legend.volume)} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Ohlc({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span className="whitespace-nowrap">
+      <span className="text-faint">{label} </span>
+      <span style={color ? { color } : undefined} className={color ? "" : "text-ink"}>
+        {value}
+      </span>
+    </span>
+  );
+}
+
+interface LegendBar {
+  time: UTCTimestamp;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** USD volume for a bucket, or 0 when that bucket never traded. */
+function volumeAt(volumes: { time: UTCTimestamp; value: number }[], time: UTCTimestamp): number {
+  return volumes.find((v) => v.time === time)?.value ?? 0;
+}
+
+function pct(open: number, close: number): string {
+  const p = open ? ((close - open) / open) * 100 : 0;
+  return `${p >= 0 ? "+" : ""}${p.toFixed(2)}%`;
+}
+
+/** UTC, because the library's time axis is UTC — a local-time legend read two
+ *  hours off the crosshair's own label. */
+function legendTime(t: UTCTimestamp): string {
+  return new Date((t as number) * 1000).toLocaleString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
