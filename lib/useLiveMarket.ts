@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Candle, MarketStats, Trade } from "./types";
 
 export type Timeframe = "1H" | "4H" | "1D" | "ALL";
@@ -13,6 +13,11 @@ export interface LiveMarketSeed {
 }
 
 const POLL_MS = 20_000;
+/** Live-price tick. Cheap: /api/price is one memoized DexScreener read. */
+const PRICE_POLL_MS = 5_000;
+/** Beyond this the live price and the candle source disagree (different pool,
+ *  stale feed) — folding it in would draw a wick that never traded. */
+const LIVE_TICK_MAX_DRIFT = 0.2;
 
 /**
  * Live market for a launched token. Seeded with the server-rendered snapshot,
@@ -67,5 +72,64 @@ export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketS
     return () => clearInterval(id);
   }, [preLaunch, fetchMarket]);
 
-  return { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch };
+  // Live price tick between the heavy refreshes, so the forming candle moves
+  // with the market instead of jumping once every 20s.
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  useEffect(() => {
+    if (!mint) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/price?mint=${encodeURIComponent(mint)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const { priceUsd } = (await res.json()) as { priceUsd: number | null };
+        if (alive && typeof priceUsd === "number" && priceUsd > 0) setLivePrice(priceUsd);
+      } catch {
+        // a missed tick just leaves the last candle where it was
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), PRICE_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [mint]);
+
+  const liveCandles = useMemo(
+    () => withLiveTick(candles, livePrice),
+    [candles, livePrice]
+  );
+
+  return {
+    tf,
+    mode,
+    stats,
+    candles: liveCandles,
+    trades,
+    changeTf,
+    setMode,
+    preLaunch,
+    livePrice,
+  };
+}
+
+/**
+ * Fold the live price into the forming (last) candle: close follows the market,
+ * high/low stretch to contain it — exactly what an exchange chart does inside
+ * the current bucket. Ignored when the price drifts implausibly far from the
+ * candle feed, since that means the two sources disagree rather than that the
+ * market moved.
+ */
+export function withLiveTick(candles: Candle[], price: number | null): Candle[] {
+  const last = candles[candles.length - 1];
+  if (!last || price == null || price <= 0) return candles;
+  if (Math.abs(price - last.c) / last.c > LIVE_TICK_MAX_DRIFT) return candles;
+  if (price === last.c) return candles;
+  return [
+    ...candles.slice(0, -1),
+    { ...last, c: price, h: Math.max(last.h, price), l: Math.min(last.l, price) },
+  ];
 }

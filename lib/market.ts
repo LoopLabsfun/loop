@@ -56,6 +56,25 @@ async function memoized<T>(key: string, keep: (v: T) => boolean, produce: () => 
   return v;
 }
 
+/**
+ * Every upstream here is a free public API with no SLA — a stalled DexScreener
+ * or GeckoTerminal connection would otherwise hang the whole request, and these
+ * run during SSR of a force-dynamic page, so the token page itself would hang
+ * with it. Cap each call; a timeout throws and the caller's catch degrades to
+ * the honest empty state.
+ */
+const UPSTREAM_TIMEOUT_MS = 4_000;
+/** Total time the candle grain-cascade may spend before giving up (below). */
+const CASCADE_BUDGET_MS = 6_000;
+
+function fetchUpstream(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, {
+    cache: "no-store",
+    ...init,
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
+}
+
 /** Current market stats for a mint via DexScreener, or null on failure. */
 export function getMarketStats(mint: string): Promise<MarketStats | null> {
   return memoized(`stats:${mint}`, (v) => v !== null, () => fetchMarketStats(mint));
@@ -73,9 +92,8 @@ export function getMarketStats(mint: string): Promise<MarketStats | null> {
 export async function resolveTradingPool(mint: string, fallback: string): Promise<string> {
   const best = await memoized<string | null>(`pool:${mint}`, (v) => v !== null, async () => {
     try {
-      const res = await fetch(`${GECKO}/tokens/${mint}/pools`, {
+      const res = await fetchUpstream(`${GECKO}/tokens/${mint}/pools`, {
         headers: { Accept: "application/json" },
-        cache: "no-store",
       });
       if (!res.ok) return null;
       const json = (await res.json()) as {
@@ -104,7 +122,7 @@ async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
 
 async function fetchDexScreenerStats(mint: string): Promise<MarketStats | null> {
   try {
-    const res = await fetch(`${DEXSCREENER}/${mint}`, { cache: "no-store" });
+    const res = await fetchUpstream(`${DEXSCREENER}/${mint}`);
     if (!res.ok) return null;
     const json = (await res.json()) as { pairs?: DexPair[] };
     const pairs = json.pairs ?? [];
@@ -151,7 +169,7 @@ interface PumpFunCoin {
  *  falls back to the mint-time placeholder snapshot as if it were live data. */
 async function fetchPumpFunStats(mint: string): Promise<MarketStats | null> {
   try {
-    const res = await fetch(`${PUMPFUN_COINS}/${mint}`, { cache: "no-store" });
+    const res = await fetchUpstream(`${PUMPFUN_COINS}/${mint}`);
     if (!res.ok) return null;
     const j = (await res.json()) as PumpFunCoin;
     if (typeof j.usd_market_cap !== "number" || !Number.isFinite(j.usd_market_cap)) return null;
@@ -222,11 +240,18 @@ async function fetchCandlesCascade(pair: string, tf: string, limit: number): Pro
   ].filter(
     ([res, agg], i) => i === 0 || res !== t.resolution || agg !== t.aggregate
   );
+  // The cascade must not multiply a slow upstream by four: when GeckoTerminal is
+  // rate-limiting, each grain burns the full per-call timeout and the route ends
+  // up hanging for half a minute (it also blocks SSR of the token page). Stop
+  // trying further grains once the budget is spent and return the best answer so
+  // far — the next poll retries with a fresh budget.
+  const deadline = Date.now() + CASCADE_BUDGET_MS;
   let firstNonEmpty: Candle[] = [];
   for (const [resolution, aggregate] of grains) {
     const candles = await fetchOhlcv(pair, resolution, aggregate, limit);
     if (candles.some((c) => (c.v ?? 0) > 0)) return candles;
     if (!firstNonEmpty.length) firstNonEmpty = candles;
+    if (Date.now() > deadline) break;
   }
   return firstNonEmpty;
 }
@@ -253,7 +278,7 @@ async function fetchOhlcvUncached(
 ): Promise<Candle[]> {
   try {
     const url = `${GECKO}/pools/${pair}/ohlcv/${resolution}?aggregate=${aggregate}&limit=${limit}&currency=usd`;
-    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const res = await fetchUpstream(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       data?: { attributes?: { ohlcv_list?: number[][] } };
@@ -318,9 +343,8 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
   const key = process.env.HELIUS_API_KEY;
   if (!key) return [];
   try {
-    const res = await fetch(
-      `https://api.helius.xyz/v0/addresses/${pair}/transactions?api-key=${key}&limit=50`,
-      { cache: "no-store" }
+    const res = await fetchUpstream(
+      `https://api.helius.xyz/v0/addresses/${pair}/transactions?api-key=${key}&limit=50`
     );
     if (!res.ok) return [];
     const txs = (await res.json()) as {
@@ -376,7 +400,7 @@ async function fetchTradesHelius(pair: string, mint: string, n: number): Promise
 async function fetchRecentTrades(pair: string, n: number): Promise<Trade[]> {
   try {
     const url = `${GECKO}/pools/${pair}/trades?trade_volume_in_usd_greater_than=0`;
-    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const res = await fetchUpstream(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return [];
     const json = (await res.json()) as { data?: { attributes: GeckoTrade }[] };
     const now = Date.now();

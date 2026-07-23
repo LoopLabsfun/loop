@@ -4,6 +4,7 @@ import {
   sol,
   cashtag,
   fmtPrice,
+  fmtPriceSub,
   compactUsd,
   compactNum,
   countdown,
@@ -73,6 +74,31 @@ describe("fmtPrice", () => {
     expect(fmtPrice(NaN)).toBe("$0.0000");
     expect(fmtPrice(Infinity)).toBe("$0.0000");
     expect(fmtPrice(-Infinity)).toBe("$0.0000");
+  });
+});
+
+describe("fmtPriceSub", () => {
+  it("collapses a long zero run to a subscript count", () => {
+    expect(fmtPriceSub(0.00000190)).toBe("$0.0₅190");
+    expect(fmtPriceSub(0.0000062)).toBe("$0.0₅620");
+  });
+  it("keeps the plain form when the zero run is short", () => {
+    expect(fmtPriceSub(0.001234)).toBe("$0.001234");
+    expect(fmtPriceSub(0.0421)).toBe("$0.0421");
+  });
+  it("carries rounding out of the zero run instead of growing the mantissa", () => {
+    // 0.0000009999 rounds up past the run: 0.00000100 — one zero fewer, not a
+    // 4-digit mantissa ("$0.0₆1000").
+    expect(fmtPriceSub(0.0000009999)).toBe("$0.0₅100");
+    // No carry: 3 sig digits fit as-is.
+    expect(fmtPriceSub(0.000000999)).toBe("$0.0₆999");
+  });
+  it("handles a two-digit zero run", () => {
+    expect(fmtPriceSub(1.23e-11)).toBe("$0.0₁₀123");
+  });
+  it("returns $0.00 for non-finite or non-positive input", () => {
+    expect(fmtPriceSub(NaN)).toBe("$0.00");
+    expect(fmtPriceSub(0)).toBe("$0.00");
   });
 });
 

@@ -49,6 +49,39 @@ export function fmtPrice(p: number): string {
   return "$" + p.toFixed(decimals);
 }
 
+/** Unicode subscript digits, for the zero-run count in fmtPriceSub. */
+const SUBS = "₀₁₂₃₄₅₆₇₈₉";
+
+/**
+ * Sub-cent price in the notation every launchpad uses: "$0.0₅190" — the run of
+ * leading zeros collapsed to a subscript count, then the significant digits.
+ * `fmtPrice`'s plain decimals are correct but too wide for the chart's 64px
+ * price gutter, where "$0.00000190" gets clipped mid-number and every gridline
+ * reads as the same "$0.00000…". Only for on-screen chart labels — `fmtPrice`
+ * stays the format for the tooltip, the header, and the satori OG image (whose
+ * font may not carry the subscript glyphs).
+ */
+export function fmtPriceSub(p: number, sigDigits = 3): string {
+  if (!Number.isFinite(p) || p <= 0) return "$0.00";
+  if (p >= 0.01) return "$" + p.toFixed(4);
+  let zeros = -Math.floor(Math.log10(p)) - 1;
+  // Below 3 leading zeros the plain form is short enough to be clearer.
+  if (zeros < 3) return fmtPrice(p);
+  let digits = String(Math.round(p * 10 ** (zeros + sigDigits)));
+  // Rounding can carry into the zero run (0.000000999 → "1000" at 3 digits):
+  // that's one zero fewer, not a 4-digit mantissa.
+  if (digits.length > sigDigits) {
+    zeros -= digits.length - sigDigits;
+    digits = digits.slice(0, sigDigits);
+  }
+  if (zeros < 3) return fmtPrice(p);
+  const marker = String(zeros)
+    .split("")
+    .map((d) => SUBS[Number(d)])
+    .join("");
+  return `$0.0${marker}${digits}`;
+}
+
 const COMPACT_UNITS: [number, string][] = [
   [1e9, "B"],
   [1e6, "M"],

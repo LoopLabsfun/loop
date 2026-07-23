@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Candle } from "@/lib/types";
 import type { ChartMode } from "@/lib/useLiveMarket";
-import { fmtPrice } from "@/lib/format";
+import { fmtPrice, fmtPriceSub } from "@/lib/format";
 
 // Hand-rolled SVG candlestick/line chart — upgraded from the original static
 // render: price gridlines + axis, a volume pane, a time axis, session high/low
@@ -79,7 +79,7 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
       <g key={`g${g}`}>
         <line x1={0} x2={W - R + 8} y1={y(v)} y2={y(v)} stroke={GRID} strokeWidth={1} />
         <text x={W - R + 14} y={y(v) + 4} fill={LABEL} fontSize={11} fontFamily="var(--font-mono), monospace">
-          {fmtPrice(v)}
+          {fmtPriceSub(v)}
         </text>
       </g>
     );
@@ -173,17 +173,17 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
 
         {/* Session high / low markers. */}
         <text x={Math.min(x(hiIdx), W - R - 30)} y={y(max) - 4} fill={LABEL} fontSize={9.5} textAnchor="middle" fontFamily="var(--font-mono), monospace">
-          H {fmtPrice(max)}
+          H {fmtPriceSub(max)}
         </text>
         <text x={Math.min(x(loIdx), W - R - 30)} y={Math.min(y(min) + 11, T + PRICE_H - 2)} fill={LABEL} fontSize={9.5} textAnchor="middle" fontFamily="var(--font-mono), monospace">
-          L {fmtPrice(min)}
+          L {fmtPriceSub(min)}
         </text>
 
         {/* Last price line + pill. */}
         <line x1={0} x2={W - R + 8} y1={lastY} y2={lastY} stroke="var(--accent)" strokeWidth={1} strokeDasharray="4 4" />
         <rect x={W - R + 8} y={lastY - 9} width={R - 8} height={18} rx={4} fill="var(--accent)" />
         <text x={W - R + 14} y={lastY + 4} fill="#fff" fontSize={10.5} fontFamily="var(--font-mono), monospace">
-          {fmtPrice(candles[candles.length - 1].c)}
+          {fmtPriceSub(candles[candles.length - 1].c)}
         </text>
 
         {/* Hover crosshair. */}
