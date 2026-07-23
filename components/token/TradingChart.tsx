@@ -168,7 +168,9 @@ export function TradingChart({
         vertLine: { color: LABEL, width: 1, style: LineStyle.Dashed, labelBackgroundColor: ACCENT },
         horzLine: { color: LABEL, width: 1, style: LineStyle.Dashed, labelBackgroundColor: ACCENT },
       },
-      handleScale: { axisPressedMouseMove: { time: true, price: false } },
+      // Drag either axis to scale it — the right axis stretches the price
+      // range, which is how you read a flat stretch on a quiet token.
+      handleScale: { axisPressedMouseMove: { time: true, price: true } },
       autoSize: true,
     });
     chartRef.current = chart;
@@ -249,13 +251,16 @@ export function TradingChart({
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
   }, []);
 
-  // Feed the data. Candles and the area series take different shapes, and the
-  // visible range is only reset when the bucket grain changes (a new timeframe)
-  // so a refresh never yanks the chart out from under a user who zoomed in.
+  // Feed the data, keeping the user where they were looking. Zoom and pan are
+  // expressed as a *time* window, so they survive both a refresh and a
+  // timeframe change: switching 1H → ALL re-cuts the same span at a new grain
+  // rather than throwing the view away. Only the first load (no window yet) and
+  // a window with no data left in it fall back to fitting the content.
   useEffect(() => {
     const series = priceRef.current;
     const chart = chartRef.current;
     if (!series || !chart || !data.length) return;
+    const before = chart.timeScale().getVisibleRange();
     if (mode === "candles") {
       (series as ISeriesApi<"Candlestick">).setData(data);
     } else {
@@ -266,11 +271,15 @@ export function TradingChart({
     volRef.current?.setData(volumes);
     series.applyOptions({ priceFormat: { type: "custom", formatter: fmt, minMove } });
 
-    const grain = data.length > 1 ? (data[1].time as number) - (data[0].time as number) : null;
-    if (grain !== grainRef.current) {
-      grainRef.current = grain;
+    const first = data[0].time as number;
+    const last = data[data.length - 1].time as number;
+    const kept = before && clampRange(before.from as number, before.to as number, first, last);
+    if (kept) {
+      chart.timeScale().setVisibleRange({ from: kept.from as UTCTimestamp, to: kept.to as UTCTimestamp });
+    } else {
       chart.timeScale().fitContent();
     }
+    grainRef.current = data.length > 1 ? (data[1].time as number) - first : null;
   }, [data, volumes, mode, fmt, minMove]);
 
   // Floating OHLC legend. subscribeCrosshairMove fires with the hovered bar's
@@ -375,6 +384,24 @@ interface LegendBar {
   low: number;
   close: number;
   volume: number;
+}
+
+/**
+ * The visible window, kept across a data swap. A window that still overlaps the
+ * new series is clamped into it; one that misses entirely (a timeframe whose
+ * history doesn't reach that far) returns null so the caller fits the content
+ * instead of showing empty space. A window already covering everything also
+ * returns null, so "zoomed all the way out" keeps meaning that at the new grain.
+ */
+export function clampRange(
+  from: number,
+  to: number,
+  first: number,
+  last: number
+): { from: number; to: number } | null {
+  if (!(to > from) || from > last || to < first) return null;
+  if (from <= first && to >= last) return null;
+  return { from: Math.max(from, first), to: Math.min(to, last) };
 }
 
 /** USD volume for a bucket, or 0 when that bucket never traded. */
