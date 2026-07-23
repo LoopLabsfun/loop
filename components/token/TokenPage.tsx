@@ -8,7 +8,7 @@ import { LoopMark } from "../LoopMark";
 import { HoodSwapCard } from "./HoodSwapCard";
 import { CrossChainBuySolPanel } from "./CrossChainBuySolPanel";
 import { useHoodWallet } from "@/lib/chains/hood-wallet";
-import { Chart } from "./Chart";
+import { Chart, type ChartUnit } from "./Chart";
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
@@ -107,6 +107,13 @@ export function TokenPage({
   // The 5s live tick beats the 20s stats refresh, so prefer it for the headline
   // price — the number the chart's last candle is already drawn at.
   const last = livePrice ?? stats?.priceUsd ?? 0;
+  const [chartUnit, setChartUnit] = useState<ChartUnit>("price");
+  // Supply implied by the live stats (mcap / price) rather than the stored
+  // snapshot string, so the mcap axis always agrees with the mcap in the header.
+  const chartSupply =
+    stats && stats.priceUsd > 0 && stats.marketCap > 0
+      ? stats.marketCap / stats.priceUsd
+      : null;
   const change = stats?.priceChange24h ?? 0;
 
   // Hero summary of the live agent: what it's building now (or the next queued
@@ -248,20 +255,38 @@ export function TokenPage({
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-[14px]">
+                <div className="flex items-center justify-between mb-[14px] gap-3 flex-wrap">
                   <Segmented<Timeframe>
                     value={tf}
                     onChange={changeTf}
                     options={["1H", "4H", "1D", "ALL"]}
                   />
-                  <Segmented
-                    value={mode}
-                    onChange={setMode}
-                    options={["candles", "line"]}
-                    labels={{ candles: "Candles", line: "Line" }}
-                  />
+                  <div className="flex items-center gap-2">
+                    {/* Market cap is what traders compare across tokens, so it
+                        only appears once the supply is known to scale by. */}
+                    {chartSupply != null && (
+                      <Segmented<ChartUnit>
+                        value={chartUnit}
+                        onChange={setChartUnit}
+                        options={["price", "mcap"]}
+                        labels={{ price: "Price", mcap: "Mcap" }}
+                      />
+                    )}
+                    <Segmented
+                      value={mode}
+                      onChange={setMode}
+                      options={["candles", "line"]}
+                      labels={{ candles: "Candles", line: "Line" }}
+                    />
+                  </div>
                 </div>
-                <Chart candles={candles} mode={mode} />
+                <Chart
+                  candles={candles}
+                  mode={mode}
+                  unit={chartUnit}
+                  supply={chartSupply}
+                  trades={trades}
+                />
                 <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
                   <span>
                     {candleGrainLabel(candles, tf)}

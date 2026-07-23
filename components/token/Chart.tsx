@@ -1,15 +1,20 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { Candle } from "@/lib/types";
+import type { Candle, Trade } from "@/lib/types";
 import type { ChartMode } from "@/lib/useLiveMarket";
-import { fmtPrice, fmtPriceSub } from "@/lib/format";
+import { compactUsd, fmtPrice, fmtPriceSub } from "@/lib/format";
 
 // Hand-rolled SVG candlestick/line chart — upgraded from the original static
 // render: price gridlines + axis, a volume pane, a time axis, session high/low
 // markers, and a hover crosshair with a full OHLC+volume tooltip. Timestamps
 // and volume are optional on Candle (absent on simulated data) — every extra
 // pane/label degrades away cleanly when the data isn't there.
+//
+// Two axes of display, both optional and both degrading to the old behaviour:
+// `unit` charts market cap instead of price (price × circulating supply — the
+// number traders actually compare between tokens), and `trades` drops the
+// recent fills onto the candles they happened in.
 
 const W = 780;
 const PRICE_H = 252; // price pane height
@@ -24,9 +29,41 @@ const LABEL = "#9B95A4";
 const UP = "oklch(0.6 0.16 150)";
 const DOWN = "oklch(0.58 0.19 25)";
 
-export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode }) {
+/** What the y-axis measures. "mcap" needs a supply to scale price by. */
+export type ChartUnit = "price" | "mcap";
+
+export function Chart({
+  candles: rawCandles,
+  mode,
+  unit = "price",
+  supply = null,
+  trades = [],
+}: {
+  candles: Candle[];
+  mode: ChartMode;
+  unit?: ChartUnit;
+  /** Circulating supply, so price can be scaled to market cap. */
+  supply?: number | null;
+  /** Recent fills, marked on the candle they landed in. */
+  trades?: Trade[];
+}) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+
+  // Market cap is price × supply — a pure rescale of the same series, so every
+  // pane below (candles, volume, crosshair) works unchanged; only the labels
+  // switch formatter. Falls back to price when the supply is unknown.
+  const scale = unit === "mcap" && supply && supply > 0 ? supply : 1;
+  const candles = useMemo(
+    () =>
+      scale === 1
+        ? rawCandles
+        : rawCandles.map((c) => ({ ...c, o: c.o * scale, h: c.h * scale, l: c.l * scale, c: c.c * scale })),
+    [rawCandles, scale]
+  );
+  // Volume is already USD — it must not be scaled with the price axis.
+  const fmtAxis = scale === 1 ? fmtPriceSub : mcapAxisLabel;
+  const fmtFull = scale === 1 ? fmtPrice : compactUsd;
 
   const hasTime = candles.some((c) => c.t != null);
   const hasVol = candles.some((c) => (c.v ?? 0) > 0);
@@ -66,6 +103,9 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
     [candles.length, cw]
   );
 
+  // Recent fills, bucketed onto the candle they landed in.
+  const markers = useMemo(() => tradeMarkers(candles, trades), [candles, trades]);
+
   // Session high/low markers: label the extreme candles once each.
   const hiIdx = useMemo(() => candles.findIndex((c) => c.h === max), [candles, max]);
   const loIdx = useMemo(() => candles.findIndex((c) => c.l === min), [candles, min]);
@@ -79,7 +119,7 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
       <g key={`g${g}`}>
         <line x1={0} x2={W - R + 8} y1={y(v)} y2={y(v)} stroke={GRID} strokeWidth={1} />
         <text x={W - R + 14} y={y(v) + 4} fill={LABEL} fontSize={11} fontFamily="var(--font-mono), monospace">
-          {fmtPriceSub(v)}
+          {fmtAxis(v)}
         </text>
       </g>
     );
@@ -171,19 +211,36 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
           </g>
         )}
 
+        {/* Recent fills — a triangle under the candle for a buy, over it for a
+            sell, so the feed below and the chart tell the same story. */}
+        {markers.map((m) => {
+          const c = candles[m.i];
+          const buy = m.side === "BUY";
+          const cy = buy ? y(c.l) + 7 : y(c.h) - 7;
+          const dir = buy ? 1 : -1;
+          return (
+            <polygon
+              key={`m${m.i}-${m.side}-${m.sig ?? ""}`}
+              points={`${x(m.i)},${cy - 3.4 * dir} ${x(m.i) - 3.4},${cy + 2.6 * dir} ${x(m.i) + 3.4},${cy + 2.6 * dir}`}
+              fill={buy ? UP : DOWN}
+              opacity={hover != null && hover !== m.i ? 0.3 : 0.9}
+            />
+          );
+        })}
+
         {/* Session high / low markers. */}
         <text x={Math.min(x(hiIdx), W - R - 30)} y={y(max) - 4} fill={LABEL} fontSize={9.5} textAnchor="middle" fontFamily="var(--font-mono), monospace">
-          H {fmtPriceSub(max)}
+          H {fmtAxis(max)}
         </text>
         <text x={Math.min(x(loIdx), W - R - 30)} y={Math.min(y(min) + 11, T + PRICE_H - 2)} fill={LABEL} fontSize={9.5} textAnchor="middle" fontFamily="var(--font-mono), monospace">
-          L {fmtPriceSub(min)}
+          L {fmtAxis(min)}
         </text>
 
         {/* Last price line + pill. */}
         <line x1={0} x2={W - R + 8} y1={lastY} y2={lastY} stroke="var(--accent)" strokeWidth={1} strokeDasharray="4 4" />
         <rect x={W - R + 8} y={lastY - 9} width={R - 8} height={18} rx={4} fill="var(--accent)" />
         <text x={W - R + 14} y={lastY + 4} fill="#fff" fontSize={10.5} fontFamily="var(--font-mono), monospace">
-          {fmtPriceSub(candles[candles.length - 1].c)}
+          {fmtAxis(candles[candles.length - 1].c)}
         </text>
 
         {/* Hover crosshair. */}
@@ -206,16 +263,16 @@ export function Chart({ candles, mode }: { candles: Candle[]; mode: ChartMode })
           )}
           <div className="flex gap-3">
             <span className="text-faint">O</span>
-            <span className="text-ink">{fmtPrice(hovered.o)}</span>
+            <span className="text-ink">{fmtFull(hovered.o)}</span>
             <span className="text-faint">H</span>
-            <span className="text-ink">{fmtPrice(hovered.h)}</span>
+            <span className="text-ink">{fmtFull(hovered.h)}</span>
           </div>
           <div className="flex gap-3">
             <span className="text-faint">L</span>
-            <span className="text-ink">{fmtPrice(hovered.l)}</span>
+            <span className="text-ink">{fmtFull(hovered.l)}</span>
             <span className="text-faint">C</span>
             <span style={{ color: hovered.c >= hovered.o ? "var(--pos)" : "var(--neg)" }}>
-              {fmtPrice(hovered.c)}
+              {fmtFull(hovered.c)}
             </span>
           </div>
           <div className="flex gap-3">
@@ -254,6 +311,50 @@ function LineSeries({
       <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={2.2} />
     </>
   );
+}
+
+/**
+ * Market-cap axis label. `compactUsd` rounds to one decimal, which collapses a
+ * narrow range into repeated ticks ("$2.0K" twice in a row on a $1.8K–$2.1K
+ * axis). Add a decimal below $10K, where a Loop-sized token actually lives.
+ */
+function mcapAxisLabel(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  if (v >= 10_000) return compactUsd(v);
+  if (v < 1000) return "$" + v.toFixed(0);
+  return "$" + (v / 1000).toFixed(2) + "K";
+}
+
+/**
+ * Place each trade on the candle whose bucket contains it. Trades carry an age
+ * in seconds (the feed renders "3d ago"), so the timestamp is derived from now;
+ * the bucket width comes from the series itself. Trades older than the window —
+ * the common case on a quiet token, where the feed reaches back further than the
+ * chart does — simply produce no marker. One marker per candle per side, so a
+ * busy bucket doesn't stack a dozen triangles on one candle.
+ */
+export function tradeMarkers(
+  candles: Candle[],
+  trades: Trade[]
+): { i: number; side: "BUY" | "SELL"; sig?: string }[] {
+  const ts = candles.map((c) => c.t).filter((t): t is number => t != null);
+  if (ts.length < 2 || !trades.length) return [];
+  const bucket = ts[1] - ts[0];
+  if (bucket <= 0) return [];
+  const first = ts[0];
+  const now = Date.now() / 1000;
+  const seen = new Set<string>();
+  const out: { i: number; side: "BUY" | "SELL"; sig?: string }[] = [];
+  for (const t of trades) {
+    const at = now - t.ageSeconds;
+    const i = Math.floor((at - first) / bucket);
+    if (i < 0 || i >= candles.length || candles[i]?.t == null) continue;
+    const key = `${i}:${t.side}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ i, side: t.side, sig: t.sig });
+  }
+  return out;
 }
 
 // ── axis/tooltip helpers ─────────────────────────────────────────────────────
