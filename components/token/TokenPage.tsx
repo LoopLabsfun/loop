@@ -9,6 +9,15 @@ import { HoodSwapCard } from "./HoodSwapCard";
 import { CrossChainBuySolPanel } from "./CrossChainBuySolPanel";
 import { useHoodWallet } from "@/lib/chains/hood-wallet";
 import { Chart, type ChartUnit } from "./Chart";
+import dynamic from "next/dynamic";
+
+// lightweight-charts measures the DOM at construction, so it can't render on
+// the server — load it client-side only. The fallback keeps the panel's height
+// so the page doesn't jump when it swaps in.
+const TradingChart = dynamic(
+  () => import("./TradingChart").then((m) => m.TradingChart),
+  { ssr: false, loading: () => <div className="h-[320px]" /> }
+);
 import { useWallet } from "@/lib/wallet";
 import { useNetwork } from "@/lib/network";
 import { useChain } from "@/lib/chains/chain-context";
@@ -280,13 +289,26 @@ export function TokenPage({
                     />
                   </div>
                 </div>
-                <Chart
-                  candles={candles}
-                  mode={mode}
-                  unit={chartUnit}
-                  supply={chartSupply}
-                  trades={trades}
-                />
+                {/* Real timestamps ⇒ the TradingView chart (zoom/pan/crosshair).
+                    Simulated candles carry no time axis, so those keep the
+                    hand-rolled SVG rather than being placed on a fake one. */}
+                {candles.some((c) => c.t != null) ? (
+                  <TradingChart
+                    candles={candles}
+                    mode={mode}
+                    unit={chartUnit}
+                    supply={chartSupply}
+                    trades={trades}
+                  />
+                ) : (
+                  <Chart
+                    candles={candles}
+                    mode={mode}
+                    unit={chartUnit}
+                    supply={chartSupply}
+                    trades={trades}
+                  />
+                )}
                 <div className="flex justify-between mt-[10px] font-mono text-[11px] text-faint">
                   <span>
                     {candleGrainLabel(candles, tf)}
