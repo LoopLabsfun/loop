@@ -18,6 +18,13 @@ import { buildLaunchTweet, type LaunchTweetOptions } from "./x-recap";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TWEET_URL = "https://api.twitter.com/2/tweets";
+// v2 media upload (the v1.1 upload.twitter.com endpoint was retired); OAuth 1.0a
+// user context works here too. Multipart: only the oauth_* params are signed,
+// which is exactly what oauth1Header() produces with no `extra`.
+const MEDIA_UPLOAD_URLS = [
+  "https://api.x.com/2/media/upload",
+  "https://upload.twitter.com/1.1/media/upload.json", // legacy fallback
+];
 
 export function isXConfigured(): boolean {
   return Boolean(
@@ -36,6 +43,71 @@ export interface TweetResult {
   error?: string;
 }
 
+export interface MediaUploadResult {
+  ok: boolean;
+  mediaId?: string;
+  skipped?: boolean;
+  error?: string;
+}
+
+/**
+ * Upload an image so it can be attached to a tweet (media.media_ids). Tries the
+ * v2 endpoint first, then the legacy v1.1 one — both accept OAuth 1.0a user
+ * context and a multipart `media` field. An uploaded id that's never attached
+ * simply expires server-side, so a dry-run upload test is harmless.
+ */
+export async function uploadTweetMedia(
+  bytes: Uint8Array,
+  mimeType: string,
+  filename = "media"
+): Promise<MediaUploadResult> {
+  if (!isXConfigured()) return { ok: false, skipped: true };
+  const creds: OAuth1Creds = {
+    consumerKey: process.env.X_API_KEY!,
+    consumerSecret: process.env.X_API_SECRET!,
+    token: process.env.X_ACCESS_TOKEN!,
+    tokenSecret: process.env.X_ACCESS_SECRET!,
+  };
+  let lastError = "no endpoint reachable";
+  for (const url of MEDIA_UPLOAD_URLS) {
+    try {
+      const form = new FormData();
+      form.append("media", new Blob([bytes], { type: mimeType }), filename);
+      form.append("media_category", "tweet_image");
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: oauth1Header("POST", url, creds) },
+        body: form,
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => null)) as {
+        // v2 shape                       // v1.1 shape
+        data?: { id?: string };
+        media_id_string?: string;
+        detail?: string;
+        title?: string;
+        errors?: { message?: string }[];
+      } | null;
+      const mediaId = json?.data?.id || json?.media_id_string;
+      if (res.ok && mediaId) return { ok: true, mediaId };
+      lastError =
+        json?.detail || json?.title || json?.errors?.[0]?.message || `HTTP ${res.status}`;
+      // 404 = endpoint gone on this host → try the next; anything else is real.
+      if (res.status !== 404) break;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "network error";
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
+export interface TweetExtras {
+  /** Quote-tweet this id (the quoted post renders under the text). */
+  quoteTweetId?: string;
+  /** Media ids from uploadTweetMedia to attach (images render in the tweet). */
+  mediaIds?: string[];
+}
+
 /**
  * Post a tweet to @looplabsfun (the account whose access tokens are configured).
  * Returns a result rather than throwing, so a failed post never breaks the
@@ -43,7 +115,8 @@ export interface TweetResult {
  */
 export async function sendTweet(
   text: string,
-  replyToId?: string
+  replyToId?: string,
+  extras?: TweetExtras
 ): Promise<TweetResult> {
   if (!isXConfigured()) return { ok: false, skipped: true };
   const creds: OAuth1Creds = {
@@ -53,18 +126,19 @@ export async function sendTweet(
     tokenSecret: process.env.X_ACCESS_SECRET!,
   };
   try {
+    // Chain a thread by replying to the prior tweet when replyToId is given;
+    // quote + media are additive (a quote-tweet with an image carries both).
+    const payload: Record<string, unknown> = { text };
+    if (replyToId) payload.reply = { in_reply_to_tweet_id: replyToId };
+    if (extras?.quoteTweetId) payload.quote_tweet_id = extras.quoteTweetId;
+    if (extras?.mediaIds?.length) payload.media = { media_ids: extras.mediaIds };
     const res = await fetch(TWEET_URL, {
       method: "POST",
       headers: {
         Authorization: oauth1Header("POST", TWEET_URL, creds),
         "Content-Type": "application/json",
       },
-      // Chain a thread by replying to the prior tweet when replyToId is given.
-      body: JSON.stringify(
-        replyToId
-          ? { text, reply: { in_reply_to_tweet_id: replyToId } }
-          : { text }
-      ),
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
     const json = (await res.json().catch(() => null)) as {
