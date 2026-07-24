@@ -54,17 +54,20 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   if (project.chain === "hood") {
     const ethUsd = await getEthUsd();
     const isPons = isPonsLaunchpad(project.launchpad);
-    const [{ project: withMarket, stats }, history, holders, agentEth] = await Promise.all([
+    const [{ project: withMarket, stats }, history, holderData, agentEth] = await Promise.all([
       getHoodTokenMarket(project, ethUsd),
       mint && isPons ? getPonsHistory(mint, ethUsd, tf) : Promise.resolve({ candles: [], trades: [] }),
-      mint ? getHoodHolders(mint) : Promise.resolve<Holder[]>([]),
+      mint ? getHoodHolders(mint) : Promise.resolve({ holders: [] as Holder[], count: null }),
       project.agentWallet ? getEthBalanceCached(project.agentWallet) : Promise.resolve(null),
     ]);
     // EVM addresses can carry a Loop profile too (EVM linking) — SNS is Solana
     // only, so skip it. Best-effort; unnamed wallets stay as short addresses.
-    const named = holders.length ? await withLoopProfiles(holders) : holders;
+    const named = holderData.holders.length ? await withLoopProfiles(holderData.holders) : holderData.holders;
+    // Fold the live holder count onto the project, like the Solana path.
+    const withHolders =
+      holderData.count != null ? { ...withMarket, holders: compactNum(holderData.count) } : withMarket;
     return {
-      project: withMarket,
+      project: withHolders,
       stats,
       candles: history.candles,
       trades: history.trades,

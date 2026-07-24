@@ -41,15 +41,27 @@ async function bsGet<T>(path: string): Promise<T | null> {
  * contract-owned balances (pools/locker/vaults) with `pool` so the UI can
  * exclude them from the concentration figure, mirroring the Solana reader.
  */
-export async function getHoodHolders(token: string, n = 10): Promise<Holder[]> {
-  if (!EVM.test(token)) return [];
+export async function getHoodHolders(
+  token: string,
+  n = 10,
+): Promise<{ holders: Holder[]; count: number | null }> {
+  if (!EVM.test(token)) return { holders: [], count: null };
 
   const [info, list] = await Promise.all([
-    bsGet<{ total_supply?: string }>(`/tokens/${token}`),
+    bsGet<{ total_supply?: string; holders_count?: string }>(`/tokens/${token}`),
     bsGet<{ items?: BlockscoutHolder[] }>(`/tokens/${token}/holders`),
   ]);
 
-  return mapHolders(list?.items ?? [], info?.total_supply ?? "", n);
+  // Blockscout reports the full holder count (not just the top page), so this is
+  // the honest total — the Hood counterpart of Solana's getHolderCount.
+  const count = info?.holders_count ? parseCount(info.holders_count) : null;
+  return { holders: mapHolders(list?.items ?? [], info?.total_supply ?? "", n), count };
+}
+
+/** Parse Blockscout's holder count (a decimal string) to a finite number, or null. */
+function parseCount(s: string): number | null {
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /**
