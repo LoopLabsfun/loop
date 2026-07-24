@@ -143,12 +143,25 @@ async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
   // already makes, so no extra request.
   const pool = await getCanonicalPool(mint);
   if (!pool) return base;
-  return {
+  const merged: MarketStats = {
     ...base,
     liquidityUsd: base.liquidityUsd > 0 ? base.liquidityUsd : pool.reserveUsd,
     volume24hUsd: base.volume24hUsd > 0 ? base.volume24hUsd : pool.volume24hUsd,
     priceChange24h: base.priceChange24h !== 0 ? base.priceChange24h : pool.priceChange24h,
   };
+  // Align the headline price to the pool the chart actually draws. The base
+  // price can be the dead bonding curve's (a graduated token off DexScreener's
+  // index falls back to pump.fun), leaving the header ~3% off the candle the
+  // user reads right below it. Market cap is price × supply, so rescale it by
+  // the same ratio rather than letting the two disagree. Supply is implied by
+  // the base pair (mcap ÷ price), not restated.
+  if (pool.priceUsd > 0 && base.priceUsd > 0) {
+    const supply = base.marketCap / base.priceUsd;
+    merged.priceUsd = pool.priceUsd;
+    merged.priceNative = base.priceNative * (pool.priceUsd / base.priceUsd);
+    if (Number.isFinite(supply) && supply > 0) merged.marketCap = pool.priceUsd * supply;
+  }
+  return merged;
 }
 
 async function fetchDexScreenerStats(mint: string): Promise<MarketStats | null> {

@@ -341,54 +341,23 @@ export function TokenPage({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
+                {/* Header row is for the desktop table only — the mobile cards
+                    below are self-labelled. */}
+                <div className="hidden sm:grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 font-mono text-[11px] text-faint pb-2 border-b border-line-4">
                   <span>ACCOUNT</span>
                   <span>TYPE</span>
                   <span>PRICE</span>
-                  <span>SOL</span>
+                  <span>{chainInfo(p.chain ?? "solana").nativeSymbol}</span>
                   <span>TOKENS</span>
                   <span className="text-right">AGE · TX</span>
                 </div>
                 {trades.map((t, i) => (
-                  <div
+                  <TradeRow
                     key={t.sig ?? i}
-                    className="grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 font-mono text-[12.5px] py-[9px] border-b border-[#F8F7FA] animate-fadeInFast"
-                  >
-                    {t.fullAddr ? (
-                      <a
-                        href={explorerUrl(t.fullAddr, p.network === "devnet" ? "devnet" : "mainnet", p.chain ?? "solana")}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-muted hover:text-accent-text no-underline"
-                        title={t.fullAddr}
-                      >
-                        {t.addr}
-                      </a>
-                    ) : (
-                      <span className="text-muted">{t.addr}</span>
-                    )}
-                    <span style={{ color: t.side === "BUY" ? "var(--pos)" : "var(--neg)" }}>
-                      {t.side}
-                    </span>
-                    <span className="text-muted">{t.priceUsd != null ? fmtPrice(t.priceUsd) : "—"}</span>
-                    <span>{t.sol}</span>
-                    <span className="text-muted">{t.tokens}</span>
-                    <span className="text-faint text-right">
-                      {t.sig ? (
-                        <a
-                          href={explorerTx(t.sig, p.network === "devnet" ? "devnet" : "mainnet", p.chain ?? "solana")}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-faint hover:text-accent-text no-underline"
-                          title="View transaction on the explorer"
-                        >
-                          {shortAge(t.ageSeconds)} ago ↗
-                        </a>
-                      ) : (
-                        <>{shortAge(t.ageSeconds)} ago</>
-                      )}
-                    </span>
-                  </div>
+                    trade={t}
+                    net={p.network === "devnet" ? "devnet" : "mainnet"}
+                    chain={p.chain ?? "solana"}
+                  />
                 ))}
               </>
             )}
@@ -2147,4 +2116,82 @@ function candleGrainLabel(candles: Candle[], tf: string): string {
   if (step < 3600) return `${Math.round(step / 60)}m candles`;
   if (step < 86400) return step === 3600 ? "hourly candles" : `${Math.round(step / 3600)}h candles`;
   return step === 86400 ? "daily candles" : `${Math.round(step / 86400)}d candles`;
+}
+
+/**
+ * One trade in the Recent Trades list. Two layouts from one source of truth:
+ * a two-line card under 640px (the 6-column table crushes account addresses and
+ * the age onto three wrapped lines on a phone), and the full table row above it.
+ * The explorer links are computed once and shared between both.
+ */
+function TradeRow({ trade: t, net, chain }: { trade: Trade; net: "mainnet" | "devnet"; chain: Chain }) {
+  const sym = chainInfo(chain).nativeSymbol;
+  const sideColor = t.side === "BUY" ? "var(--pos)" : "var(--neg)";
+  const acct = t.fullAddr ? (
+    <a
+      href={explorerUrl(t.fullAddr, net, chain)}
+      target="_blank"
+      rel="noreferrer"
+      className="text-muted hover:text-accent-text no-underline"
+      title={t.fullAddr}
+    >
+      {t.addr}
+    </a>
+  ) : (
+    <span className="text-muted">{t.addr}</span>
+  );
+  const age = t.sig ? (
+    <a
+      href={explorerTx(t.sig, net, chain)}
+      target="_blank"
+      rel="noreferrer"
+      className="text-faint hover:text-accent-text no-underline"
+      title="View transaction on the explorer"
+    >
+      {shortAge(t.ageSeconds)} ago ↗
+    </a>
+  ) : (
+    <>{shortAge(t.ageSeconds)} ago</>
+  );
+
+  return (
+    <div className="border-b border-[#F8F7FA] animate-fadeInFast font-mono">
+      {/* Mobile card: side + account on top, the numbers below. */}
+      <div className="sm:hidden py-[10px] text-[12.5px]">
+        <div className="flex items-center justify-between mb-1">
+          <span className="flex items-center gap-2">
+            <span style={{ color: sideColor }}>{t.side}</span>
+            {acct}
+          </span>
+          <span className="text-faint text-[11px]">{age}</span>
+        </div>
+        <div className="flex gap-4 text-[11.5px] text-muted">
+          <span>
+            <span className="text-faint">{sym} </span>
+            {t.sol}
+          </span>
+          <span>
+            <span className="text-faint">Tokens </span>
+            {t.tokens}
+          </span>
+          {t.priceUsd != null && (
+            <span>
+              <span className="text-faint">@ </span>
+              {fmtPrice(t.priceUsd)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Desktop table row — the original 6-column grid. */}
+      <div className="hidden sm:grid grid-cols-[1.1fr_0.6fr_1fr_0.8fr_1fr_1fr] gap-2 text-[12.5px] py-[9px]">
+        {acct}
+        <span style={{ color: sideColor }}>{t.side}</span>
+        <span className="text-muted">{t.priceUsd != null ? fmtPrice(t.priceUsd) : "—"}</span>
+        <span>{t.sol}</span>
+        <span className="text-muted">{t.tokens}</span>
+        <span className="text-faint text-right">{age}</span>
+      </div>
+    </div>
+  );
 }
