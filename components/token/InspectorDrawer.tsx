@@ -19,6 +19,7 @@ import type { FeedItem } from "@/lib/console";
 import type { ChatMsg } from "@/lib/chat";
 import type { InboxMessage, SocialPost } from "@/lib/agent";
 import type { Holder, Project } from "@/lib/types";
+import type { Chain } from "@/lib/chains/types";
 import {
   explorerTx,
   explorerUrl,
@@ -192,7 +193,7 @@ function DrawerBody({ item, project: p }: { item: InspectItem; project: Project 
     case "social":
       return <SocialBody post={item.post} />;
     case "holder":
-      return <HolderBody holder={item.holder} net={net} />;
+      return <HolderBody holder={item.holder} net={net} chain={p.chain ?? "solana"} />;
     case "summary":
       return <SummaryBody summary={item.summary} />;
     case "stat":
@@ -676,7 +677,7 @@ function SocialBody({ post: s }: { post: SocialPost }) {
   );
 }
 
-function HolderBody({ holder: h, net }: { holder: Holder; net: "mainnet" | "devnet" }) {
+function HolderBody({ holder: h, net, chain }: { holder: Holder; net: "mainnet" | "devnet"; chain: Chain }) {
   const title = h.loopName || h.name;
   return (
     <>
@@ -700,7 +701,7 @@ function HolderBody({ holder: h, net }: { holder: Holder; net: "mainnet" | "devn
       </Field>
       <Field label="Wallet">
         <a
-          href={explorerUrl(h.address, net)}
+          href={explorerUrl(h.address, net, chain)}
           target="_blank"
           rel="noopener noreferrer"
           className="font-mono text-[12.5px] text-accent-text hover:text-accent-d transition-colors break-all"

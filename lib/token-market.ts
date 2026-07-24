@@ -13,6 +13,7 @@ import { getEthBalanceCached } from "./chains/hood";
 import { getHoodTokenMarket } from "./chains/hood-market";
 import { isPonsLaunchpad } from "./chains/pons-market";
 import { getPonsHistory } from "./chains/pons-history";
+import { getHoodHolders } from "./chains/hood-holders";
 import { getEthUsd } from "./price";
 import { compactUsd, compactNum } from "./format";
 
@@ -48,22 +49,26 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
   // Hood (Robinhood Chain) tokens: market comes from the bonding curve or the
   // Pons v3 pool, not DexScreener. For a Pons token the pool's Swap logs give
   // the same candles + trades the Solana path gets from GeckoTerminal (see
-  // pons-history.ts); holders still need indexing, so those stay empty. The
-  // agent balance is native ETH.
+  // pons-history.ts); holders come from Blockscout's token-holder index (see
+  // hood-holders.ts). The agent balance is native ETH.
   if (project.chain === "hood") {
     const ethUsd = await getEthUsd();
     const isPons = isPonsLaunchpad(project.launchpad);
-    const [{ project: withMarket, stats }, history, agentEth] = await Promise.all([
+    const [{ project: withMarket, stats }, history, holders, agentEth] = await Promise.all([
       getHoodTokenMarket(project, ethUsd),
       mint && isPons ? getPonsHistory(mint, ethUsd, tf) : Promise.resolve({ candles: [], trades: [] }),
+      mint ? getHoodHolders(mint) : Promise.resolve<Holder[]>([]),
       project.agentWallet ? getEthBalanceCached(project.agentWallet) : Promise.resolve(null),
     ]);
+    // EVM addresses can carry a Loop profile too (EVM linking) — SNS is Solana
+    // only, so skip it. Best-effort; unnamed wallets stay as short addresses.
+    const named = holders.length ? await withLoopProfiles(holders) : holders;
     return {
       project: withMarket,
       stats,
       candles: history.candles,
       trades: history.trades,
-      holders: [],
+      holders: named,
       agentSol: agentEth,
     };
   }
