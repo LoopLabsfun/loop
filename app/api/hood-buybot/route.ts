@@ -39,7 +39,17 @@ export const runtime = "nodejs";
  */
 
 const RPC = process.env.HOOD_RPC_URL || HOOD_DEFAULT_RPC;
-const LOOKBACK_BLOCKS = 1200; // generous overlap; dedupe makes re-reads idempotent
+// Robinhood Chain runs ~0.1s blocks (10/s), so the window must be sized in those
+// terms, not a chain-agnostic guess: 1200 blocks was only ~2 minutes, but the
+// GitHub-Actions cron that drives this is throttled on a public repo to an
+// effective ~5–30 min (occasionally more). At 2 min of lookback the bot silently
+// missed every buy older than that between fires — the tx-hash dedupe stops
+// double-posts but can't recover buys that fell outside the window. 30k blocks =
+// ~50 min covers the worst throttle plus a skipped fire; re-scanning the overlap
+// is free (idempotent), and the getLogs is filtered to the one pool so its result
+// count stays far under the RPC's 10k cap. The Supabase pg_cron primary (tighter
+// cadence) is the real-time path; this stays the backstop.
+const LOOKBACK_BLOCKS = 30_000;
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim() || process.env.COMPUTE_INGEST_SECRET?.trim() || "";
@@ -64,6 +74,36 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+// A single getLogs is capped at 10k results by the RPC, and a busy pool can
+// exceed that inside the (deliberately large) lookback window — which would make
+// the whole read fail exactly during a launch pump. Split the range into fixed
+// sub-windows well under the cap and merge; the tx-hash dedupe makes the extra
+// calls free of double-posts. ~5k blocks ≈ 8 minutes at Robinhood's 0.1s blocks,
+// far below 10k swaps for any realistic pool. Returns null only if EVERY chunk
+// failed (genuine RPC outage); a partial failure still returns what it read, and
+// the next cron re-scans the gap.
+const CHUNK_BLOCKS = 5_000;
+
+async function getLogsChunked(
+  address: string,
+  topics: (string | null)[],
+  from: number,
+  to: number,
+): Promise<RpcLog[] | null> {
+  const out: RpcLog[] = [];
+  let anyOk = false;
+  for (let start = from; start <= to; start += CHUNK_BLOCKS + 1) {
+    const end = Math.min(start + CHUNK_BLOCKS, to);
+    const chunk = await rpc<RpcLog[]>("eth_getLogs", [
+      { address, topics, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16) },
+    ]);
+    if (chunk === null) continue; // transient — the next cron re-scans this gap
+    anyOk = true;
+    out.push(...chunk);
+  }
+  return anyOk ? out : null;
 }
 
 /** Insert a tx hash; returns true only if it's newly seen (dedupe). */
@@ -97,14 +137,13 @@ async function handle(req: Request) {
   const latestHex = await rpc<string>("eth_blockNumber", []);
   if (!latestHex) return NextResponse.json({ error: "rpc unreachable" }, { status: 502 });
   const latest = Number(BigInt(latestHex));
-  const fromBlock = "0x" + Math.max(0, latest - LOOKBACK_BLOCKS).toString(16);
+  const from = Math.max(0, latest - LOOKBACK_BLOCKS);
 
-  const logs = await rpc<RpcLog[]>("eth_getLogs", [
-    pool
-      ? { address: pool, topics: [V3_SWAP_TOPIC0], fromBlock, toBlock: "latest" }
-      : { address: launcher, topics: [TRADE_TOPIC0, addressTopic(token)], fromBlock, toBlock: "latest" },
-  ]);
-  if (!logs) return NextResponse.json({ error: "getLogs failed" }, { status: 502 });
+  // The topic filter for whichever source this token uses.
+  const topics = pool ? [V3_SWAP_TOPIC0] : [TRADE_TOPIC0, addressTopic(token)];
+  const address = pool ?? launcher!;
+  const logs = await getLogsChunked(address, topics, from, latest);
+  if (logs === null) return NextResponse.json({ error: "getLogs failed" }, { status: 502 });
 
   // Pool amounts are signed from the POOL's side, so which token is token0
   // decides what counts as a buy. Getting it backwards announces every sell.
