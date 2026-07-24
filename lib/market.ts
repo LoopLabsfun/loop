@@ -90,34 +90,65 @@ export function getMarketStats(mint: string): Promise<MarketStats | null> {
  * back to `stats.pairAddress` when the listing fails.
  */
 export async function resolveTradingPool(mint: string, fallback: string): Promise<string> {
-  const best = await memoized<string | null>(`pool:${mint}`, (v) => v !== null, async () => {
+  return (await getCanonicalPool(mint))?.addr ?? fallback;
+}
+
+/** The deepest pool for a mint plus the live stats GeckoTerminal reports for it.
+ *  Fetched once and memoized; both resolveTradingPool and the stats overlay
+ *  (below) read it, so the extra numbers cost no extra request. */
+interface CanonicalPool {
+  addr: string;
+  reserveUsd: number;
+  volume24hUsd: number;
+  priceChange24h: number;
+  priceUsd: number;
+}
+
+function getCanonicalPool(mint: string): Promise<CanonicalPool | null> {
+  return memoized<CanonicalPool | null>(`pool:${mint}`, (v) => v !== null, async () => {
     try {
       const res = await fetchUpstream(`${GECKO}/tokens/${mint}/pools`, {
         headers: { Accept: "application/json" },
       });
       if (!res.ok) return null;
-      const json = (await res.json()) as {
-        data?: { id?: string; attributes?: { reserve_in_usd?: string } }[];
-      };
+      const json = (await res.json()) as { data?: GeckoPool[] };
       const top = (json.data ?? [])
-        .map((p) => ({
-          // Gecko pool ids are "solana_<address>".
-          addr: (p.id ?? "").replace(/^solana_/, ""),
-          reserve: num(p.attributes?.reserve_in_usd),
-        }))
-        .filter((p) => p.addr)
+        .map((p) => ({ p, reserve: num(p.attributes?.reserve_in_usd) }))
+        .filter((x) => x.p.id)
         .sort((a, b) => b.reserve - a.reserve)[0];
-      return top?.addr || null;
+      if (!top) return null;
+      const a = top.p.attributes ?? {};
+      return {
+        // Gecko pool ids are "solana_<address>".
+        addr: (top.p.id ?? "").replace(/^solana_/, ""),
+        reserveUsd: top.reserve,
+        volume24hUsd: num(a.volume_usd?.h24),
+        priceChange24h: num(a.price_change_percentage?.h24),
+        priceUsd: num(a.base_token_price_usd),
+      };
     } catch {
       return null;
     }
   });
-  return best ?? fallback;
 }
 
 async function fetchMarketStats(mint: string): Promise<MarketStats | null> {
-  const fromDexScreener = await fetchDexScreenerStats(mint);
-  return fromDexScreener ?? fetchPumpFunStats(mint);
+  const base = (await fetchDexScreenerStats(mint)) ?? (await fetchPumpFunStats(mint));
+  if (!base) return null;
+  // For a graduated token, `base` came from the pump.fun bonding curve, which
+  // reads $0 liquidity and no volume once it's dead — the same reason the chart
+  // had to move to the canonical pool. Overlay the deepest live pool's figures
+  // for any field the base source left at 0, so the header stops showing "—"
+  // liquidity on a token that plainly has a pool. Same fetch resolveTradingPool
+  // already makes, so no extra request.
+  const pool = await getCanonicalPool(mint);
+  if (!pool) return base;
+  return {
+    ...base,
+    liquidityUsd: base.liquidityUsd > 0 ? base.liquidityUsd : pool.reserveUsd,
+    volume24hUsd: base.volume24hUsd > 0 ? base.volume24hUsd : pool.volume24hUsd,
+    priceChange24h: base.priceChange24h !== 0 ? base.priceChange24h : pool.priceChange24h,
+  };
 }
 
 async function fetchDexScreenerStats(mint: string): Promise<MarketStats | null> {
@@ -439,6 +470,16 @@ function fmtSolAmount(v: number): string {
 
 function shortAddr(a: string): string {
   return a.length > 9 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+}
+
+interface GeckoPool {
+  id?: string;
+  attributes?: {
+    reserve_in_usd?: string;
+    base_token_price_usd?: string;
+    volume_usd?: { h24?: string };
+    price_change_percentage?: { h24?: string };
+  };
 }
 
 interface DexPair {

@@ -346,11 +346,14 @@ export function TradingChart({
     <div className="relative">
       <div ref={boxRef} style={{ height }} className="w-full" />
       {legend && (
-        <div className="absolute top-1 left-1 right-[72px] pointer-events-none font-mono text-[11px] leading-[1.6] flex flex-wrap gap-x-3 gap-y-0.5 z-10">
+        <div className="absolute top-1 left-1 right-1 sm:right-[72px] pointer-events-none font-mono text-[11px] leading-[1.6] flex flex-wrap gap-x-3 gap-y-0.5 z-10">
+          {/* O/H/L and Vol fold away under 640px, where the chart is too narrow
+              to hold the full row without wrapping over the candles — date, close
+              and change stay, which is what a glance needs. */}
           <span className="text-faint">{legendTime(legend.time)}</span>
-          <Ohlc label="O" value={fmt(legend.open)} />
-          <Ohlc label="H" value={fmt(legend.high)} />
-          <Ohlc label="L" value={fmt(legend.low)} />
+          <Ohlc label="O" value={fmt(legend.open)} className="hidden sm:inline" />
+          <Ohlc label="H" value={fmt(legend.high)} className="hidden sm:inline" />
+          <Ohlc label="L" value={fmt(legend.low)} className="hidden sm:inline" />
           <Ohlc
             label="C"
             value={fmt(legend.close)}
@@ -359,16 +362,28 @@ export function TradingChart({
           <span style={{ color: legend.close >= legend.open ? UP : DOWN }}>
             {pct(legend.open, legend.close)}
           </span>
-          {legend.volume > 0 && <Ohlc label="Vol" value={compactUsd(legend.volume)} />}
+          {legend.volume > 0 && (
+            <Ohlc label="Vol" value={compactUsd(legend.volume)} className="hidden sm:inline" />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Ohlc({ label, value, color }: { label: string; value: string; color?: string }) {
+function Ohlc({
+  label,
+  value,
+  color,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  className?: string;
+}) {
   return (
-    <span className="whitespace-nowrap">
+    <span className={`whitespace-nowrap ${className}`}>
       <span className="text-faint">{label} </span>
       <span style={color ? { color } : undefined} className={color ? "" : "text-ink"}>
         {value}
