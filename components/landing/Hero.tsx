@@ -125,7 +125,10 @@ function BuiltOn() {
     <div className="flex items-center gap-[18px] text-[13px] text-faint">
       <span>Built on</span>
       {chain === "hood" ? (
-        <RobinhoodLogo />
+        <>
+          <RobinhoodLogo />
+          <PonsLogo />
+        </>
       ) : (
         <>
           <SolanaLogo />
@@ -151,12 +154,31 @@ function RobinhoodLogo() {
   );
 }
 
+function PonsLogo() {
+  return (
+    <span
+      className="inline-flex items-center gap-[6px]"
+      role="img"
+      aria-label="Pons"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/pons.png" alt="" className="h-[17px] w-[17px] object-contain" />
+      <span
+        className="font-normal text-[15px] tracking-normal text-ink leading-none"
+        style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+      >
+        pons
+      </span>
+    </span>
+  );
+}
+
 function SolanaLogo() {
   // Three slanted bars + wordmark. Gradient is Solana's purple→green brand ramp.
   return (
     <svg
       viewBox="0 0 118 36"
-      className="h-[15px] w-auto"
+      className="h-[20px] w-auto"
       role="img"
       aria-label="Solana"
       xmlns="http://www.w3.org/2000/svg"
@@ -192,7 +214,7 @@ function PumpFunLogo() {
   return (
     <svg
       viewBox="0 0 132 36"
-      className="h-[17px] w-auto"
+      className="h-[20px] w-auto"
       role="img"
       aria-label="Pump.fun"
       xmlns="http://www.w3.org/2000/svg"
