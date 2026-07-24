@@ -95,3 +95,45 @@ describe("verifyPonsLaunchTx", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("decodeFeeWalletFromCalldata", () => {
+  // Round-trip against the audited encoder: whatever feeWallet goes in must come
+  // back out. This is the parameter that decides where every future trading fee
+  // lands, and it is set once — so it is read back from the signed calldata
+  // rather than trusted from a config file.
+  const SALT = "0x" + "11".repeat(32);
+  const CREATOR = "0x19513327024f3BA0B145846a96B459078E745091";
+
+  it("recovers the feeWallet from real launchToken calldata", async () => {
+    const { encodeLaunchToken } = await import("./pons");
+    const { decodeFeeWalletFromCalldata } = await import("./pons-launch");
+    const data = encodeLaunchToken(
+      { name: "LOOP", symbol: "LOOP", description: "x", socials: { website: "https://looplabs.fun" }, feeWallet: CREATOR },
+      { salt: SALT }
+    );
+    expect(decodeFeeWalletFromCalldata(data)?.toLowerCase()).toBe(CREATOR.toLowerCase());
+  });
+
+  it("distinguishes two different feeWallets — the whole point of the check", async () => {
+    const { encodeLaunchToken } = await import("./pons");
+    const { decodeFeeWalletFromCalldata } = await import("./pons-launch");
+    const PLATFORM = "0x16c630FaFCa17eEd7F1368ef58D08FEAd0241B23";
+    const a = encodeLaunchToken({ name: "A", symbol: "A", feeWallet: CREATOR }, { salt: SALT });
+    const b = encodeLaunchToken({ name: "A", symbol: "A", feeWallet: PLATFORM }, { salt: SALT });
+    expect(decodeFeeWalletFromCalldata(a)?.toLowerCase()).toBe(CREATOR.toLowerCase());
+    expect(decodeFeeWalletFromCalldata(b)?.toLowerCase()).toBe(PLATFORM.toLowerCase());
+  });
+
+  it("returns null for a zero feeWallet (Pons would fall back to msg.sender)", async () => {
+    const { encodeLaunchToken } = await import("./pons");
+    const { decodeFeeWalletFromCalldata } = await import("./pons-launch");
+    const z = encodeLaunchToken({ name: "A", symbol: "A" }, { salt: SALT });
+    expect(decodeFeeWalletFromCalldata(z)).toBeNull();
+  });
+
+  it("returns null for calldata that isn't launchToken", async () => {
+    const { decodeFeeWalletFromCalldata } = await import("./pons-launch");
+    expect(decodeFeeWalletFromCalldata("0xdeadbeef")).toBeNull();
+    expect(decodeFeeWalletFromCalldata("")).toBeNull();
+  });
+});

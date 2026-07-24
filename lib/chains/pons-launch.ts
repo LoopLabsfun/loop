@@ -56,6 +56,33 @@ function decodeTokenLaunched(log: {
   return { token, pool: pool && !/^0x0+$/.test(pool) ? pool : null };
 }
 
+/**
+ * The `feeWallet` baked into a launchToken call.
+ *
+ * This is THE irreversible parameter of a Pons launch: it receives the dev buy
+ * and is wired as the locker's fee-redirect recipient, so every future trading
+ * fee follows it. Decoded from the transaction's own calldata, which means it
+ * reflects what was actually signed — not what a config file claims it was.
+ * Null when the input isn't a launchToken call.
+ */
+export function decodeFeeWalletFromCalldata(input: string): string | null {
+  const hex = (input || "").replace(/^0x/, "");
+  if (hex.slice(0, 8).toLowerCase() !== PONS_SELECTORS.launchToken) return null;
+  const args = hex.slice(8);
+  let offsetBytes: number;
+  try {
+    offsetBytes = Number(BigInt("0x" + args.slice(0, 64)));
+  } catch {
+    return null;
+  }
+  // params is a dynamic tuple; its 6th head word is `address feeWallet`.
+  const start = offsetBytes * 2 + 5 * 64;
+  const word = args.slice(start, start + 64);
+  if (!/^[0-9a-fA-F]{64}$/.test(word)) return null;
+  const addr = "0x" + word.slice(24);
+  return /^0x[0-9a-fA-F]{40}$/.test(addr) && !/^0x0+$/.test(addr) ? addr : null;
+}
+
 const RPC = process.env.HOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com";
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T | null> {
@@ -199,7 +226,7 @@ export async function readLaunchedToken(txHash: string): Promise<string | null> 
  */
 export async function verifyPonsLaunchTx(
   txHash: string
-): Promise<{ token: string; pool: string | null; from: string } | null> {
+): Promise<{ token: string; pool: string | null; from: string; feeWallet: string | null } | null> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) return null;
   for (let attempt = 0; attempt < 10; attempt++) {
     const receipt = await rpc<{
@@ -218,7 +245,15 @@ export async function verifyPonsLaunchTx(
     for (const log of receipt.logs ?? []) {
       const decoded = decodeTokenLaunched(log);
       if (decoded) {
-        return { token: decoded.token, pool: decoded.pool, from: (receipt.from ?? "").toLowerCase() };
+        // Also read back the feeWallet that was actually signed.
+        const tx = await rpc<{ input?: string }>("eth_getTransactionByHash", [txHash]);
+        const feeWallet = tx?.input ? decodeFeeWalletFromCalldata(tx.input) : null;
+        return {
+          token: decoded.token,
+          pool: decoded.pool,
+          from: (receipt.from ?? "").toLowerCase(),
+          feeWallet,
+        };
       }
     }
     return null;

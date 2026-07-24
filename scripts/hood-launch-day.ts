@@ -8,7 +8,7 @@
 //                  (interactive password prompt — the key never touches this
 //                  process). --tx <hash> skips this if already launched.
 //   3. VERIFY      token + pool re-derived from the chain (never trusted)
-//   4. SITE        loop-hood DB row + NEXT_PUBLIC_HOOD_LOOP_MINT + deploy
+//   4. SITE        project_chains(loop,hood) row + NEXT_PUBLIC_HOOD_LOOP_MINT + deploy
 //   5. PAUSE       founder does the REAL test swap on the page (Enter to go on)
 //   6. X THREAD    image + quote-tweet + replies; tweet 1 URL captured
 //   7. TELEGRAM    channel announce INCLUDING the tweet URL (founder pins)
@@ -38,12 +38,19 @@ import { sendTelegramMessage, isTelegramConfigured } from "../lib/telegram-send"
 import { isDiscordBotConfigured, findChannelId, postToChannel } from "../lib/discord-bot";
 
 interface Config {
-  /** Pons launch params (feeWallet should be the Hood treasury). */
-  token: PonsTokenParams;
+  /**
+   * Pons launch params. `feeWallet` is REQUIRED here, not optional as in
+   * PonsTokenParams: leaving it out makes Pons fall back to msg.sender, so the
+   * destination of every future trading fee would depend on which wallet
+   * happened to sign. Decision A: it is the creator/treasury wallet.
+   */
+  token: PonsTokenParams & { feeWallet: string };
   devBuyEth: number;
   salt: string;
   /** cast keystore account name holding the treasury key. */
   castAccount: string;
+  /** Provisioned Hood agent EVM wallet (Privy), written into project_chains. */
+  agentWallet?: string | null;
   treasury: string;
   /** Thread spec (same format as scripts/post-thread.ts). */
   threadSpecPath: string;
@@ -69,6 +76,7 @@ const txFlag = (() => { const i = process.argv.indexOf("--tx"); return i > 0 ? p
 const step = (n: number, label: string) => console.log(`\n━━━ ${n}. ${label} ━━━`);
 const ok = (m: string) => console.log(`  ✅ ${m}`);
 const info = (m: string) => console.log(`  · ${m}`);
+const warn = (m: string) => console.log(`  ⚠️  ${m}`);
 const die: (m: string) => never = (m) => { console.error(`  ❌ ${m}`); process.exit(1); };
 
 async function rpcCall(method: string, params: unknown[]): Promise<string> {
@@ -97,6 +105,9 @@ function pause(msg: string): Promise<void> {
   ok("Pons: lancements ouverts");
   const feeWei = await readLaunchFeeWei();
   if (feeWei == null) die("impossible de lire launchFee()");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.token.feeWallet || "")) {
+    die("config.token.feeWallet manquant/invalide — c'est lui qui reçoit le dev-buy ET toutes les fees futures. STOP.");
+  }
   const devBuyWei = BigInt(Math.round(cfg.devBuyEth * 1e18));
   const valueWei = launchValueWei(feeWei, devBuyWei);
   ok(`launchFee live: ${Number(feeWei) / 1e18} ETH · dev-buy: ${cfg.devBuyEth} ETH · value totale: ${Number(valueWei) / 1e18} ETH`);
@@ -140,33 +151,59 @@ function pause(msg: string): Promise<void> {
   if (!state.token) {
     const v = await verifyPonsLaunchTx(state.txHash!);
     if (!v) die("vérification échouée — tx introuvable/revert/pas vers la factory Pons.");
-    if (v.from !== cfg.treasury.toLowerCase()) die(`déployeur ${v.from} ≠ trésor attendu — les fees n'iraient PAS au trésor. STOP.`);
+    // What actually decides where the dev buy and every future trading fee go is
+    // the launch's feeWallet — NOT who signed. Checking the deployer conflated
+    // the two roles and would have passed a launch whose fees were redirected
+    // somewhere else entirely. Compare the thing that is irreversible.
+    const fw = cfg.token.feeWallet.toLowerCase();
+    if (v.feeWallet && v.feeWallet.toLowerCase() !== fw) {
+      die(`feeWallet on-chain ${v.feeWallet} ≠ ${cfg.token.feeWallet} — les fees N'IRAIENT PAS au trésor. STOP.`);
+    }
+    if (v.from !== fw) {
+      warn(`déployeur ${v.from} ≠ feeWallet ${cfg.token.feeWallet} — normal si tu as signé depuis un autre wallet; le dev-buy et les fees vont au feeWallet.`);
+    }
     state.token = v.token; state.pool = v.pool ?? undefined; save();
   }
   ok(`token $LOOP (Hood): ${state.token}`);
-  ok(`pool: ${state.pool ?? "(à retrouver plus tard)"} · déployeur = trésor ✓ (70% des fees → trésor)`);
+  ok(`pool: ${state.pool ?? "(à retrouver plus tard)"} · feeWallet = ${cfg.token.feeWallet} ✓`);
 
   // ── 4. SITE ─────────────────────────────────────────────────────────────
   step(4, "SITE (DB + env + deploy)");
   if (state.siteDone) info("déjà fait");
   else {
     const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
-    const { data: existing } = await sb.from("projects").select("mint").eq("key", "loop-hood").maybeSingle();
-    if (existing && (existing as { mint?: string }).mint?.toLowerCase() !== state.token!.toLowerCase()) {
-      die(`la ligne loop-hood existe avec un AUTRE mint (${(existing as { mint?: string }).mint}) — résous à la main.`);
+    // ONE project, N chains: the Hood launch is a DEPLOYMENT of `loop`, recorded
+    // in project_chains — never a second `loop-hood` project row. That older
+    // shape meant two agents ticking on the same repo and duplicated Claude
+    // spend, which is exactly what the multichain refactor removed.
+    const { data: existing } = await sb
+      .from("project_chains").select("mint")
+      .eq("project_key", "loop").eq("chain", "hood").maybeSingle();
+    const prevMint = (existing as { mint?: string } | null)?.mint;
+    if (prevMint && prevMint.toLowerCase() !== state.token!.toLowerCase()) {
+      die(`le déploiement hood de loop existe avec un AUTRE mint (${prevMint}) — résous à la main.`);
     }
-    if (!existing) {
-      const { data: sol, error: e1 } = await sb.from("projects")
-        .select("name,ticker,description,cover,prompt,repo,twitter,telegram,discord,website,token_image_url,banner_url,fee_founder_pct,content_policy,guardrails")
-        .eq("key", "loop").single();
-      if (e1 || !sol) die(`lecture ligne loop: ${e1?.message}`);
-      const { error: e2 } = await sb.from("projects").insert({
-        key: "loop-hood", ...sol, official: true, launchpad: "Pons",
-        chain: "hood", mint: state.token, treasury_wallet: cfg.treasury,
-      });
-      if (e2) die(`insert loop-hood: ${e2.message}`);
-      ok("ligne loop-hood insérée (Pons, official)");
-    } else info("ligne loop-hood déjà en place avec ce mint");
+    if (!prevMint) {
+      const { error: e2 } = await sb.from("project_chains").upsert(
+        {
+          project_key: "loop",
+          chain: "hood",
+          mint: state.token,
+          // Decision A: the Hood treasury IS the creator wallet, mirroring
+          // Solana where treasury == creator. It is also the launch feeWallet,
+          // so trading fees land where the agent's runway is counted.
+          treasury_wallet: cfg.token.feeWallet,
+          agent_wallet: cfg.agentWallet ?? null,
+          launchpad: "Pons",
+          network: "mainnet",
+          launched_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "project_key,chain" }
+      );
+      if (e2) die(`upsert project_chains(loop,hood): ${e2.message}`);
+      ok("déploiement hood enregistré dans project_chains (Pons) — /token?p=loop&chain=hood");
+    } else info("déploiement hood déjà enregistré avec ce mint");
     spawnSync("vercel", ["env", "rm", "NEXT_PUBLIC_HOOD_LOOP_MINT", "production", "--yes"], { stdio: "ignore" });
     const add = spawnSync("vercel", ["env", "add", "NEXT_PUBLIC_HOOD_LOOP_MINT", "production"], { input: state.token!, encoding: "utf8" });
     if (add.status !== 0) die(`vercel env add: ${add.stderr?.slice(-300)}`);
@@ -174,7 +211,7 @@ function pause(msg: string): Promise<void> {
     info("déploiement prod (2-3 min)…");
     const dep = spawnSync("vercel", ["--prod", "--yes"], { encoding: "utf8" });
     if (dep.status !== 0) die(`vercel --prod: ${(dep.stderr || dep.stdout)?.slice(-300)}`);
-    ok("prod déployée — la page /token?p=loop-hood affiche le vrai marché Pons");
+    ok("prod déployée — /token?p=loop&chain=hood affiche le vrai marché Pons");
     state.siteDone = true; save();
   }
 
