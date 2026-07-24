@@ -178,7 +178,7 @@ function SolanaLogo() {
   return (
     <svg
       viewBox="0 0 118 36"
-      className="h-[20px] w-auto"
+      className="h-[28px] w-auto"
       role="img"
       aria-label="Solana"
       xmlns="http://www.w3.org/2000/svg"
@@ -214,7 +214,7 @@ function PumpFunLogo() {
   return (
     <svg
       viewBox="0 0 132 36"
-      className="h-[20px] w-auto"
+      className="h-[28px] w-auto"
       role="img"
       aria-label="Pump.fun"
       xmlns="http://www.w3.org/2000/svg"
