@@ -64,6 +64,9 @@ interface State {
   token?: string;
   pool?: string;
   siteDone?: boolean;
+  /** Tweet ids posted so far, in order — so a mid-thread failure resumes from
+   *  the next tweet instead of re-posting the ones already public. */
+  threadPostedIds?: string[];
   tweetUrl?: string;
   telegramDone?: boolean;
   discordDone?: boolean;
@@ -114,8 +117,13 @@ function pause(msg: string): Promise<void> {
   info(`X: ${isXConfigured() ? "✓" : "✗ NON CONFIGURÉ"} · Telegram: ${isTelegramConfigured() ? "✓" : "✗"} · Discord bot: ${isDiscordBotConfigured() ? "✓" : "✗"}`);
   if (!isXConfigured() || !isTelegramConfigured() || !isDiscordBotConfigured()) die("configure les réseaux avant le jour J.");
   const thread = JSON.parse(fs.readFileSync(cfg.threadSpecPath, "utf8")) as ThreadEntry[];
+  if (!thread.length) die("thread vide");
   for (const [i, e] of thread.map((e, i) => [i, e] as const)) {
     if (e.text.length > 280) die(`tweet ${i + 1}: ${e.text.length} chars (> 280)`);
+    // X shadow-suppresses tweets carrying more than one cashtag — the same
+    // guard scripts/post-thread.ts flags. Catch it before the launch, not after.
+    const cashtags = (e.text.match(/\$[A-Za-z]+/g) ?? []).length;
+    if (cashtags > 1) die(`tweet ${i + 1}: ${cashtags} cashtags (X n'en tolère qu'1 — risque de suppression)`);
     if (e.imagePath && !fs.existsSync(e.imagePath)) die(`tweet ${i + 1}: image introuvable ${e.imagePath}`);
   }
   ok(`thread: ${thread.length} tweets valides`);
@@ -156,7 +164,13 @@ function pause(msg: string): Promise<void> {
     // the two roles and would have passed a launch whose fees were redirected
     // somewhere else entirely. Compare the thing that is irreversible.
     const fw = cfg.token.feeWallet.toLowerCase();
-    if (v.feeWallet && v.feeWallet.toLowerCase() !== fw) {
+    // feeWallet is the one irreversible parameter — fail CLOSED. A null here
+    // means we couldn't re-derive it from the mined tx (a transient
+    // getTransactionByHash miss), so we must NOT proceed as if it matched.
+    if (!v.feeWallet) {
+      die("feeWallet on-chain illisible — impossible de confirmer où vont les fees. Relance (la tx est déjà minée, la vérif reprendra).");
+    }
+    if (v.feeWallet.toLowerCase() !== fw) {
       die(`feeWallet on-chain ${v.feeWallet} ≠ ${cfg.token.feeWallet} — les fees N'IRAIENT PAS au trésor. STOP.`);
     }
     if (v.from !== fw) {
@@ -224,8 +238,11 @@ function pause(msg: string): Promise<void> {
   step(6, "THREAD X");
   if (state.tweetUrl) info(`déjà posté: ${state.tweetUrl}`);
   else {
-    let prevId: string | undefined; let firstId: string | undefined;
-    for (let i = 0; i < thread.length; i++) {
+    // Resume-safe: ids posted on a prior run are persisted, so we skip them and
+    // chain the next tweet onto the last one — never re-posting a public tweet.
+    const posted = state.threadPostedIds ?? [];
+    if (posted.length) info(`reprise: ${posted.length}/${thread.length} tweet(s) déjà postés — on continue`);
+    for (let i = posted.length; i < thread.length; i++) {
       const e = thread[i];
       let mediaIds: string[] | undefined;
       if (e.imagePath) {
@@ -234,12 +251,14 @@ function pause(msg: string): Promise<void> {
         if (!up.ok) die(`upload image (tweet ${i + 1}): ${up.error}`);
         mediaIds = [up.mediaId!];
       }
+      const prevId = posted[posted.length - 1];
       const r = await sendTweet(e.text, prevId, { quoteTweetId: e.quoteTweetId, mediaIds });
-      if (!r.ok) die(`tweet ${i + 1}: ${r.error} — ${i} posté(s); relance pour reprendre ici après correction.`);
+      if (!r.ok) die(`tweet ${i + 1}: ${r.error} — ${i} posté(s); relance CE MÊME script pour reprendre au tweet ${i + 1}.`);
+      // Persist BEFORE continuing, so a crash after posting never double-posts.
+      posted.push(r.id!); state.threadPostedIds = posted; save();
       ok(`tweet ${i + 1}/${thread.length} → https://x.com/i/web/status/${r.id}`);
-      prevId = r.id; if (!firstId) firstId = r.id;
     }
-    state.tweetUrl = `https://x.com/Looplabsfun/status/${firstId}`; save();
+    state.tweetUrl = `https://x.com/looplabsfun/status/${posted[0]}`; save();
   }
   ok(`tweet d'annonce: ${state.tweetUrl}`);
 
