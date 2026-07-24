@@ -12,6 +12,13 @@ export interface LiveMarketSeed {
   trades: Trade[];
 }
 
+/** Where the refresh polls. Solana reads /api/market by mint; Hood reads
+ *  /api/hood-market, which needs the project slug to pick the launchpad. */
+export interface MarketSource {
+  chain?: "solana" | "hood";
+  slug?: string;
+}
+
 const POLL_MS = 20_000;
 /** Live-price tick. Cheap: /api/price is one memoized DexScreener read. */
 const PRICE_POLL_MS = 5_000;
@@ -25,8 +32,13 @@ const LIVE_TICK_MAX_DRIFT = 0.2;
  * polls stats + trades + candles every ~20s. Pre-launch (no mint) ⇒ no market:
  * empty series, no polling — the UI shows honest "no market yet" states.
  */
-export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketSeed) {
+export function useLiveMarket(
+  mint: string | null | undefined,
+  seed: LiveMarketSeed,
+  source: MarketSource = {}
+) {
   const preLaunch = !mint;
+  const isHood = source.chain === "hood";
   const [tf, setTf] = useState<Timeframe>("1H");
   const [mode, setMode] = useState<ChartMode>("candles");
   const [stats, setStats] = useState<MarketStats | null>(seed.stats);
@@ -38,11 +50,16 @@ export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketS
   const fetchMarket = useCallback(
     async (timeframe: Timeframe) => {
       if (!mint) return;
+      // Hood tokens read the EVM route (Pons pool logs); it needs the slug to
+      // resolve the launchpad. A Hood token with no slug simply can't refresh —
+      // it keeps the server-rendered seed.
+      const url = isHood
+        ? source.slug &&
+          `/api/hood-market?mint=${encodeURIComponent(mint)}&p=${encodeURIComponent(source.slug)}&tf=${timeframe}`
+        : `/api/market?mint=${encodeURIComponent(mint)}&tf=${timeframe}`;
+      if (!url) return;
       try {
-        const res = await fetch(
-          `/api/market?mint=${encodeURIComponent(mint)}&tf=${timeframe}`,
-          { cache: "no-store" }
-        );
+        const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as Partial<LiveMarketSeed>;
         // Ignore a stale response if the user switched timeframe meanwhile.
@@ -54,7 +71,7 @@ export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketS
         // keep the last good snapshot on a failed refresh
       }
     },
-    [mint]
+    [mint, isHood, source.slug]
   );
 
   const changeTf = useCallback(
@@ -73,10 +90,11 @@ export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketS
   }, [preLaunch, fetchMarket]);
 
   // Live price tick between the heavy refreshes, so the forming candle moves
-  // with the market instead of jumping once every 20s.
+  // with the market instead of jumping once every 20s. Solana only — /api/price
+  // is a Solana route; Hood rides the 20s market poll.
   const [livePrice, setLivePrice] = useState<number | null>(null);
   useEffect(() => {
-    if (!mint) return;
+    if (!mint || isHood) return;
     let alive = true;
     const tick = async () => {
       try {
@@ -96,7 +114,7 @@ export function useLiveMarket(mint: string | null | undefined, seed: LiveMarketS
       alive = false;
       clearInterval(id);
     };
-  }, [mint]);
+  }, [mint, isHood]);
 
   const liveCandles = useMemo(
     () => withLiveTick(candles, livePrice),

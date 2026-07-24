@@ -11,6 +11,8 @@ import {
 import { getTopHoldersCached, getHolderCountCached, getTokenSupplyUiCached, getSolBalanceCached } from "./solana";
 import { getEthBalanceCached } from "./chains/hood";
 import { getHoodTokenMarket } from "./chains/hood-market";
+import { isPonsLaunchpad } from "./chains/pons-market";
+import { getPonsHistory } from "./chains/pons-history";
 import { getEthUsd } from "./price";
 import { compactUsd, compactNum } from "./format";
 
@@ -43,16 +45,27 @@ export async function getTokenView(project: Project, tf = "1H"): Promise<TokenVi
     return { project, stats: null, candles: [], trades: [], holders: [], agentSol: null };
   }
 
-  // Hood (Robinhood Chain) tokens: market comes from the bonding curve, not
-  // DexScreener. Holders/candles/trades need Blockscout indexing (a later step),
-  // so those stay empty for now; the agent balance is native ETH.
+  // Hood (Robinhood Chain) tokens: market comes from the bonding curve or the
+  // Pons v3 pool, not DexScreener. For a Pons token the pool's Swap logs give
+  // the same candles + trades the Solana path gets from GeckoTerminal (see
+  // pons-history.ts); holders still need indexing, so those stay empty. The
+  // agent balance is native ETH.
   if (project.chain === "hood") {
     const ethUsd = await getEthUsd();
-    const [{ project: withMarket, stats }, agentEth] = await Promise.all([
+    const isPons = isPonsLaunchpad(project.launchpad);
+    const [{ project: withMarket, stats }, history, agentEth] = await Promise.all([
       getHoodTokenMarket(project, ethUsd),
+      mint && isPons ? getPonsHistory(mint, ethUsd, tf) : Promise.resolve({ candles: [], trades: [] }),
       project.agentWallet ? getEthBalanceCached(project.agentWallet) : Promise.resolve(null),
     ]);
-    return { project: withMarket, stats, candles: [], trades: [], holders: [], agentSol: agentEth };
+    return {
+      project: withMarket,
+      stats,
+      candles: history.candles,
+      trades: history.trades,
+      holders: [],
+      agentSol: agentEth,
+    };
   }
 
   const stats = await getMarketStats(mint);

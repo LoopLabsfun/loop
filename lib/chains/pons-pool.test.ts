@@ -85,7 +85,10 @@ describe("decodeV3Swap", () => {
 
   const log = (amount0: string, amount1: string): Parameters<typeof decodeV3Swap>[0] => ({
     topics: [V3_SWAP_TOPIC0, "0x" + "11".repeat(32), "0x".padEnd(26, "0") + RECIPIENT.slice(2)],
-    data: "0x" + amount0 + amount1 + "0".repeat(64 * 5),
+    // amount0, amount1, then sqrtPriceX96 + liquidity + tick = 5 words total,
+    // exactly as a real Uniswap V3 Swap emits (the earlier fixture padded 5
+    // extra words, masking that decodeV3Swap's length guard was too strict).
+    data: "0x" + amount0 + amount1 + "0".repeat(64 * 3),
     transactionHash: "0x" + "ab".repeat(32),
     blockNumber: "0x10",
   });

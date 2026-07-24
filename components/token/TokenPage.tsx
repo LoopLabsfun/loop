@@ -106,11 +106,15 @@ export function TokenPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { tf, mode, stats, candles, trades, changeTf, setMode, preLaunch, livePrice } =
-    useLiveMarket(p.mint, {
-      stats: market.stats,
-      candles: market.candles,
-      trades: market.trades,
-    });
+    useLiveMarket(
+      p.mint,
+      {
+        stats: market.stats,
+        candles: market.candles,
+        trades: market.trades,
+      },
+      { chain: p.chain === "hood" ? "hood" : "solana", slug: p.key }
+    );
 
   // Pre-launch (no mint) ⇒ no market: render honest "no market yet" states.
   // The 5s live tick beats the 20s stats refresh, so prefer it for the headline

@@ -123,7 +123,9 @@ export interface RawLog {
 export function decodeV3Swap(log: RawLog, opts: { isToken0: boolean }): V3Swap | null {
   if (!log?.topics?.length || log.topics[0]?.toLowerCase() !== V3_SWAP_TOPIC0) return null;
   const data = log.data || "";
-  if (data.replace(/^0x/, "").length < 64 * 7) return null;
+  // A v3 Swap's data is exactly 5 words: amount0, amount1, sqrtPriceX96,
+  // liquidity, tick. (sender + recipient are indexed → topics, not data.)
+  if (data.replace(/^0x/, "").length < 64 * 5) return null;
   try {
     const amount0 = toInt256(wordAt(data, 0));
     const amount1 = toInt256(wordAt(data, 1));
