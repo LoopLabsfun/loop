@@ -128,6 +128,26 @@ function pause(msg: string): Promise<void> {
   }
   ok(`thread: ${thread.length} tweets valides`);
   if (!state.txHash) {
+    // The keystore account is what SIGNS and PAYS. Confirm it actually holds the
+    // treasury key BEFORE spending: otherwise the balance check below passes on
+    // cfg.treasury while cast draws the dev-buy from whatever wallet the keystore
+    // really contains. `cast wallet address` prompts for the password (which the
+    // send needs anyway); the key itself never leaves the keystore.
+    const addrRes = spawnSync("cast", ["wallet", "address", "--account", cfg.castAccount],
+      { stdio: ["inherit", "pipe", "inherit"], encoding: "utf8" });
+    const signer = (addrRes.stdout ?? "").trim().toLowerCase();
+    if (addrRes.status !== 0 || !/^0x[0-9a-f]{40}$/.test(signer)) {
+      die(`keystore "${cfg.castAccount}" illisible (mauvais mot de passe ou compte absent). Importe la clé du trésor: cast wallet import ${cfg.castAccount} --interactive`);
+    }
+    if (signer !== cfg.treasury.toLowerCase()) {
+      die(`le keystore "${cfg.castAccount}" signe depuis ${signer}, PAS le trésor ${cfg.treasury} — il paierait le dev-buy depuis le mauvais wallet. Ré-importe la bonne clé.`);
+    }
+    // Same wallet must be the feeWallet too (Decision A: treasury == creator ==
+    // feeWallet), or the config disagrees with itself.
+    if (signer !== cfg.token.feeWallet.toLowerCase()) {
+      die(`trésor ${cfg.treasury} ≠ feeWallet ${cfg.token.feeWallet} dans la config — ils doivent être identiques (treasury == feeWallet).`);
+    }
+    ok(`keystore "${cfg.castAccount}" = trésor ${cfg.treasury} ✓`);
     const bal = BigInt(await rpcCall("eth_getBalance", [cfg.treasury, "latest"]));
     const gasMargin = BigInt(Math.round(0.001 * 1e18));
     if (bal < valueWei + gasMargin) {
